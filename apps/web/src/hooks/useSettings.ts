@@ -10,6 +10,8 @@ export interface Settings {
   scrollSpeed: number;
   /** Send the prompt automatically when dictation ends. */
   autoSendVoice: boolean;
+  /** Read Claude's reply aloud when a turn finishes. */
+  speakReplies: boolean;
   /** Show a system notification for approvals while the app is in the background. */
   notifyApprovals: boolean;
   /** BCP 47 language tag for speech recognition. */
@@ -25,6 +27,7 @@ const defaults: Settings = {
   scrollSpeed: 3,
   autoSendVoice: false,
   notifyApprovals: false,
+  speakReplies: false,
   voiceLang: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
 };
 

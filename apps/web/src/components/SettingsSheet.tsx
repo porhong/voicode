@@ -1,5 +1,6 @@
 import { notificationsSupported, requestNotificationPermission } from '../hooks/useApprovalAlerts';
 import type { Settings } from '../hooks/useSettings';
+import { speechSynthesisSupported } from '../hooks/useSpeakReplies';
 import { api } from '../lib/api';
 
 interface Props {
@@ -99,6 +100,16 @@ export function SettingsSheet({
             value={settings.voiceLang}
             maxLength={35}
             onChange={(e) => update({ voiceLang: e.target.value })}
+          />
+        </label>
+
+        <label className="field field-inline">
+          <span>Read Claude’s replies aloud</span>
+          <input
+            type="checkbox"
+            checked={settings.speakReplies}
+            disabled={!speechSynthesisSupported()}
+            onChange={(e) => update({ speakReplies: e.target.checked })}
           />
         </label>
 

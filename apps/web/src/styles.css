@@ -654,3 +654,40 @@ a {
     margin: 0 auto;
   }
 }
+
+/* --- Markdown in replies ------------------------------------------------------ */
+
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p,
+.md ul,
+.md ol {
+  margin: 0.4rem 0;
+}
+.md ul,
+.md ol {
+  padding-left: 1.25rem;
+}
+.md-heading {
+  font-weight: 700;
+}
+.md-code {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  white-space: pre;
+}
+.md-code code {
+  background: none;
+  padding: 0;
+}
+.msg-assistant {
+  white-space: normal;
+}

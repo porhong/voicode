@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { EventItem } from '../lib/store';
+import { Markdown } from './Markdown';
 
 function formatCost(usd: number): string {
   return usd < 0.01 ? '<$0.01' : `$${usd.toFixed(2)}`;
@@ -16,7 +17,11 @@ function EventRow({ item }: { item: EventItem }) {
         </div>
       );
     case 'assistant_text':
-      return <div className="msg msg-assistant">{e.text}</div>;
+      return (
+        <div className="msg msg-assistant">
+          <Markdown text={e.text} />
+        </div>
+      );
     case 'thinking':
       return <div className="msg msg-thinking">{e.text}</div>;
     case 'tool_use':
@@ -61,7 +66,11 @@ export function Transcript({ events, streaming }: { events: EventItem[]; streami
       {events.map((item) => (
         <EventRow key={item.seq} item={item} />
       ))}
-      {streaming && <div className="msg msg-assistant streaming">{streaming}</div>}
+      {streaming && (
+        <div className="msg msg-assistant streaming">
+          <Markdown text={streaming} />
+        </div>
+      )}
       <div ref={endRef} />
     </div>
   );

@@ -5,8 +5,8 @@ export default defineConfig({
     include: [
       'packages/*/src/**/*.test.ts',
       'apps/agent/src/**/*.test.ts',
-      // Pure logic from the web client (no DOM needed).
-      'apps/web/src/lib/**/*.test.ts',
+      // Web client logic and components rendered to static markup (no DOM needed).
+      'apps/web/src/**/*.test.ts',
     ],
     environment: 'node',
     testTimeout: 20_000,

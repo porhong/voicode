@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { LIMITS } from '@voicecode/protocol';
+import { stopSpeaking } from '../hooks/useSpeakReplies';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import type { Settings } from '../hooks/useSettings';
 
@@ -67,7 +68,12 @@ export function Composer({ disabled, busy, settings, onSend, onInterrupt }: Prop
         {speech.supported && (
           <button
             className={`mic ${speech.listening ? 'listening' : ''}`}
-            onClick={speech.listening ? speech.stop : speech.start}
+            onClick={() => {
+              if (speech.listening) return speech.stop();
+              // Don't let a reply being read aloud leak into the microphone.
+              stopSpeaking();
+              speech.start();
+            }}
             disabled={disabled}
             aria-pressed={speech.listening}
             aria-label={speech.listening ? 'Stop dictation' : 'Start dictation'}

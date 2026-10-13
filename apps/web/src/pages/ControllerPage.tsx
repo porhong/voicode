@@ -8,6 +8,7 @@ import { Trackpad } from '../components/Trackpad';
 import { Transcript } from '../components/Transcript';
 import { useAgentSocket } from '../hooks/useAgentSocket';
 import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
+import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { initialState, reducer } from '../lib/store';
@@ -57,6 +58,11 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     [state.permissions],
   );
   useApprovalAlerts(permissions, settings.notifyApprovals);
+  const activeEvents = useMemo(
+    () => (active ? (state.events[active.id] ?? []) : []),
+    [active, state.events],
+  );
+  useSpeakReplies(active?.id, activeEvents, settings.speakReplies, settings.voiceLang);
   const activePermissions = permissions.filter((p) => p.sessionId === active?.id);
   const otherPermissions = permissions.length - activePermissions.length;
   const live = active && active.state !== 'closed' && active.state !== 'error';
@@ -119,7 +125,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
             }}
           />
           <Transcript
-            events={active ? (state.events[active.id] ?? []) : []}
+            events={activeEvents}
             streaming={active ? (state.streaming[active.id] ?? '') : ''}
           />
           {otherPermissions > 0 && (

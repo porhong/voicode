@@ -45,6 +45,8 @@ export function describeToolTitle(
       return file ? `Claude wants to edit ${baseName(file)}` : 'Claude wants to edit a file';
     case 'WebFetch':
       return 'Claude wants to fetch a web page';
+    case 'ExitPlanMode':
+      return 'Claude has a plan and wants to start working';
     default:
       return `Claude wants to use ${displayName ?? name}`;
   }
@@ -67,6 +69,8 @@ export function describeToolInput(name: string, input: Record<string, unknown>):
       );
     case 'Write':
       return truncate(`${str(input.file_path) ?? ''}\n\n${str(input.content) ?? ''}`, MAX_DETAIL);
+    case 'ExitPlanMode':
+      return truncate(str(input.plan) ?? '', MAX_DETAIL);
     default:
       return truncate(JSON.stringify(input, null, 2), MAX_DETAIL);
   }
