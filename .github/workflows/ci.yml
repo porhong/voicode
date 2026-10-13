@@ -54,8 +54,6 @@ jobs:
       - name: Install X11 headers
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev
-      - uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
       - run: node scripts/build-native.mjs
       - uses: actions/upload-artifact@v7
         with:
