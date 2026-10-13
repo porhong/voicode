@@ -1,3 +1,4 @@
+import { renameSync, statSync } from 'node:fs';
 import pino, { type Logger } from 'pino';
 
 export type { Logger };
@@ -14,6 +15,7 @@ export function createLogger(options: {
   const level = options.level ?? process.env.VOICECODE_LOG_LEVEL ?? 'info';
   const streams: pino.StreamEntry[] = [];
   if (options.file) {
+    rotateIfLarge(options.file);
     streams.push({
       level: level as pino.Level,
       stream: pino.destination({ dest: options.file, mkdir: true, sync: false }),
@@ -37,4 +39,15 @@ export function createLogger(options: {
 
 export function silentLogger(): Logger {
   return pino({ level: 'silent' });
+}
+
+/** Log files above this size are rotated to `<file>.1` when the agent starts. */
+const MAX_LOG_BYTES = 10 * 1024 * 1024;
+
+function rotateIfLarge(file: string): void {
+  try {
+    if (statSync(file).size > MAX_LOG_BYTES) renameSync(file, `${file}.1`);
+  } catch {
+    // Missing file or rename race: nothing to rotate.
+  }
 }

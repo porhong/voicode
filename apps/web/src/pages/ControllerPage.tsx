@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 import type { ServerMessage } from '@voicecode/protocol';
 import { Composer } from '../components/Composer';
 import { PermissionCard } from '../components/PermissionCard';
@@ -7,6 +7,7 @@ import { SettingsSheet } from '../components/SettingsSheet';
 import { Trackpad } from '../components/Trackpad';
 import { Transcript } from '../components/Transcript';
 import { useAgentSocket } from '../hooks/useAgentSocket';
+import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
 import { useSettings } from '../hooks/useSettings';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { initialState, reducer } from '../lib/store';
@@ -51,7 +52,11 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   }, [state.error]);
 
   const active = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
-  const permissions = Object.values(state.permissions).sort((a, b) => a.createdAt - b.createdAt);
+  const permissions = useMemo(
+    () => Object.values(state.permissions).sort((a, b) => a.createdAt - b.createdAt),
+    [state.permissions],
+  );
+  useApprovalAlerts(permissions, settings.notifyApprovals);
   const activePermissions = permissions.filter((p) => p.sessionId === active?.id);
   const otherPermissions = permissions.length - activePermissions.length;
   const live = active && active.state !== 'closed' && active.state !== 'error';
@@ -87,6 +92,11 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
         </button>
       </header>
 
+      {state.protocolMismatch && (
+        <button className="banner banner-action" onClick={() => location.reload()}>
+          The agent was updated. Tap to reload this page.
+        </button>
+      )}
       {connection === 'reconnecting' && <div className="banner">Reconnecting to the agent…</div>}
       {state.error && (
         <div

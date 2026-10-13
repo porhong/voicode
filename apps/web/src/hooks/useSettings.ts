@@ -10,6 +10,8 @@ export interface Settings {
   scrollSpeed: number;
   /** Send the prompt automatically when dictation ends. */
   autoSendVoice: boolean;
+  /** Show a system notification for approvals while the app is in the background. */
+  notifyApprovals: boolean;
   /** BCP 47 language tag for speech recognition. */
   voiceLang: string;
 }
@@ -22,6 +24,7 @@ const defaults: Settings = {
   naturalScroll: true,
   scrollSpeed: 3,
   autoSendVoice: false,
+  notifyApprovals: false,
   voiceLang: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
 };
 

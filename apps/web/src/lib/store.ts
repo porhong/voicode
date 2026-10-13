@@ -1,11 +1,12 @@
-import type {
-  ClaudeEvent,
-  HistoricSession,
-  MouseStatus,
-  PermissionRequest,
-  ProjectInfo,
-  ServerMessage,
-  SessionSummary,
+import {
+  PROTOCOL_VERSION,
+  type ClaudeEvent,
+  type HistoricSession,
+  type MouseStatus,
+  type PermissionRequest,
+  type ProjectInfo,
+  type ServerMessage,
+  type SessionSummary,
 } from '@voicecode/protocol';
 
 export interface EventItem {
@@ -27,6 +28,8 @@ export interface AppState {
   mouse: { status: MouseStatus; youHoldLease: boolean };
   history: Record<string, HistoricSession[]>;
   error?: { message: string; at: number };
+  /** The agent speaks a different protocol version than this (cached) page. */
+  protocolMismatch: boolean;
 }
 
 export const initialState: AppState = {
@@ -37,6 +40,7 @@ export const initialState: AppState = {
   permissions: {},
   mouse: { status: { available: false, driver: 'none' }, youHoldLease: false },
   history: {},
+  protocolMismatch: false,
 };
 
 export type Action =
@@ -81,10 +85,13 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
         mouse: { status: msg.mouse, youHoldLease: false },
         // Permissions are re-sent right after welcome.
         permissions: {},
+        protocolMismatch: msg.protocolVersion !== PROTOCOL_VERSION,
       };
     }
     case 'pong':
       return state;
+    case 'projects':
+      return { ...state, projects: msg.projects };
     case 'error':
       return { ...state, error: { message: msg.message, at: Date.now() } };
 

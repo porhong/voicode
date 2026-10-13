@@ -1,3 +1,4 @@
+import { notificationsSupported, requestNotificationPermission } from '../hooks/useApprovalAlerts';
 import type { Settings } from '../hooks/useSettings';
 import { api } from '../lib/api';
 
@@ -100,6 +101,26 @@ export function SettingsSheet({
             onChange={(e) => update({ voiceLang: e.target.value })}
           />
         </label>
+
+        <h3>Approvals</h3>
+        <label className="field field-inline">
+          <span>Notify me when Claude needs approval while the app is in the background</span>
+          <input
+            type="checkbox"
+            checked={settings.notifyApprovals}
+            disabled={!notificationsSupported()}
+            onChange={async (e) => {
+              const enable = e.target.checked;
+              update({ notifyApprovals: enable && (await requestNotificationPermission()) });
+            }}
+          />
+        </label>
+        {!notificationsSupported() && (
+          <p className="small muted">
+            This browser can’t show notifications here (on iPhone, add VoiceCode to the Home Screen
+            first).
+          </p>
+        )}
 
         <h3>Device</h3>
         <p className="small muted">

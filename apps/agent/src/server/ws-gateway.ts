@@ -176,6 +176,13 @@ export class WsGateway {
     }
   }
 
+  broadcastProjects(projects: Array<{ id: string; name: string; path: string }>): void {
+    this.broadcast({
+      type: 'projects',
+      projects: projects.map(({ id, name, path }) => ({ id, name, path })),
+    });
+  }
+
   closeAll(): void {
     clearInterval(this.heartbeat);
     for (const c of this.connections.values())

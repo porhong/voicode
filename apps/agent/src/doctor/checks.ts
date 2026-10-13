@@ -12,6 +12,8 @@ import { detectDisplayServer, driverCandidates } from '../mouse/resolve-driver.j
 import { fileExists } from '../util/fs.js';
 import { silentLogger } from '../util/logger.js';
 import { rankedLanAddresses } from '../util/network.js';
+import { autostartStatus } from '../system/autostart.js';
+import { inspectWindowsFirewall } from '../system/firewall.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
 export interface CheckResult {
@@ -127,14 +129,8 @@ export async function runChecks(
       fix: free ? undefined : 'Choose another port with `voicecode-agent start --port <n>`',
     });
   }
-  if (process.platform === 'win32' && config) {
-    add({
-      name: 'Firewall',
-      status: 'warn',
-      detail: 'Windows Defender Firewall may block inbound connections',
-      fix: `Allow it once (admin PowerShell): New-NetFirewallRule -DisplayName "VoiceCode Agent" -Direction Inbound -Protocol TCP -LocalPort ${config.server.port} -Profile Private -Action Allow`,
-    });
-  }
+  if (process.platform === 'win32' && config) add(await checkFirewall(config.server.port));
+  if (config) add(await checkAutostart());
 
   return results;
 }
@@ -260,4 +256,44 @@ function portFree(host: string, port: number): Promise<boolean> {
     server.once('error', () => resolve(false));
     server.listen(port, host, () => server.close(() => resolve(true)));
   });
+}
+
+async function checkFirewall(port: number): Promise<CheckResult> {
+  try {
+    const state = await inspectWindowsFirewall(port);
+    if (!state.ruleOk) {
+      return {
+        name: 'Firewall',
+        status: 'warn',
+        detail: `no inbound rule for TCP ${port}; phones may not be able to connect`,
+        fix: 'Run `voicecode-agent firewall` (asks for admin once)',
+      };
+    }
+    if (state.networkCategories.includes('Public')) {
+      return {
+        name: 'Firewall',
+        status: 'warn',
+        detail: `TCP ${port} allowed, but the active network is marked Public (rule does not apply)`,
+        fix: 'Set your home/office network to Private in Settings → Network & internet',
+      };
+    }
+    return { name: 'Firewall', status: 'ok', detail: `inbound TCP ${port} allowed` };
+  } catch (err) {
+    return {
+      name: 'Firewall',
+      status: 'warn',
+      detail: `could not inspect Windows Firewall: ${(err as Error).message.split('\n')[0]}`,
+    };
+  }
+}
+
+async function checkAutostart(): Promise<CheckResult> {
+  const status = await autostartStatus();
+  return status.enabled
+    ? { name: 'Start at login', status: 'ok', detail: status.file }
+    : {
+        name: 'Start at login',
+        status: 'ok',
+        detail: 'off (optional: `voicecode-agent autostart enable`)',
+      };
 }

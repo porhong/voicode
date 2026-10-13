@@ -72,8 +72,16 @@ export function describeToolInput(name: string, input: Record<string, unknown>):
   }
 }
 
+/** Prefix of the tool_result Claude Code returns when the user rejects a tool call. */
+const REJECTION_PREFIX = "The user doesn't want to proceed with this tool use";
+
 /** Flattens a tool_result content payload to short text. */
 export function summarizeToolResult(content: unknown): string {
+  const text = flattenToolResult(content);
+  return text.startsWith(REJECTION_PREFIX) ? 'Rejected' : text;
+}
+
+function flattenToolResult(content: unknown): string {
   if (typeof content === 'string') return truncate(content, MAX_SUMMARY * 2);
   if (Array.isArray(content)) {
     const text = content

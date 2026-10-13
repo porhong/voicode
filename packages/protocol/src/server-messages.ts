@@ -85,6 +85,7 @@ export type ServerMessage =
       mouse: MouseStatus;
     }
   | { type: 'pong'; t: number; serverTime: number }
+  | { type: 'projects'; projects: ProjectInfo[] }
   | { type: 'error'; code: ErrorCode; message: string; ref?: string }
 
   // --- Mouse ---------------------------------------------------------------

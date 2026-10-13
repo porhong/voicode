@@ -2,7 +2,7 @@ import type http from 'node:http';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { PairingCode } from '@voicecode/security';
-import type { AgentConfig, ProjectConfig } from './config/config.js';
+import { loadConfig, type AgentConfig, type ProjectConfig } from './config/config.js';
 import type { AgentPaths } from './config/paths.js';
 import { startControlServer } from './ipc/control.js';
 import { InputRouter } from './mouse/input-router.js';
@@ -15,7 +15,7 @@ import { SessionManager } from './sessions/session-manager.js';
 import { ensureTls, type TlsMaterial } from './tls/certificates.js';
 import type { Logger } from './util/logger.js';
 import { formatUrl, rankedLanAddresses } from './util/network.js';
-import { packageRoot } from './util/version.js';
+import { packageRoot, VERSION } from './util/version.js';
 
 export interface AgentRuntimeInfo {
   urls: string[];
@@ -44,6 +44,7 @@ export class Agent extends EventEmitter<{
   private control: http.Server | undefined;
   private tls!: TlsMaterial;
   private urls: string[] = [];
+  private startedAt = 0;
   private stopping: Promise<void> | undefined;
 
   constructor(
@@ -54,7 +55,17 @@ export class Agent extends EventEmitter<{
     super();
   }
 
+  /** Starts every component; if any step fails, whatever already started is torn down. */
   async start(): Promise<AgentRuntimeInfo> {
+    try {
+      return await this.startComponents();
+    } catch (err) {
+      await this.stop().catch(() => undefined);
+      throw err;
+    }
+  }
+
+  private async startComponents(): Promise<AgentRuntimeInfo> {
     const { config, paths, logger } = this;
     const addresses = await rankedLanAddresses();
     this.tls = await ensureTls(
@@ -104,6 +115,8 @@ export class Agent extends EventEmitter<{
 
     const hosts = addresses.map((a) => a.address).filter((ip) => this.tls.names.includes(ip));
     this.urls = (hosts.length ? hosts : ['localhost']).map((h) => formatUrl(h, config.server.port));
+    this.startedAt = Date.now();
+    logger.info({ urls: this.urls, version: VERSION }, 'agent started');
     return {
       urls: this.urls,
       caFingerprint: this.tls.caFingerprint,
@@ -136,7 +149,10 @@ export class Agent extends EventEmitter<{
   private controlRoutes() {
     return {
       'GET /status': () => ({
+        version: VERSION,
         pid: process.pid,
+        startedAt: this.startedAt,
+        urls: this.urls,
         connections: this.gateway.devicesOnline(),
         mouse: this.router.status(),
         sessions: this.sessions.list(),
@@ -161,6 +177,15 @@ export class Agent extends EventEmitter<{
         return { revoked: 1, device: match[0] };
       },
       'GET /sessions': () => ({ sessions: this.sessions.list() }),
+      // Re-reads the project allow-list after `voicecode-agent projects add/remove`.
+      'POST /projects/reload': async () => {
+        const fresh = await loadConfig(this.paths.config);
+        if (!fresh) throw new Error('config file is missing');
+        this.config.projects = fresh.projects;
+        this.gateway.broadcastProjects(fresh.projects);
+        this.logger.info({ projects: fresh.projects.map((p) => p.path) }, 'projects reloaded');
+        return { projects: fresh.projects };
+      },
       'POST /stop': () => {
         setTimeout(() => void this.stop(), 50);
         return { stopping: true };

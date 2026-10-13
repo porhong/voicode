@@ -63,28 +63,46 @@ leaked, it could not be used to impersonate public websites to your phone.
 
 ### Windows firewall
 
-Allow inbound connections on the agent's port once (admin PowerShell):
+Allow inbound connections once — this opens a Windows admin prompt and adds a rule for
+the agent's port on Private and Domain networks:
 
-```powershell
-New-NetFirewallRule -DisplayName "VoiceCode Agent" -Direction Inbound -Protocol TCP -LocalPort 8443 -Profile Private -Action Allow
+```bash
+voicecode-agent firewall
 ```
+
+If your Wi-Fi is marked as a **Public** network, Windows still blocks it; `doctor` warns
+about this. Set your home or office network to Private in Settings → Network & internet.
+
+### Start at login (optional)
+
+```bash
+voicecode-agent autostart enable   # Windows Startup folder / Linux XDG autostart, no admin needed
+```
+
+The agent then starts hidden in your desktop session at every login and logs to
+`agent.log`. Use `voicecode-agent status` to see its URL and `voicecode-agent pair` for a
+pairing code.
 
 ## Commands
 
-| Command                                      | Purpose                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------- |
-| `voicecode-agent init [--project <dir>]`     | Create config, CA and server certificate; run diagnostics           |
-| `voicecode-agent start [--project <dir>]`    | Start the local server (`--port`, `--host`, `--no-qr`, `--verbose`) |
-| `voicecode-agent pair`                       | Issue a new one-time pairing code (with QR) on the running agent    |
-| `voicecode-agent devices`                    | List paired devices (● = connected)                                 |
-| `voicecode-agent devices revoke <id\|all>`   | Revoke a device; it is disconnected immediately                     |
-| `voicecode-agent sessions`                   | Live Claude sessions and recent saved sessions per project          |
-| `voicecode-agent projects add\|remove\|list` | Manage the directories Claude may work in                           |
-| `voicecode-agent doctor`                     | Diagnose Node, Claude auth, desktop session, mouse, TLS, network    |
-| `voicecode-agent stop`                       | Stop the running agent                                              |
+| Command                                   | Purpose                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `voicecode-agent init [--project <dir>]`  | Create config, CA and server certificate; run diagnostics                                                     |
+| `voicecode-agent start [--project <dir>]` | Start the local server (`--port`, `--host`, `--no-qr`, `--verbose`)                                           |
+| `voicecode-agent status`                  | Running or not, URL, uptime, connected clients, mouse holder, sessions                                        |
+| `voicecode-agent pair`                    | Issue a new one-time pairing code (with QR) on the running agent                                              |
+| `voicecode-agent devices`                 | List paired devices (● = connected)                                                                           |
+| `voicecode-agent devices revoke <id>`     | Revoke a device by id prefix (or `all`); it is disconnected immediately                                       |
+| `voicecode-agent sessions`                | Live Claude sessions and recent saved sessions per project                                                    |
+| `voicecode-agent projects add <dir>`      | Allow a directory for Claude; `projects remove` / `projects list` too. Applies to a running agent immediately |
+| `voicecode-agent autostart enable`        | Start the agent at login; `autostart disable` / `autostart status` too                                        |
+| `voicecode-agent firewall`                | Allow the agent's port through Windows Defender Firewall                                                      |
+| `voicecode-agent doctor`                  | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                    |
+| `voicecode-agent stop`                    | Stop the running agent                                                                                        |
 
 State lives in `%APPDATA%\voicecode-agent` (Windows) or `~/.config/voicecode-agent`
-(Linux); override with `VOICECODE_HOME`. Logs are JSON lines in `agent.log` there.
+(Linux); override with `VOICECODE_HOME`. Logs are JSON lines in `agent.log` there
+(rotated to `agent.log.1` when it passes 10 MB).
 
 ## Using it
 
@@ -93,7 +111,10 @@ session), tap the microphone and speak. Dictation lands in the text box so you c
 misheard words before tapping **Send** (or enable auto-send in settings). Claude's replies
 and tool activity stream in. When Claude wants to run a tool that needs permission, an
 approval card shows exactly what it will do — **Accept**, **Reject**, **Reject with
-feedback**, or **Always allow this session**. **Stop** interrupts the current turn.
+feedback**, or **Always allow this session**. **Stop** interrupts the current turn. For file edits, **Allow all edits this session** switches the
+session to auto-accept edits (commands still ask). Turn on approval notifications in
+settings to get a system notification when Claude is waiting while you're in another
+app.
 
 **Trackpad tab.** One finger moves the pointer (with acceleration), tap = left click,
 two-finger tap = right click, three-finger tap = middle click, two fingers scroll, tap then
