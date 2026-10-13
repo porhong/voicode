@@ -37,6 +37,12 @@ export function PermissionCard({
       </header>
       {request.description && <p className="small muted">{request.description}</p>}
       <pre className="permission-detail">{request.detail}</pre>
+      {!request.complete && (
+        <p className="small error-text">
+          This is too long to review here in full, so it can only be rejected. Ask Claude to split
+          it up, or review it on the computer.
+        </p>
+      )}
       {showFeedback && (
         <textarea
           className="input"
@@ -50,7 +56,11 @@ export function PermissionCard({
         <button className="btn btn-danger" disabled={disabled} onClick={() => respond('deny')}>
           Reject
         </button>
-        <button className="btn btn-primary" disabled={disabled} onClick={() => respond('allow')}>
+        <button
+          className="btn btn-primary"
+          disabled={disabled || !request.complete}
+          onClick={() => respond('allow')}
+        >
           Accept
         </button>
       </div>

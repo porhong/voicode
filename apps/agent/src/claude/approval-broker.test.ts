@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '@voicecode/protocol';
-import { ApprovalBroker, rememberableUpdates, type ResolvedEvent } from './approval-broker.js';
+import {
+  ApprovalBroker,
+  ApprovalError,
+  rememberableUpdates,
+  type ResolvedEvent,
+} from './approval-broker.js';
 
 function ask(broker: ApprovalBroker, extra: Record<string, unknown> = {}) {
   const controller = new AbortController();
@@ -174,5 +179,35 @@ describe('ApprovalBroker', () => {
     expect(broker.respond(requestId, 'allow')).toBe(true);
     expect(broker.respond(requestId, 'deny')).toBe(false);
     expect(broker.respond('nope', 'allow')).toBe(false);
+  });
+});
+
+describe('ApprovalBroker with incomplete details', () => {
+  it('refuses to allow, and never offers remembering, input too long to show', async () => {
+    const broker = new ApprovalBroker({ timeoutMs: 60_000 });
+    const pending = nextRequest(broker);
+    const result = broker.forSession('s1')(
+      'Bash',
+      { command: 'x'.repeat(70_000) },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 't1',
+        requestId: 'r1',
+        suggestions: [
+          {
+            type: 'addRules',
+            rules: [{ toolName: 'Bash' }],
+            behavior: 'allow',
+            destination: 'session',
+          },
+        ],
+      },
+    );
+    const request = await pending;
+    expect(request).toMatchObject({ complete: false, canRemember: false });
+    expect(() => broker.respond(request.requestId, 'allow')).toThrow(ApprovalError);
+    expect(broker.pendingFor()).toHaveLength(1);
+    broker.respond(request.requestId, 'deny');
+    await expect(result).resolves.toMatchObject({ behavior: 'deny' });
   });
 });

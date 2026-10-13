@@ -8,6 +8,11 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeEvent, SessionState, SessionSummary } from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
+import {
+  describeAutoApprovals,
+  hasAutoApprovals,
+  inspectProjectSettings,
+} from '../config/project-settings.js';
 import type { Logger } from '../util/logger.js';
 import type { ApprovalBroker } from './approval-broker.js';
 import { AsyncQueue } from './async-queue.js';
@@ -92,6 +97,15 @@ export class ClaudeSession extends EventEmitter<{
     this.q = (this.opts.queryFn ?? query)({ prompt: this.input, options });
     void this.consume(this.q);
     this.setState('idle');
+    void this.announceProjectAutoApprovals();
+  }
+
+  /** Tells the phone what this project lets run without asking (see project-settings.ts). */
+  private async announceProjectAutoApprovals(): Promise<void> {
+    const approvals = await inspectProjectSettings(this.project.path);
+    if (hasAutoApprovals(approvals)) {
+      this.record({ kind: 'status', message: describeAutoApprovals(approvals) });
+    }
   }
 
   summary(): SessionSummary {

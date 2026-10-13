@@ -21,6 +21,7 @@ const request: PermissionRequest = {
   toolName: 'Bash',
   title: 'Claude wants to run a command',
   detail: 'npm test',
+  complete: true,
   canRemember: false,
   createdAt: 1,
 };

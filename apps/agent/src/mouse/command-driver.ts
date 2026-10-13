@@ -89,7 +89,17 @@ export class CommandDriver implements MouseDriver {
     return this.dialect.parsePosition(stdout);
   }
 
+  /**
+   * Drops pending movement but lets queued button events (notably the releases the
+   * router sends when a lease ends) finish, so no button is left held down.
+   */
   async stop(): Promise<void> {
+    this.queue = this.queue.filter((a) => a.kind === 'button');
+    this.pump();
+    const deadline = Date.now() + 2_000;
+    while ((this.running || this.queue.length) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     this.queue = [];
   }
 

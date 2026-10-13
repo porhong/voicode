@@ -64,8 +64,13 @@ export interface PermissionRequest {
   /** Human readable sentence, e.g. "Claude wants to run: npm test". */
   title: string;
   description?: string;
-  /** Pretty-printed, length-limited view of the tool input. */
+  /** Readable view of the tool input; hidden/control characters are shown escaped. */
   detail: string;
+  /**
+   * False when the input was too long to show in full. Such requests can only be
+   * rejected — the agent refuses an "allow" for them.
+   */
+  complete: boolean;
   /** Whether "always allow for this session" may be offered. */
   canRemember: boolean;
   /** Button label for the remember option when it does more than allow this one tool. */

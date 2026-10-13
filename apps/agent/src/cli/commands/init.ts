@@ -8,7 +8,7 @@ import { ensureTls } from '../../tls/certificates.js';
 import { silentLogger } from '../../util/logger.js';
 import { lanAddresses } from '../../util/network.js';
 import { VERSION } from '../../util/version.js';
-import { loadOrInit, parsePort } from '../shared.js';
+import { loadOrInit, parsePort, warnAboutAutoApprovals } from '../shared.js';
 import { heading, ok, out, printChecks, row, warn } from '../ui.js';
 
 export function registerInit(program: Command): void {
@@ -25,7 +25,8 @@ export function registerInit(program: Command): void {
         const { config, created } = await loadOrInit(paths);
         if (opts.port) config.server.port = opts.port;
         if (opts.host) config.server.host = opts.host;
-        if (opts.project) await addProject(config, opts.project);
+        if (opts.project)
+          await warnAboutAutoApprovals((await addProject(config, opts.project)).path);
         await saveConfig(paths.config, config);
         await ensureControlToken(paths);
 

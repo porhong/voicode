@@ -63,6 +63,9 @@ export async function createCertificateAuthority(
         true,
       ),
       new x509.Extension('2.5.29.30', true, new Uint8Array(encodeNameConstraints())),
+      // Limits the CA to TLS server certificates even if it is imported as a general
+      // trusted root on a desktop (no code signing, no S/MIME).
+      new x509.ExtendedKeyUsageExtension([x509.ExtendedKeyUsage.serverAuth], false),
       await x509.SubjectKeyIdentifierExtension.create(keys.publicKey as unknown as CryptoKey),
     ],
   });

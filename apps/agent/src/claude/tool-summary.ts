@@ -1,4 +1,5 @@
-const MAX_DETAIL = 4_000;
+/** Approval details up to this many characters are shown in full (scrollable). */
+const MAX_DETAIL = 60_000;
 const MAX_SUMMARY = 200;
 
 function truncate(text: string, max: number): string {
@@ -52,27 +53,53 @@ export function describeToolTitle(
   }
 }
 
-/** Human-readable, length-limited rendering of a tool input for an approval prompt. */
-export function describeToolInput(name: string, input: Record<string, unknown>): string {
+/**
+ * Characters that render invisibly or reorder text (control and format characters such
+ * as bidi overrides) are shown as visible escapes, so an approval cannot hide part of a
+ * command. Newlines and tabs are kept.
+ */
+export function revealHidden(text: string): string {
+  return text.replace(
+    /[^\P{Cc}\n\t]|\p{Cf}/gu,
+    (c) => `⟨U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}⟩`,
+  );
+}
+
+export interface ToolInputView {
+  detail: string;
+  /** False when the input was too long to show in full; it must not be approved then. */
+  complete: boolean;
+}
+
+function view(text: string): ToolInputView {
+  const shown = revealHidden(text);
+  if (shown.length <= MAX_DETAIL) return { detail: shown, complete: true };
+  const hidden = shown.length - MAX_DETAIL;
+  return {
+    detail: `${shown.slice(0, MAX_DETAIL)}\n… ${hidden.toLocaleString('en-US')} more characters not shown`,
+    complete: false,
+  };
+}
+
+/** What an approval prompt shows for a tool input: never silently shortened. */
+export function describeToolInput(name: string, input: Record<string, unknown>): ToolInputView {
   switch (name) {
     case 'Bash':
-      return truncate(
+      return view(
         [str(input.command), str(input.description) && `# ${String(input.description)}`]
           .filter(Boolean)
           .join('\n'),
-        MAX_DETAIL,
       );
     case 'Edit':
-      return truncate(
+      return view(
         `${str(input.file_path) ?? ''}\n--- old\n${str(input.old_string) ?? ''}\n+++ new\n${str(input.new_string) ?? ''}`,
-        MAX_DETAIL,
       );
     case 'Write':
-      return truncate(`${str(input.file_path) ?? ''}\n\n${str(input.content) ?? ''}`, MAX_DETAIL);
+      return view(`${str(input.file_path) ?? ''}\n\n${str(input.content) ?? ''}`);
     case 'ExitPlanMode':
-      return truncate(str(input.plan) ?? '', MAX_DETAIL);
+      return view(str(input.plan) ?? '');
     default:
-      return truncate(JSON.stringify(input, null, 2), MAX_DETAIL);
+      return view(JSON.stringify(input, null, 2));
   }
 }
 

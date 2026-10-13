@@ -45,13 +45,14 @@ static void send_mouse(DWORD flags, LONG dx, LONG dy, DWORD data) {
     input.mi.dy = dy;
     input.mi.mouseData = data;
     input.mi.dwFlags = flags;
-    if (SendInput(1, &input, sizeof(INPUT)) != 1 && !reported_failure) {
-        /* Typically the secure desktop (UAC prompt, lock screen) is active. */
+    if (SendInput(1, &input, sizeof(INPUT)) == 1) {
+        reported_failure = 0;
+    } else if (!reported_failure) {
+        /* Typically the secure desktop (UAC prompt, lock screen) is active. Report once
+         * per run of failures, not for every injected event. */
         reported_failure = 1;
         reply("err SendInput failed (error %lu); is the desktop locked or a UAC prompt open?",
               GetLastError());
-    } else {
-        reported_failure = 0;
     }
 }
 

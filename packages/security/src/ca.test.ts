@@ -84,3 +84,10 @@ describe('local certificate authority', () => {
     expect(serverSubjectAltNames({ hostname: 'bad_name!', ips: [] }).dns).toEqual(['localhost']);
   });
 });
+
+describe('CA restrictions', () => {
+  it('limits the CA to TLS server authentication', async () => {
+    const ca = await createCertificateAuthority('devbox');
+    expect(new X509Certificate(ca.certPem).keyUsage).toEqual(['1.3.6.1.5.5.7.3.1']);
+  });
+});

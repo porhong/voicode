@@ -7,7 +7,7 @@ import { resolvePaths } from '../../config/paths.js';
 import { AgentNotRunningError, controlRequest } from '../../ipc/control.js';
 import { listSessions } from '@anthropic-ai/claude-agent-sdk';
 import { formatDuration } from '../shared.js';
-import { fail, ok, out, row, warn } from '../ui.js';
+import { clean, fail, ok, out, row, warn } from '../ui.js';
 
 interface StatusResponse {
   version: string;
@@ -40,13 +40,13 @@ export function registerStatus(program: Command): void {
       row(
         'Clients',
         status.connections.length
-          ? status.connections.map((c) => c.deviceName).join(', ')
+          ? status.connections.map((c) => clean(c.deviceName)).join(', ')
           : pc.dim('none'),
       );
       row(
         'Mouse',
         status.mouse.available
-          ? `${status.mouse.driver}${status.mouse.holder ? `, controlled by ${status.mouse.holder.deviceName}` : ''}`
+          ? `${status.mouse.driver}${status.mouse.holder ? `, controlled by ${clean(status.mouse.holder.deviceName)}` : ''}`
           : warn(`unavailable (${status.mouse.reason ?? 'unknown'})`),
       );
       row('Projects', status.projects.map((p) => p.name).join(', ') || warn('none'));

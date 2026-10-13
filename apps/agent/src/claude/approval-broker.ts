@@ -44,6 +44,8 @@ export function rememberableUpdates(suggestions: PermissionUpdate[]): Permission
   });
 }
 
+export class ApprovalError extends Error {}
+
 /**
  * Bridges the Agent SDK's `canUseTool` callback to browser clients.
  *
@@ -73,14 +75,17 @@ export class ApprovalBroker extends EventEmitter<{
           : rememberableUpdates(options.suggestions ?? []);
         const acceptsEdits = rememberable.some((u) => u.type === 'setMode');
 
+        const { detail, complete } = describeToolInput(toolName, input);
         const request: PermissionRequest = {
           sessionId,
           requestId,
           toolName,
           title: options.title ?? describeToolTitle(toolName, input, options.displayName),
           description: options.description ?? options.decisionReason,
-          detail: describeToolInput(toolName, input),
-          canRemember: rememberable.length > 0,
+          detail,
+          complete,
+          // Never offer a standing approval for something the user could not fully see.
+          canRemember: complete && rememberable.length > 0,
           rememberLabel: acceptsEdits ? 'Allow all edits this session' : undefined,
           createdAt: now,
           expiresAt: now + this.options.timeoutMs,
@@ -107,6 +112,10 @@ export class ApprovalBroker extends EventEmitter<{
     decision: 'allow' | 'deny',
     opts: { rememberForSession?: boolean; message?: string; deviceName?: string } = {},
   ): boolean {
+    // Enforced here, not just in the UI: input too long to display cannot be allowed.
+    if (decision === 'allow' && this.pending.get(requestId)?.request.complete === false) {
+      throw new ApprovalError('This request is too long to review on the phone; reject it.');
+    }
     return this.settle(
       requestId,
       decision,

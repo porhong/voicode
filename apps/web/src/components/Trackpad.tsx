@@ -37,6 +37,12 @@ export function Trackpad({ send, mouse, settings, connected }: Props) {
     [gestures, batcher],
   );
 
+  // The pad unmounts while disconnected or when the mouse is unavailable, so fingers
+  // that were down never deliver pointerup; forget them so new touches start clean.
+  useEffect(() => {
+    if (!connected || !mouse.status.available) gestures.reset();
+  }, [connected, mouse.status.available, gestures]);
+
   const holder = mouse.status.holder;
   const heldByOther = !mouse.youHoldLease && holder !== undefined;
 
@@ -108,6 +114,7 @@ export function Trackpad({ send, mouse, settings, connected }: Props) {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onLostPointerCapture={(e) => gestures.up(e.pointerId, e.timeStamp, true)}
         onContextMenu={(e) => e.preventDefault()}
         role="application"
         aria-label="Trackpad"

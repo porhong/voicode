@@ -14,6 +14,7 @@ export type RouterResult = { ok: true } | { ok: false; code: ErrorCode; message:
 
 const OK: RouterResult = { ok: true };
 const MAX_RESTARTS = 5;
+const STABLE_AFTER_MS = 60_000;
 
 /**
  * Routes mouse input from browser clients to the active driver.
@@ -86,12 +87,26 @@ export class InputRouter extends EventEmitter<{ status: [] }> {
       this.pressed.clear();
       this.lease = undefined;
       this.emit('status');
-      if (candidate && !this.stopped && this.restarts < MAX_RESTARTS) {
-        const delay = 500 * 2 ** this.restarts++;
-        setTimeout(() => void this.start([candidate], error.message), delay).unref();
-      }
+      if (candidate) this.scheduleRestart(candidate, error.message);
     });
+    if (candidate) {
+      // A driver that has run for a while has earned a fresh restart budget.
+      setTimeout(() => {
+        if (this.driver === driver) this.restarts = 0;
+      }, STABLE_AFTER_MS).unref();
+    }
     this.emit('status');
+  }
+
+  /** Restarts with exponential backoff; a restart that fails to start retries too. */
+  private scheduleRestart(candidate: DriverCandidate, reason: string): void {
+    if (this.stopped || this.restarts >= MAX_RESTARTS) return;
+    const delay = 500 * 2 ** this.restarts++;
+    setTimeout(() => {
+      void this.start([candidate], reason).then(() => {
+        if (!this.driver) this.scheduleRestart(candidate, reason);
+      });
+    }, delay).unref();
   }
 
   get info(): DriverInfo | undefined {

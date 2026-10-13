@@ -83,7 +83,10 @@ export async function enableAutostart(): Promise<AutostartStatus> {
   const content =
     process.platform === 'win32' ? windowsLauncher(target, home) : desktopEntry(target, home);
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, content, { mode: 0o644 });
+  // Windows Script Host reads files as ANSI unless they start with a UTF-16LE BOM,
+  // which would garble non-ASCII paths such as C:\Users\José.
+  const data = process.platform === 'win32' ? Buffer.from(`\ufeff${content}`, 'utf16le') : content;
+  await writeFile(file, data, { mode: 0o644 });
   return { enabled: true, file, command: `${target.node} ${target.cli} start --no-qr` };
 }
 
@@ -96,7 +99,11 @@ export async function disableAutostart(): Promise<AutostartStatus> {
 export async function autostartStatus(): Promise<AutostartStatus> {
   const file = autostartFile();
   if (!existsSync(file)) return { enabled: false, file };
-  const content = await readFile(file, 'utf8');
+  const bytes = await readFile(file);
+  const content =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? bytes.subarray(2).toString('utf16le')
+      : bytes.toString('utf8');
   const command =
     process.platform === 'win32'
       ? /Run "(.*)", 0/.exec(content)?.[1]?.replace(/""/g, '"')

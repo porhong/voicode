@@ -3,6 +3,11 @@ import pc from 'picocolors';
 import qrcode from 'qrcode-terminal';
 import type { CheckResult } from '../doctor/checks.js';
 
+/** Strips control/format characters from untrusted text (e.g. device names) before printing. */
+export function clean(text: string): string {
+  return text.replace(/[\p{Cc}\p{Cf}]/gu, '');
+}
+
 export function out(line = ''): void {
   process.stdout.write(`${line}\n`);
 }

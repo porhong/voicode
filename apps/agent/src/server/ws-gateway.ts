@@ -28,6 +28,8 @@ interface Connection {
   alive: boolean;
   /** Last time an error of a given code was sent, to avoid flooding the client. */
   lastErrorAt: Map<ErrorCode, number>;
+  /** Set when the device is revoked: the socket may linger while closing, input must not. */
+  revoked: boolean;
 }
 
 /**
@@ -80,7 +82,12 @@ export class WsGateway {
 
     registry.on('revoked', (deviceId) => {
       for (const c of this.connections.values()) {
-        if (c.device.id === deviceId) c.socket.close(CLOSE_REVOKED, 'device revoked');
+        if (c.device.id !== deviceId) continue;
+        c.revoked = true;
+        this.deps.router.disconnect(c.identity);
+        c.socket.close(CLOSE_REVOKED, 'device revoked');
+        // A client that ignores the close frame is cut off instead of lingering.
+        setTimeout(() => c.socket.terminate(), 1_000).unref();
       }
     });
 
@@ -124,6 +131,7 @@ export class WsGateway {
       bucket: new TokenBucket(400, 200),
       alive: true,
       lastErrorAt: new Map(),
+      revoked: false,
     };
     this.connections.set(identity.connectionId, conn);
     this.deps.onConnectionsChanged?.(this.count);
@@ -131,6 +139,7 @@ export class WsGateway {
 
     socket.on('pong', () => (conn.alive = true));
     socket.on('message', (data, isBinary) => {
+      if (conn.revoked) return;
       conn.alive = true;
       if (!conn.bucket.take()) return this.error(conn, 'rate_limited', 'Too many messages');
       if (isBinary) return this.error(conn, 'bad_request', 'Binary frames are not supported');

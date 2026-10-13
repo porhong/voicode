@@ -6,7 +6,13 @@ import { LIMITS } from './constants.js';
 export const PairRequestSchema = z.object({
   /** Six digits; separators such as "-" or spaces are ignored. */
   code: z.string().min(6).max(16),
-  deviceName: z.string().trim().min(1).max(LIMITS.maxDeviceNameLength),
+  deviceName: z
+    .string()
+    .trim()
+    .min(1)
+    .max(LIMITS.maxDeviceNameLength)
+    // Printed in the PC's terminal: no escape sequences, line breaks or bidi tricks.
+    .regex(/^[^\p{Cc}\p{Cf}]+$/u, 'Device name contains control characters'),
 });
 export type PairRequest = z.infer<typeof PairRequestSchema>;
 

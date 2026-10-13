@@ -3,7 +3,7 @@ import pc from 'picocolors';
 import { resolvePaths, type AgentPaths } from '../../config/paths.js';
 import { AgentNotRunningError, controlRequest } from '../../ipc/control.js';
 import { DeviceRegistry, type PublicDevice } from '../../pairing/device-registry.js';
-import { minutesUntil, ok, out, printQr } from '../ui.js';
+import { clean, minutesUntil, ok, out, printQr } from '../ui.js';
 
 export function registerPair(program: Command): void {
   program
@@ -52,7 +52,7 @@ export function registerDevices(program: Command): void {
       for (const d of list) {
         const seen = d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : 'never';
         out(
-          `${online.has(d.id) ? ok('●') : pc.dim('○')} ${pc.bold(d.name)}  ${pc.dim(d.id.slice(0, 8))}  last seen ${seen}`,
+          `${online.has(d.id) ? ok('●') : pc.dim('○')} ${pc.bold(clean(d.name))}  ${pc.dim(d.id.slice(0, 8))}  last seen ${seen}`,
         );
       }
     });

@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { inspectCertificate, serverSubjectAltNames } from '@voicecode/security';
 import type { AgentConfig } from '../config/config.js';
+import {
+  describeAutoApprovals,
+  hasAutoApprovals,
+  inspectProjectSettings,
+} from '../config/project-settings.js';
 import type { AgentPaths } from '../config/paths.js';
 import { isAgentRunning } from '../ipc/control.js';
 import { InputRouter } from '../mouse/input-router.js';
@@ -80,6 +85,15 @@ export async function runChecks(
           ? undefined
           : 'Directory no longer exists; remove it with `voicecode-agent projects remove`',
       });
+      const approvals = ok ? await inspectProjectSettings(project.path) : undefined;
+      if (approvals && hasAutoApprovals(approvals)) {
+        add({
+          name: `  auto-approvals`,
+          status: 'warn',
+          detail: describeAutoApprovals(approvals),
+          fix: `Only allow projects you trust; review ${approvals.files.join(' and ')}`,
+        });
+      }
     }
     if (config.claude.permissionMode !== 'default') {
       add({

@@ -3,7 +3,7 @@ import pc from 'picocolors';
 import { addProject, loadConfig, saveConfig } from '../../config/config.js';
 import { resolvePaths, type AgentPaths } from '../../config/paths.js';
 import { AgentNotRunningError, controlRequest } from '../../ipc/control.js';
-import { loadOrInit } from '../shared.js';
+import { loadOrInit, warnAboutAutoApprovals } from '../shared.js';
 import { ok, out } from '../ui.js';
 
 /** Tells a running agent to re-read the allow-list; a no-op when none is running. */
@@ -42,6 +42,7 @@ export function registerProjects(program: Command): void {
       const project = await addProject(config, dir, opts.name);
       await saveConfig(paths.config, config);
       out(ok(`Allowed ${project.path}`));
+      await warnAboutAutoApprovals(project.path);
       await applyToRunningAgent(paths);
     });
 

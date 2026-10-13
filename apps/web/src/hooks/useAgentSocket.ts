@@ -54,6 +54,9 @@ export function useAgentSocket(onMessage: (message: ServerMessage) => void) {
             () => true,
           );
           if (!paired) return setState('unpaired');
+          // While we awaited, an `online`/`visibilitychange` event may already have
+          // reconnected; scheduling another attempt would leak a second socket.
+          if (disposed || socketRef.current) return;
         }
         setState('reconnecting');
         const delay = Math.min(30_000, 500 * 2 ** attempt++) * (0.5 + Math.random() / 2);

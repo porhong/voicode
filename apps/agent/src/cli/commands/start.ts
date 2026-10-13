@@ -7,8 +7,9 @@ import { runChecks } from '../../doctor/checks.js';
 import { isAgentRunning } from '../../ipc/control.js';
 import { createLogger } from '../../util/logger.js';
 import { VERSION } from '../../util/version.js';
-import { loadOrInit, parsePort } from '../shared.js';
+import { loadOrInit, parsePort, warnAboutAutoApprovals } from '../shared.js';
 import {
+  clean,
   fail,
   heading,
   minutesUntil,
@@ -45,7 +46,8 @@ async function start(opts: StartOptions): Promise<void> {
   const paths = resolvePaths();
   const { config } = await loadOrInit(paths);
   if (opts.project) {
-    await addProject(config, opts.project);
+    const project = await addProject(config, opts.project);
+    await warnAboutAutoApprovals(project.path);
     await saveConfig(paths.config, config);
   }
   if (opts.port) config.server.port = opts.port;
@@ -114,7 +116,7 @@ async function start(opts: StartOptions): Promise<void> {
   out();
   out(`  Ready for browser connections ${pc.dim('(Ctrl+C to stop)')}`);
 
-  agent.on('paired', (d) => out(`${timestamp()} ${ok('Paired')} ${d.name}`));
+  agent.on('paired', (d) => out(`${timestamp()} ${ok('Paired')} ${clean(d.name)}`));
   agent.on('pairingFailed', (reason, addr) =>
     out(`${timestamp()} ${warn('Pairing failed')} (${reason}) from ${addr}`),
   );

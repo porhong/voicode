@@ -4,7 +4,7 @@ import { listSessions, type query } from '@anthropic-ai/claude-agent-sdk';
 import type { HistoricSession, PermissionRequest, SessionSummary } from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
-import { ApprovalBroker, type ResolvedEvent } from '../claude/approval-broker.js';
+import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
 import { ClaudeSession, type SessionEventRecord } from '../claude/claude-session.js';
 
 export class SessionError extends Error {
@@ -122,7 +122,12 @@ export class SessionManager extends EventEmitter<{
     if (!request || request.sessionId !== sessionId) {
       throw new SessionError('not_found', 'That approval request is no longer pending');
     }
-    this.broker.respond(requestId, decision, opts);
+    try {
+      this.broker.respond(requestId, decision, opts);
+    } catch (err) {
+      if (err instanceof ApprovalError) throw new SessionError('bad_request', err.message);
+      throw err;
+    }
   }
 
   /** Earlier Claude Code sessions for a project, newest first, for resuming. */

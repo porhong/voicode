@@ -114,8 +114,19 @@ export class DeviceRegistry extends EventEmitter<{ revoked: [deviceId: string] }
     this.flushTimer.unref();
   }
 
-  private async persist(): Promise<void> {
-    const data = { version: 1 as const, devices: [...this.devices.values()] };
-    await writeFileAtomic(this.file, `${JSON.stringify(data, null, 2)}\n`);
+  private writes: Promise<void> = Promise.resolve();
+
+  /**
+   * Writes are chained, and each one snapshots the store when it actually runs, so the
+   * file always ends up with the latest state (a revoke can't be undone by a slower,
+   * older write landing last).
+   */
+  private persist(): Promise<void> {
+    const write = this.writes.then(async () => {
+      const data = { version: 1 as const, devices: [...this.devices.values()] };
+      await writeFileAtomic(this.file, `${JSON.stringify(data, null, 2)}\n`);
+    });
+    this.writes = write.catch(() => undefined);
+    return write;
   }
 }
