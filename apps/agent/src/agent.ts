@@ -85,7 +85,9 @@ export class Agent extends EventEmitter<{
     this.router = new InputRouter(logger.child({ component: 'mouse' }), {
       leaseIdleMs: config.mouse.leaseIdleMs,
     });
-    const { candidates, unavailableReason } = driverCandidates(config, logger);
+    const { candidates, unavailableReason } = driverCandidates(config, logger, {
+      stateDir: paths.home,
+    });
     await this.router.start(candidates, unavailableReason);
 
     this.sessions = new SessionManager(config, logger.child({ component: 'claude' }));

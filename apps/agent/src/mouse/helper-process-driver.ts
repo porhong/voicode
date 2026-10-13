@@ -5,7 +5,7 @@ import type { Logger } from '../util/logger.js';
 import type { DriverInfo, MouseDriver } from './driver.js';
 
 const BUTTON_CODES: Record<MouseButton, string> = { left: 'l', right: 'r', middle: 'm' };
-const READY_TIMEOUT_MS = 15_000;
+const DEFAULT_READY_TIMEOUT_MS = 15_000;
 const POSITION_TIMEOUT_MS = 2_000;
 
 /**
@@ -33,6 +33,8 @@ export class HelperProcessDriver implements MouseDriver {
     private readonly command: string,
     private readonly args: string[],
     private readonly logger: Logger,
+    /** How long to wait for "ready" (longer when the OS shows a consent dialog). */
+    private readonly readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS,
   ) {}
 
   start(): Promise<DriverInfo> {
@@ -45,9 +47,11 @@ export class HelperProcessDriver implements MouseDriver {
       let ready = false;
 
       const timer = setTimeout(() => {
-        reject(new Error(`${this.name} helper did not become ready within ${READY_TIMEOUT_MS}ms`));
+        reject(
+          new Error(`${this.name} helper did not become ready within ${this.readyTimeoutMs}ms`),
+        );
         child.kill();
-      }, READY_TIMEOUT_MS);
+      }, this.readyTimeoutMs);
 
       createInterface({ input: child.stdout }).on('line', (line) => {
         const [kind, ...rest] = line.trim().split(/\s+/);

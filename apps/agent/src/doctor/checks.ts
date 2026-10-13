@@ -171,7 +171,18 @@ async function checkClaude(): Promise<CheckResult> {
 async function checkMouse(config: AgentConfig): Promise<CheckResult> {
   const logger = silentLogger();
   const router = new InputRouter(logger, { leaseIdleMs: config.mouse.leaseIdleMs });
-  const { candidates, unavailableReason } = driverCandidates(config, logger);
+  const all = driverCandidates(config, logger);
+  // Never pop up a compositor consent dialog from a diagnostic run.
+  const interactive = all.candidates.filter((c) => c.interactive);
+  const candidates = all.candidates.filter((c) => !c.interactive);
+  const unavailableReason = all.unavailableReason;
+  if (interactive.length && !candidates.length) {
+    return {
+      name: 'Mouse driver',
+      status: 'ok',
+      detail: `${interactive[0]!.name} (asks for permission on the desktop the first time the agent starts)`,
+    };
+  }
   await router.start(candidates, unavailableReason);
   const status = router.status();
   const details = router.info?.details ?? {};

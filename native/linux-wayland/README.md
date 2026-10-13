@@ -1,26 +1,34 @@
-# Wayland input adapter
+# Wayland input helper
 
-Wayland deliberately has no global input-injection API like XTest. There are two ways
-to drive the pointer:
+Wayland deliberately has no global input-injection API like XTest. The agent supports
+two backends and tries them in this order:
 
-| Approach                                                              | Status                                    | Notes                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`ydotool`](https://github.com/ReimuNotMoe/ydotool) via `/dev/uinput` | **Supported** (`mouse.driver: "ydotool"`) | Works on every compositor. Requires the `ydotoold` daemon and write access to `/dev/uinput` (usually the `input` group or a udev rule). Pointer position cannot be queried.                                                                                                    |
-| XDG Desktop Portal `RemoteDesktop` + `libei`                          | Planned                                   | The standards-based path. The compositor shows the user a consent dialog and returns an EIS socket; the helper then emits pointer events with `libei`. Needs `xdg-desktop-portal` ≥ 1.18 and a backend with RemoteDesktop/`ConnectToEIS` support (GNOME 46+, KDE Plasma 6.1+). |
+| Backend                                                                  | Requirements                                                                                                    | Notes                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `voicecode-input-wayland` — XDG Desktop Portal `RemoteDesktop` + `libei` | `xdg-desktop-portal` with RemoteDesktop v2 (`ConnectToEIS`): GNOME 46+, KDE Plasma 6.1+; `libei` 1.x at runtime | The standards-based path. The desktop shows a consent dialog the first time; the portal's restore token is saved to `<agent home>/wayland-restore-token`, so later starts connect silently until you revoke it in your desktop's privacy settings. |
+| [`ydotool`](https://github.com/ReimuNotMoe/ydotool) via `/dev/uinput`    | `ydotoold` running, write access to `/dev/uinput`                                                               | Works on any compositor without a dialog, but needs uinput permissions.                                                                                                                                                                            |
 
-## Planned portal helper
+The portal helper cannot report the pointer position (Wayland does not expose it), so
+`mouse.position` requests fail on Wayland; movement, buttons and scrolling work.
 
-The portal helper will be a small C program (`voicecode-input-portal`) speaking the same
-stdin/stdout line protocol as the Windows and X11 helpers, so the agent needs no
-changes beyond a new entry in `resolve-driver.ts`:
+## How the helper works
 
-1. `CreateSession` → `SelectDevices(types=POINTER, persist_mode=2)` → `Start` on
-   `org.freedesktop.portal.RemoteDesktop` (shows the consent dialog once; the restore
-   token is cached in the agent config dir so later runs don't prompt).
-2. `ConnectToEIS` → hand the returned fd to `ei_setup_backend_fd()`.
-3. Bind the `EI_DEVICE_CAP_POINTER`, `EI_DEVICE_CAP_BUTTON` and `EI_DEVICE_CAP_SCROLL`
-   capabilities and map `m`/`d`/`u`/`s` commands to `ei_device_pointer_motion`,
-   `ei_device_button_button` and `ei_device_scroll_discrete`.
-4. On `q`/EOF release held buttons, `ei_device_stop_emulating`, close the session.
+1. Connects to the session bus and checks the RemoteDesktop portal is version 2+.
+2. `CreateSession` → `SelectDevices(types=POINTER, persist_mode=2, restore_token)` →
+   `Start` (consent dialog unless the restore token is still valid) → saves the new
+   restore token.
+3. `ConnectToEIS` returns a socket that is handed to `ei_setup_backend_fd()`; the helper
+   binds the pointer, button and scroll capabilities and starts emulating when the
+   compositor resumes the devices, then prints `ready`.
+4. Commands from the agent map to `ei_device_pointer_motion`, `ei_device_button_button`
+   and `ei_device_scroll_discrete` (which uses the same 120-units-per-notch scale as the
+   agent). On `q` or EOF it releases held buttons and exits.
 
-Dependencies: `libportal` (or raw D-Bus via `sd-bus`) and `libei` ≥ 1.0.
+## Building
+
+```bash
+sudo apt install libglib2.0-dev libei-dev pkg-config   # Ubuntu 24.04+ (Fedora: glib2-devel libei-devel)
+node scripts/build-native.mjs --helper wayland
+```
+
+Release builds are produced by CI on Ubuntu 24.04 for x64 and arm64.

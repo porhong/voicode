@@ -1,12 +1,18 @@
-// Builds the native mouse helper for the current platform and copies it into
-// apps/agent/native-bin/<platform>-<arch>/ where the agent looks for it at runtime.
+// Builds native mouse helpers and copies them into
+// apps/agent/native-bin/<platform>-<arch>/ where the agent looks for them at runtime.
 //
-//   Windows: MinGW gcc or MSVC cl must be on PATH.
-//   Linux:   gcc plus libx11-dev and libxtst-dev.
+//   node scripts/build-native.mjs [--helper windows|x11|wayland]
+//
+// Without --helper, builds every helper the current platform supports and skips the
+// Wayland helper when its libraries (libei, gio) are not installed.
+//
+//   Windows: MinGW gcc or MSVC cl on PATH.
+//   X11:     gcc + libx11-dev libxtst-dev.
+//   Wayland: gcc + pkg-config + libglib2.0-dev libei-dev (Ubuntu 24.04+ / Fedora 39+).
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const outDir = path.join(
@@ -16,6 +22,9 @@ const outDir = path.join(
   'native-bin',
   `${process.platform}-${process.arch}`,
 );
+const requested = process.argv.includes('--helper')
+  ? process.argv[process.argv.indexOf('--helper') + 1]
+  : undefined;
 
 function has(cmd) {
   try {
@@ -26,9 +35,26 @@ function has(cmd) {
   }
 }
 
+function pkgConfig(args) {
+  try {
+    return execFileSync('pkg-config', args, { encoding: 'utf8' })
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+  } catch {
+    return undefined;
+  }
+}
+
 function run(cmd, args, cwd) {
   console.log(`> ${cmd} ${args.join(' ')}`);
   execFileSync(cmd, args, { cwd, stdio: 'inherit' });
+}
+
+function install(dir, output) {
+  mkdirSync(outDir, { recursive: true });
+  copyFileSync(path.join(dir, 'build', output), path.join(outDir, output));
+  console.log(`Installed ${path.relative(root, path.join(outDir, output))}`);
 }
 
 function build(target, source, output, compilers) {
@@ -43,37 +69,62 @@ function build(target, source, output, compilers) {
   }
   const [cmd, args] = compiler;
   run(cmd, args(source, path.join('build', output)), dir);
-  mkdirSync(outDir, { recursive: true });
-  copyFileSync(path.join(dir, 'build', output), path.join(outDir, output));
-  console.log(`Installed ${path.relative(root, path.join(outDir, output))}`);
+  install(dir, output);
 }
 
-if (process.platform === 'win32') {
-  build('windows', 'voicecode-input.c', 'voicecode-input.exe', [
-    [
-      'gcc',
-      (src, out) => [
-        '-O2',
-        '-Wall',
-        '-municode',
-        '-static',
-        '-o',
-        out,
-        src,
-        '-luser32',
-        '-ladvapi32',
+const helpers = {
+  windows: () =>
+    build('windows', 'voicecode-input.c', 'voicecode-input.exe', [
+      [
+        'gcc',
+        (src, out) => [
+          '-O2',
+          '-Wall',
+          '-municode',
+          '-static',
+          '-o',
+          out,
+          src,
+          '-luser32',
+          '-ladvapi32',
+        ],
       ],
-    ],
-    [
-      'cl',
-      (src, out) => ['/nologo', '/O2', '/W3', `/Fe:${out}`, src, 'user32.lib', 'advapi32.lib'],
-    ],
-  ]);
+      [
+        'cl',
+        (src, out) => ['/nologo', '/O2', '/W3', `/Fe:${out}`, src, 'user32.lib', 'advapi32.lib'],
+      ],
+    ]),
+  x11: () =>
+    build('linux-x11', 'voicecode-input-x11.c', 'voicecode-input-x11', [
+      ['gcc', (src, out) => ['-O2', '-Wall', '-Wextra', '-o', out, src, '-lX11', '-lXtst']],
+      ['cc', (src, out) => ['-O2', '-o', out, src, '-lX11', '-lXtst']],
+    ]),
+  wayland: () => {
+    const flags = pkgConfig(['--cflags', '--libs', 'gio-2.0', 'gio-unix-2.0', 'libei-1.0']);
+    if (!flags) {
+      console.error(
+        'Wayland helper needs pkg-config, gio-2.0 and libei-1.0 (apt install libei-dev).',
+      );
+      process.exit(1);
+    }
+    build('linux-wayland', 'voicecode-input-wayland.c', 'voicecode-input-wayland', [
+      ['gcc', (src, out) => ['-O2', '-Wall', '-Wextra', '-o', out, src, ...flags]],
+    ]);
+  },
+};
+
+if (requested) {
+  if (!helpers[requested]) {
+    console.error(`Unknown helper "${requested}" (expected ${Object.keys(helpers).join(', ')}).`);
+    process.exit(1);
+  }
+  helpers[requested]();
+} else if (process.platform === 'win32') {
+  helpers.windows();
 } else if (process.platform === 'linux') {
-  build('linux-x11', 'voicecode-input-x11.c', 'voicecode-input-x11', [
-    ['gcc', (src, out) => ['-O2', '-Wall', '-Wextra', '-o', out, src, '-lX11', '-lXtst']],
-    ['cc', (src, out) => ['-O2', '-o', out, src, '-lX11', '-lXtst']],
-  ]);
+  helpers.x11();
+  if (pkgConfig(['--exists', 'libei-1.0', 'gio-unix-2.0'])) helpers.wayland();
+  else console.log('Skipping the Wayland helper (libei-dev / libglib2.0-dev not installed).');
 } else {
   console.error(`Unsupported platform: ${process.platform}`);
   process.exit(1);

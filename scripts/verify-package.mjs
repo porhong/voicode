@@ -29,6 +29,8 @@ const native = [
   'native-bin/win32-x64/voicecode-input.exe',
   'native-bin/linux-x64/voicecode-input-x11',
   'native-bin/linux-arm64/voicecode-input-x11',
+  'native-bin/linux-x64/voicecode-input-wayland',
+  'native-bin/linux-arm64/voicecode-input-wayland',
 ];
 const forbidden = [/^src\//, /\.test\.[jt]s$/, /(^|\/)\.env/, /\.pem$/, /tsconfig/];
 

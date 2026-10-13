@@ -41,6 +41,8 @@ export function windowsPowerShellScript(): string | undefined {
 export interface DriverCandidate {
   name: string;
   create(): MouseDriver;
+  /** Starting it may show the user an OS consent dialog (Wayland portal). */
+  interactive?: boolean;
 }
 
 /**
@@ -50,6 +52,7 @@ export interface DriverCandidate {
 export function driverCandidates(
   config: AgentConfig,
   logger: Logger,
+  options: { stateDir?: string } = {},
 ): {
   candidates: DriverCandidate[];
   unavailableReason?: string;
@@ -104,8 +107,21 @@ export function driverCandidates(
       candidates.push({ name: 'xdotool', create: () => new CommandDriver(xdotoolDialect, logger) });
     }
   } else if (display === 'wayland') {
-    // The RemoteDesktop portal + libei adapter is not implemented yet (see
-    // native/linux-wayland/README.md); ydotool works on any compositor via uinput.
+    // Preferred: the RemoteDesktop portal + libei (consent dialog once, then the
+    // portal's restore token is reused). Fallback: ydotool via /dev/uinput.
+    const bin = nativeHelperCandidates('voicecode-input-wayland', 'linux-wayland').find((p) =>
+      existsSync(p),
+    );
+    if (bin && want('native')) {
+      const args = options.stateDir
+        ? ['--token-file', path.join(options.stateDir, 'wayland-restore-token')]
+        : [];
+      candidates.push({
+        name: 'wayland-portal',
+        interactive: true,
+        create: () => new HelperProcessDriver('wayland-portal', bin, args, logger, 120_000),
+      });
+    }
     if (want('ydotool')) {
       candidates.push({ name: 'ydotool', create: () => new CommandDriver(ydotoolDialect, logger) });
     }
@@ -117,7 +133,7 @@ export function driverCandidates(
       : display === 'none'
         ? 'no graphical session detected (run the agent inside your desktop session)'
         : display === 'wayland'
-          ? 'Wayland needs ydotool (with ydotoold running) until the RemoteDesktop portal adapter ships'
+          ? 'no Wayland backend: install the portal helper (bundled with npm releases) or ydotool'
           : `no mouse backend found for ${display} (driver preference: ${pref})`;
   return { candidates, unavailableReason };
 }

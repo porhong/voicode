@@ -143,11 +143,11 @@ or is idle for two minutes, and any held buttons are released automatically.
 
 ## Platform support
 
-| Platform      | Mouse backend                             | Notes                                                                                                                                                                                                                           |
-| ------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows 10/11 | `voicecode-input.exe` (Win32 `SendInput`) | Per-monitor DPI aware, multi-monitor, honours swapped buttons. Falls back to a PowerShell `SendInput` shim if the exe is missing. Input into apps running as Administrator is blocked by UIPI unless the agent is elevated too. |
-| Linux X11     | `voicecode-input-x11` (XTest)             | Falls back to `xdotool`. Honours the X pointer mapping.                                                                                                                                                                         |
-| Linux Wayland | `ydotool` (uinput)                        | Needs `ydotoold`. A RemoteDesktop portal + libei adapter is planned — see [native/linux-wayland](native/linux-wayland/README.md).                                                                                               |
+| Platform      | Mouse backend                                            | Notes                                                                                                                                                                                                                           |
+| ------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows 10/11 | `voicecode-input.exe` (Win32 `SendInput`)                | Per-monitor DPI aware, multi-monitor, honours swapped buttons. Falls back to a PowerShell `SendInput` shim if the exe is missing. Input into apps running as Administrator is blocked by UIPI unless the agent is elevated too. |
+| Linux X11     | `voicecode-input-x11` (XTest)                            | Falls back to `xdotool`. Honours the X pointer mapping.                                                                                                                                                                         |
+| Linux Wayland | `voicecode-input-wayland` (RemoteDesktop portal + libei) | GNOME 46+ / KDE Plasma 6.1+. Asks for permission on the desktop once; falls back to `ydotool`. Pointer position is unavailable. See [native/linux-wayland](native/linux-wayland/README.md).                                     |
 
 The agent must run inside your logged-in graphical session. A Windows service (Session 0)
 or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
@@ -195,7 +195,7 @@ apps/agent/        CLI + server (TypeScript, bundled with tsup)
 apps/web/          React PWA (Vite)
 native/windows/    SendInput helper (C) + PowerShell fallback
 native/linux-x11/  XTest helper (C)
-native/linux-wayland/  Wayland adapter notes
+native/linux-wayland/  RemoteDesktop portal + libei helper (C)
 packages/protocol/ shared wire protocol (zod schemas + types)
 packages/security/ pairing codes, secret hashing, local CA
 ```
@@ -246,7 +246,6 @@ that already exists, so:
 
 ## Roadmap
 
-- Wayland RemoteDesktop portal + libei helper
 - Standalone executables (Node SEA) with the native helper embedded
 - Optional PTY mode for attaching to an interactive `claude` terminal
 - Keyboard input and text injection

@@ -68,12 +68,15 @@ jobs:
 
       - name: Bundle native helpers
         run: |
-          for target in win32-x64 linux-x64 linux-arm64; do
+          # Artifacts are named native-<platform>-<arch>-<helper>.
+          for dir in native-artifacts/native-*; do
+            name=$(basename "$dir")
+            target=$(echo "$name" | sed -E 's/^native-([a-z0-9]+-[a-z0-9]+)-.*/\1/')
             mkdir -p "apps/agent/native-bin/$target"
-            cp -v "native-artifacts/native-$target/"* "apps/agent/native-bin/$target/"
+            cp -v "$dir/"* "apps/agent/native-bin/$target/"
           done
           # Artifacts do not preserve file modes; the Linux helpers must be executable.
-          chmod 755 apps/agent/native-bin/linux-*/voicecode-input-x11
+          chmod 755 apps/agent/native-bin/linux-*/voicecode-input-*
 
       - run: npm run lint
       - run: npm run typecheck
