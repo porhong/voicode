@@ -1,0 +1,41 @@
+# Builds the native mouse helpers for every supported target. Called by CI and by the
+# release workflow, which bundles the uploaded artifacts into the npm package.
+name: Native helpers
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Native helper (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+          # Build Linux helpers on the oldest supported Ubuntu so the binaries link
+          # against an old glibc and run on older distributions too.
+          - os: ubuntu-22.04
+            target: linux-x64
+          - os: ubuntu-22.04-arm
+            target: linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install X11 headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxtst-dev
+      - run: node scripts/build-native.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.target }}
+          path: apps/agent/native-bin/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 7

@@ -192,6 +192,37 @@ helper → agent   ready key=value… | pos <x> <y> | err <message>
 `s` is in wheel units (120 = one notch, +dy scrolls down). `q` or EOF releases held
 buttons and exits.
 
+## Releasing
+
+Releases are published to npm by the [Release workflow](.github/workflows/release.yml)
+when a `v*` tag is pushed. It builds the native helpers for `win32-x64`, `linux-x64` and
+`linux-arm64` (Linux on Ubuntu 22.04 for glibc compatibility), runs lint, typecheck and
+tests, builds the bundle, verifies the tarball contents
+(`node scripts/verify-package.mjs --require-native`), publishes with provenance and
+creates a GitHub release. Versions with a pre-release suffix (`1.0.0-beta.1`) go to the
+`next` dist-tag.
+
+```bash
+npm run release -- patch        # or minor | major | 0.2.0 | 0.2.0-beta.1
+git push origin main v0.1.1     # the command printed by the script
+```
+
+Run the workflow manually (Actions → Release → Run workflow) for a full dry run that
+ends in `npm publish --dry-run`.
+
+**One-time npm setup.** Publishing uses
+[trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub OIDC), so no
+long-lived token is stored. A trusted publisher can only be configured for a package
+that already exists, so:
+
+1. For the first release, create a granular npm access token with publish rights and
+   save it as the `NPM_TOKEN` repository secret.
+2. After it is published, on npmjs.com open `voicecode-agent` → Settings → Trusted
+   publishing → GitHub Actions: owner `porhong`, repository `voicode`, workflow
+   `release.yml`.
+3. Delete the `NPM_TOKEN` secret and revoke the token. In the package settings, set
+   publishing access to "Require two-factor authentication and disallow tokens".
+
 ## Roadmap
 
 - Wayland RemoteDesktop portal + libei helper

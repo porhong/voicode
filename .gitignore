@@ -13,3 +13,7 @@ apps/agent/native-bin/
 
 # Local agent state written during development
 .voicecode/
+
+# Copied into the package by apps/agent/scripts/prepack.mjs
+apps/agent/README.md
+apps/agent/LICENSE

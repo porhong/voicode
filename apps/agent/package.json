@@ -3,13 +3,33 @@
   "version": "0.1.0",
   "description": "Turn your PC into a local server for voice-controlled Claude Code and desktop mouse control from any browser on your LAN",
   "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "voice",
+    "remote-control",
+    "trackpad",
+    "mouse",
+    "cli",
+    "agent"
+  ],
+  "homepage": "https://github.com/porhong/voicode#readme",
+  "bugs": {
+    "url": "https://github.com/porhong/voicode/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/porhong/voicode.git",
+    "directory": "apps/agent"
+  },
   "type": "module",
   "bin": {
     "voicecode-agent": "dist/cli.js"
   },
   "files": [
     "dist",
-    "native-bin"
+    "native-bin",
+    "!dist/**/*.map"
   ],
   "engines": {
     "node": ">=22.12.0"
@@ -23,7 +43,7 @@
     "dev": "tsx watch src/cli/index.ts start",
     "start": "node dist/cli.js start",
     "typecheck": "tsc -p tsconfig.json",
-    "prepack": "node -e \"require('fs').accessSync('dist/web/index.html')\" || (echo Run npm run build at the repo root first && exit 1)"
+    "prepack": "node scripts/prepack.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.296",
@@ -48,5 +68,8 @@
     "tsup": "^8.5.1",
     "tsx": "^4.23.15",
     "ws": "^8.22.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

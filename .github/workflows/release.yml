@@ -1,0 +1,106 @@
+# Publishes voicecode-agent to npm when a version tag (v1.2.3) is pushed.
+#
+# Authentication uses npm trusted publishing (GitHub OIDC): no long-lived token, and
+# npm attaches a signed provenance statement linking the package to this workflow.
+# For the very first publish, before the package exists on npm and a trusted publisher
+# can be configured, set an NPM_TOKEN repository secret; remove it afterwards.
+#
+# Running the workflow manually (Actions → Release → Run workflow) performs a full dry
+# run: native builds, tests, package verification and `npm publish --dry-run`.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  native:
+    uses: ./.github/workflows/native.yml
+
+  publish:
+    name: Publish to npm${{ github.event_name == 'workflow_dispatch' && ' (dry run)' || '' }}
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub release
+      id-token: write # npm trusted publishing + provenance
+    env:
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      # Trusted publishing needs npm >= 11.5.1.
+      - run: npm install -g npm@^11.5.1
+
+      - run: npm ci
+
+      - name: Resolve version
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./apps/agent/package.json').version")
+          if [ "$DRY_RUN" != "true" ] && [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match apps/agent/package.json version $VERSION"
+            exit 1
+          fi
+          case "$VERSION" in *-*) DIST_TAG=next ;; *) DIST_TAG=latest ;; esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+          echo "Releasing voicecode-agent@$VERSION (dist-tag $DIST_TAG, dry run: $DRY_RUN)"
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          path: native-artifacts
+
+      - name: Bundle native helpers
+        run: |
+          for target in win32-x64 linux-x64 linux-arm64; do
+            mkdir -p "apps/agent/native-bin/$target"
+            cp -v "native-artifacts/native-$target/"* "apps/agent/native-bin/$target/"
+          done
+          # Artifacts do not preserve file modes; the Linux helpers must be executable.
+          chmod 755 apps/agent/native-bin/linux-*/voicecode-input-x11
+
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Verify package contents
+        run: node scripts/verify-package.mjs --require-native
+
+      - name: Publish
+        env:
+          # Only used until trusted publishing is configured on npmjs.com.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npm publish -w voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --dry-run
+          else
+            npm publish -w voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --provenance
+          fi
+
+      - name: Create GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "voicecode-agent $GITHUB_REF_NAME" \
+            --generate-notes \
+            ${{ steps.meta.outputs.dist_tag == 'next' && '--prerelease' || '' }}
