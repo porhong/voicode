@@ -44,6 +44,11 @@ export class SessionManager extends EventEmitter<{
     this.broker.on('resolved', (event) => {
       const session = this.sessions.get(event.sessionId);
       if (event.interrupted) session?.markRejected();
+      if (event.remembered.some((u) => u.type === 'setMode' && u.mode === 'acceptEdits')) {
+        session?.noteStatus(
+          'File edits will be accepted automatically for the rest of this session.',
+        );
+      }
       session?.setAwaitingPermission(this.broker.pendingFor(event.sessionId).length > 0);
       this.emit('permissionResolved', event);
     });

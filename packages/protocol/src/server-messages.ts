@@ -68,6 +68,8 @@ export interface PermissionRequest {
   detail: string;
   /** Whether "always allow for this session" may be offered. */
   canRemember: boolean;
+  /** Button label for the remember option when it does more than allow this one tool. */
+  rememberLabel?: string;
   createdAt: number;
   expiresAt?: number;
 }

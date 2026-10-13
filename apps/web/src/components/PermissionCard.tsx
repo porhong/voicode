@@ -53,7 +53,7 @@ export function PermissionCard({ request, send }: { request: PermissionRequest; 
         )}
         {request.canRemember && (
           <button className="link" onClick={() => respond('allow', true)}>
-            Always allow this session
+            {request.rememberLabel ?? 'Always allow this session'}
           </button>
         )}
       </div>

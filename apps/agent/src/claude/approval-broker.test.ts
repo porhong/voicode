@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PermissionRequest } from '@voicecode/protocol';
-import { ApprovalBroker } from './approval-broker.js';
+import { ApprovalBroker, rememberableUpdates, type ResolvedEvent } from './approval-broker.js';
 
 function ask(broker: ApprovalBroker, extra: Record<string, unknown> = {}) {
   const controller = new AbortController();
@@ -64,6 +64,53 @@ describe('ApprovalBroker', () => {
         destination: 'session',
       },
     ]);
+  });
+
+  it('can switch the session to acceptEdits when the user allows all edits', async () => {
+    const broker = new ApprovalBroker({ timeoutMs: 60_000 });
+    const pending = nextRequest(broker);
+    const resolved = new Promise<ResolvedEvent>((r) => broker.once('resolved', r));
+    const result = broker.forSession('s1')(
+      'Write',
+      { file_path: 'a.txt', content: 'x' },
+      {
+        signal: new AbortController().signal,
+        toolUseID: 't1',
+        requestId: 'r1',
+        suggestions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }],
+      },
+    );
+    const request = await pending;
+    expect(request).toMatchObject({
+      canRemember: true,
+      rememberLabel: 'Allow all edits this session',
+      title: 'Claude wants to create a.txt',
+    });
+    broker.respond(request.requestId, 'allow', { rememberForSession: true });
+    const decision = await result;
+    const applied = [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }];
+    expect(decision?.behavior === 'allow' ? decision.updatedPermissions : undefined).toEqual(
+      applied,
+    );
+    expect((await resolved).remembered).toEqual(applied);
+  });
+
+  it('never remembers modes that skip command approvals or write settings', () => {
+    expect(
+      rememberableUpdates([
+        { type: 'setMode', mode: 'bypassPermissions', destination: 'session' },
+        { type: 'setMode', mode: 'auto', destination: 'session' },
+        { type: 'setMode', mode: 'dontAsk', destination: 'session' },
+        { type: 'setMode', mode: 'acceptEdits', destination: 'userSettings' },
+        {
+          type: 'addRules',
+          rules: [{ toolName: 'Bash' }],
+          behavior: 'deny',
+          destination: 'session',
+        },
+        { type: 'addDirectories', directories: ['/'], destination: 'session' },
+      ]),
+    ).toEqual([{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }]);
   });
 
   it('does not offer remembering when the SDK suppresses it', async () => {

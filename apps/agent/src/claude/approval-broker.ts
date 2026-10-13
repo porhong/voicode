@@ -26,6 +26,22 @@ export interface ResolvedEvent {
   deviceName?: string;
   /** True when the denial told the SDK to stop the current turn. */
   interrupted: boolean;
+  /** Permission updates applied for the rest of the session, if the user chose that. */
+  remembered: PermissionUpdate[];
+}
+
+/**
+ * What "always allow this session" may apply: Claude's suggested allow rules and a
+ * switch to `acceptEdits`, both forced to session scope so nothing is written to
+ * settings files. Modes that skip approvals for commands (`bypassPermissions`,
+ * `auto`, `dontAsk`) are never applied.
+ */
+export function rememberableUpdates(suggestions: PermissionUpdate[]): PermissionUpdate[] {
+  return suggestions.flatMap((s): PermissionUpdate[] => {
+    if (s.type === 'addRules' && s.behavior === 'allow') return [{ ...s, destination: 'session' }];
+    if (s.type === 'setMode' && s.mode === 'acceptEdits') return [{ ...s, destination: 'session' }];
+    return [];
+  });
 }
 
 /**
@@ -52,16 +68,10 @@ export class ApprovalBroker extends EventEmitter<{
       new Promise<PermissionResult>((resolve) => {
         const requestId = randomUUID();
         const now = Date.now();
-        // Only "allow" rules scoped to this session may be remembered; never anything
-        // that writes settings files or changes the permission mode.
         const rememberable = options.suppressAlwaysAllowRule
           ? []
-          : (options.suggestions ?? [])
-              .filter(
-                (s): s is Extract<PermissionUpdate, { type: 'addRules' }> =>
-                  s.type === 'addRules' && s.behavior === 'allow',
-              )
-              .map((s) => ({ ...s, destination: 'session' as const }));
+          : rememberableUpdates(options.suggestions ?? []);
+        const acceptsEdits = rememberable.some((u) => u.type === 'setMode');
 
         const request: PermissionRequest = {
           sessionId,
@@ -71,6 +81,7 @@ export class ApprovalBroker extends EventEmitter<{
           description: options.description ?? options.decisionReason,
           detail: describeToolInput(toolName, input),
           canRemember: rememberable.length > 0,
+          rememberLabel: acceptsEdits ? 'Allow all edits this session' : undefined,
           createdAt: now,
           expiresAt: now + this.options.timeoutMs,
         };
@@ -165,6 +176,7 @@ export class ApprovalBroker extends EventEmitter<{
       reason,
       deviceName,
       interrupted,
+      remembered: decision === 'allow' && remember ? p.rememberable : [],
     });
     return true;
   }

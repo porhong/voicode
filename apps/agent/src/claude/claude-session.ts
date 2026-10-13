@@ -132,6 +132,11 @@ export class ClaudeSession extends EventEmitter<{
     await this.q?.interrupt();
   }
 
+  /** Adds an informational line to the transcript. */
+  noteStatus(message: string): void {
+    this.record({ kind: 'status', message });
+  }
+
   /** The user rejected a tool call without feedback, which ends the turn. */
   markRejected(): void {
     this.stopReason = 'Stopped: you rejected the tool call. Say what to do instead.';
