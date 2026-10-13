@@ -13,14 +13,21 @@ const STATE_LABEL: Record<SessionSummary['state'], string> = {
 };
 
 interface Props {
+  /** True while the connection to the agent is not open; actions would be lost. */
+  disabled?: boolean;
   state: AppState;
   send: Send;
   onSelect: (sessionId: string) => void;
 }
 
 /** Project/session picker: start a new session, resume an earlier one, or switch. */
-export function SessionBar({ state, send, onSelect }: Props) {
-  const [projectId, setProjectId] = useState(state.projects[0]?.id ?? '');
+export function SessionBar({ state, send, onSelect, disabled = false }: Props) {
+  const [chosenProjectId, setProjectId] = useState<string>();
+  // The project list arrives after mount and can change at runtime, so derive the
+  // selection from it rather than freezing the first value.
+  const projectId = state.projects.some((p) => p.id === chosenProjectId)
+    ? chosenProjectId!
+    : (state.projects[0]?.id ?? '');
   const [showResume, setShowResume] = useState(false);
   const active = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
   const live = Object.values(state.sessions).filter((s) => s.state !== 'closed');
@@ -72,6 +79,7 @@ export function SessionBar({ state, send, onSelect }: Props) {
       </div>
       <div className="session-row">
         <button
+          disabled={disabled}
           className="btn btn-small"
           onClick={() =>
             send({ type: 'claude.session.start', projectId: active?.projectId ?? projectId })
@@ -80,6 +88,7 @@ export function SessionBar({ state, send, onSelect }: Props) {
           New session
         </button>
         <button
+          disabled={disabled}
           className="btn btn-small btn-ghost"
           onClick={() => {
             const pid = active?.projectId ?? projectId;
@@ -92,6 +101,7 @@ export function SessionBar({ state, send, onSelect }: Props) {
         </button>
         {active && active.state !== 'closed' && (
           <button
+            disabled={disabled}
             className="btn btn-small btn-ghost"
             onClick={() => send({ type: 'claude.session.close', sessionId: active.id })}
           >
@@ -107,6 +117,7 @@ export function SessionBar({ state, send, onSelect }: Props) {
           {history.map((h) => (
             <li key={h.claudeSessionId}>
               <button
+                disabled={disabled}
                 className="resume-item"
                 onClick={() => {
                   setShowResume(false);

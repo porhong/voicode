@@ -6,7 +6,16 @@ import type { Send } from '../hooks/useAgentSocket';
  * Approval prompt for a pending Claude tool call. Approvals are tap-only by design:
  * a misheard voice command must never run a shell command.
  */
-export function PermissionCard({ request, send }: { request: PermissionRequest; send: Send }) {
+export function PermissionCard({
+  request,
+  send,
+  disabled = false,
+}: {
+  request: PermissionRequest;
+  send: Send;
+  /** True while disconnected: an answer could not reach the agent. */
+  disabled?: boolean;
+}) {
   const [feedback, setFeedback] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
 
@@ -38,10 +47,10 @@ export function PermissionCard({ request, send }: { request: PermissionRequest; 
         />
       )}
       <div className="permission-actions">
-        <button className="btn btn-danger" onClick={() => respond('deny')}>
+        <button className="btn btn-danger" disabled={disabled} onClick={() => respond('deny')}>
           Reject
         </button>
-        <button className="btn btn-primary" onClick={() => respond('allow')}>
+        <button className="btn btn-primary" disabled={disabled} onClick={() => respond('allow')}>
           Accept
         </button>
       </div>
@@ -52,7 +61,7 @@ export function PermissionCard({ request, send }: { request: PermissionRequest; 
           </button>
         )}
         {request.canRemember && (
-          <button className="link" onClick={() => respond('allow', true)}>
+          <button className="link" disabled={disabled} onClick={() => respond('allow', true)}>
             {request.rememberLabel ?? 'Always allow this session'}
           </button>
         )}

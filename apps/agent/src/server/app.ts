@@ -56,6 +56,9 @@ export async function buildServer(deps: ServerDeps) {
     bodyLimit: 16 * 1024,
     trustProxy: false,
     forceCloseConnections: true,
+    // Per-request access logs would fill agent.log with asset fetches; errors are
+    // still logged, and security-relevant events are logged explicitly.
+    disableRequestLogging: true,
   });
 
   app.decorateRequest('device', null);
@@ -166,7 +169,11 @@ export async function buildServer(deps: ServerDeps) {
       },
     });
     app.setNotFoundHandler((request, reply) => {
-      if (request.method === 'GET' && !request.url.startsWith('/api/')) {
+      // Only page navigations fall back to the app shell; a missing asset or API route
+      // must 404 rather than return HTML a browser would try to run as a script.
+      const pathname = request.url.split('?')[0]!;
+      const isNavigation = !pathname.startsWith('/api/') && !/\.[a-z0-9]+$/i.test(pathname);
+      if (request.method === 'GET' && isNavigation) {
         return reply.header('cache-control', 'no-cache').sendFile('index.html');
       }
       return reply.code(404).send({ error: 'not_found' });

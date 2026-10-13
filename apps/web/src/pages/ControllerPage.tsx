@@ -117,6 +117,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       {tab === 'claude' ? (
         <main className="claude">
           <SessionBar
+            disabled={connection !== 'open'}
             state={state}
             send={send}
             onSelect={(sessionId) => {
@@ -135,7 +136,12 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
             </div>
           )}
           {activePermissions.map((request) => (
-            <PermissionCard key={request.requestId} request={request} send={send} />
+            <PermissionCard
+              key={request.requestId}
+              request={request}
+              send={send}
+              disabled={connection !== 'open'}
+            />
           ))}
           <Composer
             disabled={connection !== 'open' || !live}
@@ -152,7 +158,12 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               Claude needs your approval →
             </button>
           )}
-          <Trackpad send={send} mouse={state.mouse} settings={settings} />
+          <Trackpad
+            send={send}
+            mouse={state.mouse}
+            settings={settings}
+            connected={connection === 'open'}
+          />
         </main>
       )}
 

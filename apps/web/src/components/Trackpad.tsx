@@ -7,6 +7,8 @@ import type { AppState } from '../lib/store';
 import { TrackpadGestures } from '../lib/trackpad';
 
 interface Props {
+  /** False while reconnecting; input would be dropped, so the pad is paused. */
+  connected: boolean;
   send: Send;
   mouse: AppState['mouse'];
   settings: Settings;
@@ -17,7 +19,7 @@ function haptic(): void {
 }
 
 /** Full-screen trackpad plus press-and-hold mouse buttons. */
-export function Trackpad({ send, mouse, settings }: Props) {
+export function Trackpad({ send, mouse, settings, connected }: Props) {
   const { batcher, gestures } = useMemo(() => {
     const batcher = new InputBatcher(send, haptic);
     return { batcher, gestures: new TrackpadGestures(batcher) };
@@ -45,6 +47,7 @@ export function Trackpad({ send, mouse, settings }: Props) {
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!connected) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     ensureLease();
     gestures.down(e.pointerId, e.clientX, e.clientY, e.timeStamp);
@@ -68,6 +71,14 @@ export function Trackpad({ send, mouse, settings }: Props) {
     onPointerUp: () => batcher.buttonUp(button),
     onPointerCancel: () => batcher.buttonUp(button),
   });
+
+  if (!connected) {
+    return (
+      <div className="trackpad-unavailable">
+        <p className="muted">Connecting to the agent…</p>
+      </div>
+    );
+  }
 
   if (!mouse.status.available) {
     return (
