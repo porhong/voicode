@@ -1,0 +1,52 @@
+{
+  "name": "voicecode-agent",
+  "version": "0.1.0",
+  "description": "Turn your PC into a local server for voice-controlled Claude Code and desktop mouse control from any browser on your LAN",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "voicecode-agent": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "native-bin"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "os": [
+    "win32",
+    "linux"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/copy-web.mjs",
+    "dev": "tsx watch src/cli/index.ts start",
+    "start": "node dist/cli.js start",
+    "typecheck": "tsc -p tsconfig.json",
+    "prepack": "node -e \"require('fs').accessSync('dist/web/index.html')\" || (echo Run npm run build at the repo root first && exit 1)"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.296",
+    "@fastify/helmet": "^13.1.2",
+    "@fastify/rate-limit": "^11.2.1",
+    "@fastify/static": "^10.1.6",
+    "@fastify/websocket": "^11.3.4",
+    "@peculiar/x509": "^2.1.0",
+    "commander": "^15.0.0",
+    "fastify": "^5.12.7",
+    "picocolors": "^1.1.1",
+    "pino": "^10.4.0",
+    "qrcode-terminal": "^0.12.0",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/qrcode-terminal": "^0.12.2",
+    "@types/ws": "^8.18.2",
+    "@voicecode/protocol": "*",
+    "@voicecode/security": "*",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
+  }
+}

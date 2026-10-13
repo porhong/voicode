@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+.env
+.env.*
+!.env.example
+
+# Native helper build outputs (prebuilt binaries are produced by CI)
+native/**/build/
+apps/agent/native-bin/
+
+# Local agent state written during development
+.voicecode/

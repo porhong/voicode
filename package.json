@@ -1,0 +1,39 @@
+{
+  "name": "voicecode",
+  "private": true,
+  "description": "Voice-controlled Claude Code and desktop mouse control from any browser on your LAN",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @voicecode/web && npm run build -w voicecode-agent",
+    "build:native": "node scripts/build-native.mjs",
+    "dev:agent": "npm run dev -w voicecode-agent",
+    "dev:web": "npm run dev -w @voicecode/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.4"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
+  }
+}

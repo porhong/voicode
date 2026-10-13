@@ -1,0 +1,17 @@
+{
+  "name": "@voicecode/security",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Device pairing, token hashing and local certificate authority for the VoiceCode agent",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@peculiar/x509": "^2.1.0",
+    "reflect-metadata": "^0.2.2"
+  }
+}

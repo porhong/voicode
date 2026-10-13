@@ -1,0 +1,323 @@
+import https from 'node:https';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import WebSocket from 'ws';
+import type { ServerMessage } from '@voicecode/protocol';
+import { ConfigSchema } from '../config/config.js';
+import { resolvePaths } from '../config/paths.js';
+import { InputRouter } from '../mouse/input-router.js';
+import { DeviceRegistry } from '../pairing/device-registry.js';
+import { PairingService } from '../pairing/pairing-service.js';
+import { SessionManager } from '../sessions/session-manager.js';
+import { createFakeQuery, FakeMouseDriver } from '../test-utils/fakes.js';
+import { ensureTls, type TlsMaterial } from '../tls/certificates.js';
+import { silentLogger } from '../util/logger.js';
+import { buildServer } from './app.js';
+import { CLOSE_REVOKED, WsGateway } from './ws-gateway.js';
+
+let home: string;
+let tls: TlsMaterial;
+let app: Awaited<ReturnType<typeof buildServer>>;
+let base: string;
+let pairing: PairingService;
+let registry: DeviceRegistry;
+let router: InputRouter;
+let sessions: SessionManager;
+const driver = new FakeMouseDriver();
+const fake = createFakeQuery({ permissionMode: 'bypassPermissions' });
+
+function request(
+  method: string,
+  route: string,
+  opts: { body?: unknown; cookie?: string; origin?: string | null } = {},
+): Promise<{ status: number; body: Record<string, unknown>; setCookie?: string }> {
+  return new Promise((resolve, reject) => {
+    const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body);
+    const headers: Record<string, string> = {};
+    if (payload) headers['content-type'] = 'application/json';
+    if (opts.cookie) headers.cookie = opts.cookie;
+    if (opts.origin !== null) headers.origin = opts.origin ?? base;
+    const req = https.request(`${base}${route}`, { method, ca: tls.caCert, headers }, (res) => {
+      let text = '';
+      res.on('data', (c) => (text += c));
+      res.on('end', () =>
+        resolve({
+          status: res.statusCode ?? 0,
+          body: text ? JSON.parse(text) : {},
+          setCookie: res.headers['set-cookie']?.[0],
+        }),
+      );
+    });
+    req.on('error', reject);
+    req.end(payload);
+  });
+}
+
+async function pairDevice(name: string): Promise<string> {
+  const { code } = pairing.issueCode();
+  const res = await request('POST', '/api/pair', { body: { code, deviceName: name } });
+  expect(res.status).toBe(200);
+  return res.setCookie!.split(';')[0]!;
+}
+
+class Client {
+  readonly messages: ServerMessage[] = [];
+  private waiters: Array<{
+    pred: (m: ServerMessage) => boolean;
+    resolve: (m: ServerMessage) => void;
+  }> = [];
+  readonly ws: WebSocket;
+
+  constructor(cookie?: string, origin = base) {
+    this.ws = new WebSocket(`${base.replace('https', 'wss')}/ws`, {
+      ca: tls.caCert,
+      headers: { origin, ...(cookie ? { cookie } : {}) },
+    });
+    this.ws.on('message', (data) => {
+      const msg = JSON.parse(data.toString()) as ServerMessage;
+      this.messages.push(msg);
+      this.waiters = this.waiters.filter((w) => (w.pred(msg) ? (w.resolve(msg), false) : true));
+    });
+  }
+
+  send(msg: unknown): void {
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  waitFor<T extends ServerMessage['type']>(
+    type: T,
+    pred: (m: Extract<ServerMessage, { type: T }>) => boolean = () => true,
+  ): Promise<Extract<ServerMessage, { type: T }>> {
+    const match = (m: ServerMessage) =>
+      m.type === type && pred(m as Extract<ServerMessage, { type: T }>);
+    const existing = this.messages.find(match);
+    if (existing) return Promise.resolve(existing as Extract<ServerMessage, { type: T }>);
+    return new Promise((resolve) =>
+      this.waiters.push({ pred: match, resolve: resolve as (m: ServerMessage) => void }),
+    );
+  }
+
+  rejection(): Promise<number> {
+    return new Promise((resolve) =>
+      this.ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0)),
+    );
+  }
+
+  closed(): Promise<number> {
+    return new Promise((resolve) => this.ws.on('close', (code) => resolve(code)));
+  }
+}
+
+beforeAll(async () => {
+  home = await mkdtemp(path.join(os.tmpdir(), 'voicecode-test-'));
+  const paths = resolvePaths(home);
+  const logger = silentLogger();
+  tls = await ensureTls(paths, ['127.0.0.1'], logger);
+  registry = await DeviceRegistry.open(paths.devices);
+  pairing = new PairingService(registry, { ttlMs: 60_000, maxAttempts: 5 });
+  router = new InputRouter(logger, { leaseIdleMs: 60_000, flushIntervalMs: 0 });
+  router.attach(driver, { details: {} });
+  const config = ConfigSchema.parse({
+    version: 1,
+    projects: [{ id: 'p1', name: 'proj', path: home }],
+  });
+  sessions = new SessionManager(config, logger, fake.queryFn);
+  const gateway = new WsGateway({ router, sessions, registry, logger });
+  app = await buildServer({ tls, logger, registry, pairing, gateway });
+  await app.listen({ host: '127.0.0.1', port: 0 });
+  base = `https://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+});
+
+afterAll(async () => {
+  sessions.closeAll();
+  await router.stop();
+  await app.close();
+  await registry.close();
+  await rm(home, { recursive: true, force: true });
+});
+
+describe('HTTPS API', () => {
+  it('reports unpaired status and serves the CA certificate', async () => {
+    expect((await request('GET', '/api/info')).body).toMatchObject({
+      name: 'voicecode-agent',
+      paired: false,
+    });
+    const ca = await new Promise<string>((resolve) =>
+      https.get(`${base}/voicecode-ca.crt`, { ca: tls.caCert }, (res) => {
+        let t = '';
+        res.on('data', (c) => (t += c));
+        res.on('end', () => resolve(t));
+      }),
+    );
+    expect(ca).toBe(tls.caCert);
+  });
+
+  it('rejects wrong codes and foreign origins, then pairs with a hardened cookie', async () => {
+    const { code } = pairing.issueCode();
+    const wrong = code === '000000' ? '111111' : '000000';
+    expect(
+      (await request('POST', '/api/pair', { body: { code: wrong, deviceName: 'x' } })).status,
+    ).toBe(401);
+    expect(
+      (
+        await request('POST', '/api/pair', {
+          body: { code, deviceName: 'x' },
+          origin: 'https://evil.example',
+        })
+      ).status,
+    ).toBe(403);
+
+    const res = await request('POST', '/api/pair', { body: { code, deviceName: 'Phone' } });
+    expect(res.status).toBe(200);
+    expect(res.setCookie).toMatch(/^__Host-vc_device=/);
+    expect(res.setCookie).toMatch(/HttpOnly/);
+    expect(res.setCookie).toMatch(/Secure/);
+    expect(res.setCookie).toMatch(/SameSite=Strict/);
+
+    const cookie = res.setCookie!.split(';')[0]!;
+    expect((await request('GET', '/api/info', { cookie })).body).toMatchObject({ paired: true });
+  });
+
+  it('rejects requests for host names outside the certificate', async () => {
+    const status = await new Promise<number>((resolve) =>
+      https
+        .request(
+          `${base}/api/info`,
+          { ca: tls.caCert, headers: { host: 'attacker.example' }, servername: '127.0.0.1' },
+          (res) => resolve(res.statusCode ?? 0),
+        )
+        .end(),
+    );
+    expect(status).toBe(421);
+  });
+});
+
+describe('WebSocket gateway', () => {
+  it('refuses unauthenticated and cross-origin upgrades', async () => {
+    const anon = new Client();
+    expect(await anon.rejection()).toBe(401);
+    const cookie = await pairDevice('Tablet');
+    const foreign = new Client(cookie, 'https://evil.example');
+    expect(await foreign.rejection()).toBe(403);
+  });
+
+  it('drives the mouse through an exclusive lease and releases on disconnect', async () => {
+    const cookie = await pairDevice('Phone');
+    const client = new Client(cookie);
+    const welcome = await client.waitFor('welcome');
+    expect(welcome.mouse.available).toBe(true);
+    expect(welcome.projects).toEqual([{ id: 'p1', name: 'proj', path: home }]);
+
+    client.send({ type: 'mouse.move', dx: 1, dy: 1 });
+    await client.waitFor('error', (m) => m.code === 'mouse_not_leased');
+
+    client.send({ type: 'mouse.acquire' });
+    await client.waitFor('mouse.status', (m) => m.youHoldLease);
+    driver.calls.length = 0;
+    client.send({ type: 'mouse.move', dx: 12, dy: -8 });
+    client.send({ type: 'mouse.button.down', button: 'left' });
+    client.send({ type: 'mouse.scroll', dx: 0, dy: 120 });
+    client.send({ type: 'mouse.position' });
+    expect(await client.waitFor('mouse.position')).toMatchObject({ x: 10, y: 20 });
+    expect(driver.calls).toEqual(['move 12 -8', 'down left', 'scroll 0 120']);
+
+    client.send({ type: 'mouse.move', dx: 99_999, dy: 0 });
+    await client.waitFor('error', (m) => m.code === 'bad_request');
+
+    const closed = client.closed();
+    client.ws.close();
+    await closed;
+    await new Promise((r) => setTimeout(r, 50));
+    expect(driver.calls.at(-1)).toBe('up left');
+    expect(router.status().holder).toBeUndefined();
+  });
+
+  it('runs a Claude turn with a remote approval', async () => {
+    const client = new Client(await pairDevice('Phone'));
+    await client.waitFor('welcome');
+
+    client.send({ type: 'claude.session.start', projectId: 'p1' });
+    const snapshot = await client.waitFor('claude.session.snapshot');
+    const sessionId = snapshot.session.id;
+    expect(fake.control.options).toMatchObject({ cwd: home, permissionMode: 'default' });
+    expect(fake.control.options?.disallowedTools).toContain('AskUserQuestion');
+
+    // Project settings asked for bypassPermissions; the agent must force it back.
+    await client.waitFor('claude.event', (m) => m.event.kind === 'status');
+    expect(fake.control.permissionModeSets).toEqual(['default']);
+
+    client.send({ type: 'claude.prompt', sessionId, text: 'run the tests' });
+    const { request: approval } = await client.waitFor('claude.permission.request');
+    expect(approval).toMatchObject({ sessionId, toolName: 'Bash', canRemember: true });
+    expect(approval.detail).toContain('npm test');
+    await client.waitFor('claude.session', (m) => m.session.state === 'awaiting_permission');
+
+    client.send({
+      type: 'claude.permission.respond',
+      sessionId,
+      requestId: approval.requestId,
+      decision: 'allow',
+    });
+    await client.waitFor(
+      'claude.permission.resolved',
+      (m) => m.decision === 'allow' && m.deviceName === 'Phone',
+    );
+    await client.waitFor(
+      'claude.event',
+      (m) => m.event.kind === 'assistant_text' && m.event.text === 'Tests passed',
+    );
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.state === 'idle' && m.session.totalCostUsd === 0.02,
+    );
+
+    // A bare Reject stops the turn; the SDK reports that as error_during_execution,
+    // which must surface as a status line rather than an internal error message.
+    client.send({ type: 'claude.prompt', sessionId, text: 'run them again' });
+    const { request: second } = await client.waitFor(
+      'claude.permission.request',
+      (m) => m.request.requestId !== approval.requestId,
+    );
+    expect(second.title).toBe('Claude wants to run a command');
+    client.send({
+      type: 'claude.permission.respond',
+      sessionId,
+      requestId: second.requestId,
+      decision: 'deny',
+    });
+    const stopped = await client.waitFor(
+      'claude.event',
+      (m) => m.event.kind === 'status' && m.event.message.startsWith('Stopped'),
+    );
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.state === 'idle' && m.session.totalCostUsd === 0.03,
+    );
+    const errors = client.messages.filter(
+      (m) => m.type === 'claude.event' && m.event.kind === 'error' && m.seq > stopped.seq - 3,
+    );
+    expect(errors).toEqual([]);
+
+    client.ws.close();
+  });
+
+  it('rejects sessions for projects outside the allow-list', async () => {
+    const client = new Client(await pairDevice('Phone'));
+    await client.waitFor('welcome');
+    client.send({ type: 'claude.session.start', projectId: 'not-allowed' });
+    expect((await client.waitFor('error')).code).toBe('not_found');
+    client.ws.close();
+  });
+
+  it('disconnects a device as soon as it is revoked', async () => {
+    const cookie = await pairDevice('Old phone');
+    const client = new Client(cookie);
+    const welcome = await client.waitFor('welcome');
+    const closed = client.closed();
+    await registry.revoke(welcome.device.id);
+    expect(await closed).toBe(CLOSE_REVOKED);
+    expect((await request('GET', '/api/info', { cookie })).body).toMatchObject({ paired: false });
+  });
+});
