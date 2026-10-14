@@ -59,13 +59,16 @@ dev server reuses the agent's certificate and proxies `/api` and `/ws` to
 
 ## 3. Testing
 
-| Command                                 | What it covers                                                                                                                                                      | Cost        |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| `npm test`                              | Vitest: pairing, CA + real TLS handshakes, router, approval broker, autostart, tar/download verification, web store/gestures/Markdown, HTTPS/WS e2e with a fake SDK | free        |
-| `node apps/agent/scripts/smoke-sea.mjs` | Standalone binary: init, start, web client over HTTPS, status, stop                                                                                                 | free        |
-| `… smoke-sea.mjs --with-claude`         | Same, plus the real Claude Code download (~115 MB) and `claude --version`                                                                                           | bandwidth   |
-| `npm run e2e -- <url> <pairing code>`   | Real web client in headless Chrome against a running agent with real Claude: pair, prompt, approval, reply, trackpad. Moves the real cursor slightly                | a few cents |
-| `voicecode-agent doctor`                | The environment on this machine                                                                                                                                     | free        |
+| Command                                 | What it covers                                                                                                                                                                                                    | Cost        |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `npm test`                              | Vitest: pairing, CA + real TLS handshakes, router, approval broker, autostart, tar/download verification, web store/gestures/Markdown, HTTPS/WS e2e with a fake SDK                                               | free        |
+| `node apps/agent/scripts/smoke-sea.mjs` | Standalone binary: init, start, web client over HTTPS, status, stop                                                                                                                                               | free        |
+| `… smoke-sea.mjs --with-claude`         | Same, plus the real Claude Code download (~115 MB) and `claude --version`                                                                                                                                         | bandwidth   |
+| `npm run e2e -- <url> <pairing code>`   | Real web client in headless Chrome against a running agent with real Claude: pair, prompt, approval, reply, trackpad. Moves the real cursor slightly                                                              | a few cents |
+| `npx tsx apps/agent/scripts/ui-demo.ts` | The built web client against a fake Claude and fake mouse; then `node scripts/ui-screenshots.mjs <url> <dir> [dark\|light]` for phone-size screenshots (`W=844 H=390` for landscape), or `npm run e2e` against it | free        |
+| `voicecode-agent doctor`                | The environment on this machine                                                                                                                                                                                   | free        |
+
+UI work: rebuild (`npm run build`) and restart `ui-demo.ts` after changes, since it serves `apps/agent/dist/web` and only registers asset routes at start. `E2E_BROWSER=msedge` uses Edge where Chrome is not installed.
 
 For `npm run e2e`, start an agent with a throwaway project first
 (`node apps/agent/dist/cli.js start --project <scratch dir>`) and pass the URL and pairing

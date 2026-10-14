@@ -19,3 +19,7 @@ e2e-shots/
 # Copied into the package by apps/agent/scripts/prepack.mjs
 apps/agent/README.md
 apps/agent/LICENSE
+
+.omc
+
+.remember/

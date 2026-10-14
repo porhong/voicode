@@ -6,7 +6,8 @@
 //   npm run e2e -- https://127.0.0.1:8443 123-456 [screenshot dir]
 //
 // This uses real Claude Code (a few cents per run), writes ui.txt into the session's
-// project directory and moves the real mouse cursor slightly. Needs Google Chrome.
+// project directory and moves the real mouse cursor slightly. Needs Google Chrome (or
+// Edge with E2E_BROWSER=msedge). Against apps/agent/scripts/ui-demo.ts it costs nothing.
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
@@ -19,7 +20,11 @@ mkdirSync(out, { recursive: true });
 const shot = (page, name) => page.screenshot({ path: `${out}/${name}.png` });
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+// E2E_BROWSER=msedge uses Edge (same engine) where Chrome is not installed.
+const browser = await chromium.launch({
+  channel: process.env.E2E_BROWSER ?? 'chrome',
+  headless: true,
+});
 const context = await browser.newContext({
   ignoreHTTPSErrors: true, // the test browser does not trust the local CA
   viewport: { width: 390, height: 844 },
@@ -44,7 +49,12 @@ try {
   await page.getByRole('button', { name: 'Pair device' }).click();
   await page.getByRole('tab', { name: /Claude/ }).waitFor();
   log('controller loaded');
-  await page.getByRole('button', { name: 'New session' }).click();
+  // The empty state's button with no session open, the header's "+" otherwise.
+  await page
+    .locator('.empty-card .btn-primary')
+    .or(page.getByRole('button', { name: /^New session in / }))
+    .first()
+    .click();
   await page.locator('.chip').waitFor();
   await shot(page, '2-session');
 
@@ -53,7 +63,7 @@ try {
     .fill(
       'Use the Write tool to create ui.txt containing exactly: from the browser. Then reply with a short markdown list of what you did, including the file name in backticks.',
     );
-  await page.getByRole('button', { name: 'Send' }).click();
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
   log('prompt sent');
 
   const card = page.locator('.permission-card');

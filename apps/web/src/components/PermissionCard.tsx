@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { PermissionRequest } from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
 
@@ -17,6 +17,7 @@ export function PermissionCard({
   disabled?: boolean;
 }) {
   const [feedback, setFeedback] = useState('');
+  const titleId = useId();
   const [showFeedback, setShowFeedback] = useState(false);
 
   const respond = (decision: 'allow' | 'deny', rememberForSession = false) =>
@@ -30,13 +31,16 @@ export function PermissionCard({
     });
 
   return (
-    <section className="permission-card" aria-live="assertive">
+    <section className="permission-card" aria-live="assertive" aria-labelledby={titleId}>
       <header>
         <span className="badge">{request.toolName}</span>
-        <h3>{request.title}</h3>
+        <h3 id={titleId}>{request.title}</h3>
       </header>
       {request.description && <p className="small muted">{request.description}</p>}
-      <pre className="permission-detail">{request.detail}</pre>
+      {/* Focusable so the full input can be scrolled with a keyboard too. */}
+      <pre className="permission-detail" tabIndex={0} aria-label="Full tool input">
+        {request.detail}
+      </pre>
       {!request.complete && (
         <p className="small error-text">
           This is too long to review here in full, so it can only be rejected. Ask Claude to split

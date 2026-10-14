@@ -23,10 +23,10 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/tunnel        cloudflared config + process supervisor (optional Cloudflare Tunnel)
   src/mouse         InputRouter (lease, coalescing), helper-process / command drivers
   src/util          standalone.ts (SEA assets), tar.ts, logger, network
-  scripts           copy-web, prepack, build-sea, smoke-sea
+  scripts           copy-web, prepack, build-sea, smoke-sea, ui-demo (fake Claude for UI work)
 apps/web            React PWA (Vite): Pair page, Claude tab, Trackpad tab, settings
 native/             C helpers: windows (SendInput), linux-x11 (XTest), linux-wayland (portal + libei)
-scripts/            build-native, verify-package, release, e2e-browser
+scripts/            build-native, verify-package, release, e2e-browser, ui-screenshots
 ```
 
 ## Commands
@@ -91,6 +91,9 @@ Done and verified:
   binaries.
 - Real Claude flows were checked in headless Chrome.
 - Mouse movement was checked pixel-exact on Windows.
+- Mobile UX pass on the web client (compact session header + sheet, one-button composer,
+  smart scroll, keyboard-safe height, WCAG AA contrast, 44px targets) checked with
+  `ui-demo.ts` screenshots at 390/360 px and landscape, dark and light.
 
 Not verified yet:
 
