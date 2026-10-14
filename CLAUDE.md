@@ -49,8 +49,9 @@ npm run e2e -- <url> <code>      # real browser + real Claude against a running 
   messages with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - The owner has authorised autonomous work: decide, implement, test, commit and push
   without asking. Never publish to npm or handle npm tokens; releases are cut by pushing a
-  tag (`npm run release -- <version>`), and the first publish needs the owner's
-  `NPM_TOKEN`.
+  tag (`npm run release -- <version>`). The release workflow skips `npm publish` when the
+  version is already on npm (0.1.0 was published by hand) but still attaches the
+  standalone binaries to the GitHub release.
 - Real Claude runs cost money. Use the fake `queryFn` in tests; use `npm run e2e` or small
   real prompts only to verify behaviour the fakes can't, and keep them short.
 - Security invariants (don't weaken without a deliberate decision):
@@ -93,6 +94,9 @@ Done and verified:
 - CI is green on all jobs.
 - The release workflow dry run passes, with all 5 native helpers and 3 standalone
   binaries.
+- v0.1.0 is released: `@anantbot/voicecode-agent@0.1.0` is on npm (`latest`), and the
+  GitHub release has the Windows x64 and Linux x64/arm64 standalone archives with
+  `SHA256SUMS.txt` and build attestations.
 - Real Claude flows were checked in headless Chrome.
 - Mouse movement was checked pixel-exact on Windows.
 - Mobile UX pass on the web client (compact session header + sheet, one-button composer,
@@ -112,7 +116,8 @@ Not verified yet:
 
 - A real phone: certificate install, microphone, touch.
 - The Wayland helper on a real desktop (it is only compile-checked).
-- The first npm publish, which needs the owner's token.
+- A tag-triggered `npm publish --provenance` from CI: 0.1.0 was published by hand, so
+  that path (trusted publishing) runs for the first time on the next release.
 - PC session discovery reads Claude Code internals (`~/.claude/sessions/<pid>.json`,
   transcript JSONL); checked against Claude Code 2.1.299 only. Parsing is lenient.
 - Cloudflare Tunnel: quick mode was checked end to end through Cloudflare (pairing,
