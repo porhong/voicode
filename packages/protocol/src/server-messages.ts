@@ -31,6 +31,26 @@ export interface HistoricSession {
   gitBranch?: string;
 }
 
+export type PcSessionStatus = 'working' | 'idle' | 'waiting' | 'unknown';
+
+/** A Claude Code session running on the PC outside the agent (e.g. in a terminal). */
+export interface PcSession {
+  /** Claude Code's session id. */
+  sessionId: string;
+  pid: number;
+  cwd: string;
+  /** Last path segment of `cwd`. */
+  folder: string;
+  /** Claude Code's own name for the session, if it has one. */
+  name?: string;
+  status: PcSessionStatus;
+  lastPrompt?: string;
+  startedAt?: number;
+  updatedAt?: number;
+  /** The allow-listed project for `cwd`; continuing elsewhere needs the folder allowed. */
+  projectId?: string;
+}
+
 export interface MouseStatus {
   available: boolean;
   driver: string;
@@ -87,6 +107,7 @@ export type ServerMessage =
       agent: { version: string; hostname: string; platform: string };
       projects: ProjectInfo[];
       sessions: SessionSummary[];
+      pcSessions: PcSession[];
       mouse: MouseStatus;
     }
   | { type: 'pong'; t: number; serverTime: number }
@@ -115,7 +136,26 @@ export type ServerMessage =
       reason: 'user' | 'timeout' | 'cancelled' | 'shutdown';
       deviceName?: string;
     }
-  | { type: 'claude.sessions.history'; projectId: string; sessions: HistoricSession[] };
+  | { type: 'claude.sessions.history'; projectId: string; sessions: HistoricSession[] }
+  /** A turn finished, in a phone session (`agent`) or a session on the PC (`pc`). */
+  | {
+      type: 'claude.task.done';
+      source: 'agent' | 'pc';
+      sessionId: string;
+      /** Where it ran: project or folder name. */
+      place: string;
+      title?: string;
+      isError: boolean;
+    }
+
+  // --- Claude sessions elsewhere on the PC (read-only) ----------------------
+  | { type: 'pc.sessions'; sessions: PcSession[] }
+  | {
+      type: 'pc.session.snapshot';
+      sessionId: string;
+      events: Array<{ seq: number; at: number; event: ClaudeEvent }>;
+    }
+  | { type: 'pc.session.event'; sessionId: string; seq: number; at: number; event: ClaudeEvent };
 
 export type ServerMessageType = ServerMessage['type'];
 
@@ -128,6 +168,7 @@ export type ErrorCode =
   | 'mouse_lease_held'
   | 'mouse_not_leased'
   | 'session_busy'
+  | 'folder_not_allowed'
   | 'internal';
 
 export type { MouseButton };

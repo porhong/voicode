@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { listSessions, type query } from '@anthropic-ai/claude-agent-sdk';
 import type { HistoricSession, PermissionRequest, SessionSummary } from '@voicecode/protocol';
@@ -9,7 +10,7 @@ import { ClaudeSession, type SessionEventRecord } from '../claude/claude-session
 
 export class SessionError extends Error {
   constructor(
-    readonly code: 'not_found' | 'session_busy' | 'bad_request',
+    readonly code: 'not_found' | 'session_busy' | 'bad_request' | 'folder_not_allowed',
     message: string,
   ) {
     super(message);
@@ -68,7 +69,7 @@ export class SessionManager extends EventEmitter<{
     return session;
   }
 
-  start(projectId: string, resume?: string): ClaudeSession {
+  start(projectId: string, resume?: string, opts: { fork?: boolean } = {}): ClaudeSession {
     const project = this.config.projects.find((p) => p.id === projectId);
     if (!project) throw new SessionError('not_found', 'Project is not in the allowed list');
 
@@ -76,7 +77,7 @@ export class SessionManager extends EventEmitter<{
     if (live.length >= this.config.claude.maxConcurrentSessions) {
       throw new SessionError('session_busy', 'Too many concurrent sessions; close one first');
     }
-    if (resume && live.some((s) => s.summary().claudeSessionId === resume)) {
+    if (resume && !opts.fork && live.some((s) => s.summary().claudeSessionId === resume)) {
       throw new SessionError('session_busy', 'That Claude session is already open');
     }
 
@@ -84,6 +85,7 @@ export class SessionManager extends EventEmitter<{
       id: randomUUID(),
       project,
       resume,
+      fork: opts.fork,
       config: this.config.claude,
       broker: this.broker,
       logger: this.logger.child({ session: project.name }),
@@ -94,8 +96,26 @@ export class SessionManager extends EventEmitter<{
     session.on('delta', (record) => this.emit('delta', session.id, record));
     this.sessions.set(session.id, session);
     session.start();
-    this.logger.info({ project: project.path, resume }, 'claude session started');
+    this.logger.info({ project: project.path, resume, fork: opts.fork }, 'claude session started');
     return session;
+  }
+
+  /** Whether a Claude Code session id belongs to one of the agent's own sessions. */
+  owns(claudeSessionId: string): boolean {
+    for (const s of this.sessions.values()) {
+      if (s.summary().claudeSessionId === claudeSessionId) return true;
+    }
+    return false;
+  }
+
+  /** The allow-listed project whose folder is `dir` (compared case-insensitively on Windows). */
+  projectForFolder(dir: string): ProjectConfig | undefined {
+    const norm = (p: string) => {
+      const resolved = path.resolve(p).replace(/[\\/]+$/, '');
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    const wanted = norm(dir);
+    return this.config.projects.find((p) => norm(p.path) === wanted);
   }
 
   prompt(sessionId: string, text: string, deviceName: string): void {

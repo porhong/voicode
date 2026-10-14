@@ -2,7 +2,13 @@ import type http from 'node:http';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { PairingCode } from '@voicecode/security';
-import { loadConfig, type AgentConfig, type ProjectConfig } from './config/config.js';
+import {
+  addProject,
+  loadConfig,
+  saveConfig,
+  type AgentConfig,
+  type ProjectConfig,
+} from './config/config.js';
 import type { AgentPaths } from './config/paths.js';
 import { startControlServer } from './ipc/control.js';
 import { InputRouter } from './mouse/input-router.js';
@@ -11,6 +17,7 @@ import { DeviceRegistry, type PublicDevice } from './pairing/device-registry.js'
 import { PairingService } from './pairing/pairing-service.js';
 import { buildServer } from './server/app.js';
 import { WsGateway } from './server/ws-gateway.js';
+import { PcSessionWatcher } from './sessions/pc-sessions.js';
 import { SessionManager } from './sessions/session-manager.js';
 import { ensureTls, type TlsMaterial } from './tls/certificates.js';
 import {
@@ -49,12 +56,15 @@ export class Agent extends EventEmitter<{
   pairingFailed: [reason: string, remoteAddress: string];
   connections: [count: number];
   tunnel: [info: AgentTunnelInfo];
+  /** A paired device allowed a new project folder (to continue a PC session there). */
+  folderAllowed: [dir: string, deviceName: string];
   stopped: [];
 }> {
   private registry!: DeviceRegistry;
   private pairing!: PairingService;
   private router!: InputRouter;
   private sessions!: SessionManager;
+  private pcSessions: PcSessionWatcher | undefined;
   private gateway!: WsGateway;
   private app: Awaited<ReturnType<typeof buildServer>> | undefined;
   private control: http.Server | undefined;
@@ -111,7 +121,16 @@ export class Agent extends EventEmitter<{
     await this.router.start(candidates, unavailableReason);
 
     this.sessions = new SessionManager(config, logger.child({ component: 'claude' }));
+    const sessions = this.sessions;
+    this.pcSessions = new PcSessionWatcher({
+      logger: logger.child({ component: 'pc-sessions' }),
+      isOwnSession: (id) => sessions.owns(id),
+      projectFor: (cwd) => sessions.projectForFolder(cwd)?.id,
+    });
+    this.pcSessions.start();
     this.gateway = new WsGateway({
+      pcSessions: this.pcSessions,
+      allowFolder: (dir, deviceName) => this.allowFolder(dir, deviceName),
       router: this.router,
       sessions: this.sessions,
       registry: this.registry,
@@ -184,6 +203,25 @@ export class Agent extends EventEmitter<{
     await this.tunnel.waitReady(TUNNEL_WAIT_MS);
   }
 
+  /** Adds a folder to the allow-list and tells every device and the terminal. */
+  private async allowFolder(dir: string, deviceName: string): Promise<ProjectConfig> {
+    // The running config carries this run's --port/--host/--tunnel overrides, so the
+    // folder is added to the file on disk separately rather than saving it wholesale.
+    const onDisk = await loadConfig(this.paths.config);
+    if (onDisk) {
+      await addProject(onDisk, dir);
+      await saveConfig(this.paths.config, onDisk);
+    }
+    const project = await addProject(this.config, dir);
+    this.gateway.broadcastProjects(this.config.projects);
+    this.logger.info(
+      { dir: project.path, device: deviceName },
+      'project folder allowed from device',
+    );
+    this.emit('folderAllowed', project.path, deviceName);
+    return project;
+  }
+
   issuePairingCode(): PairingCode {
     return this.pairing.issueCode();
   }
@@ -194,6 +232,7 @@ export class Agent extends EventEmitter<{
       this.sessions?.closeAll();
       this.gateway?.closeAll();
       await this.tunnel?.stop();
+      await this.pcSessions?.stop();
       await this.router?.stop();
       await this.app?.close();
       await new Promise<void>((resolve) =>

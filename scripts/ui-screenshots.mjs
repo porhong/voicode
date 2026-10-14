@@ -54,6 +54,22 @@ await shot('7-sessions');
 const sessions = page.getByRole('dialog', { name: 'Sessions' });
 await sessions.getByRole('button', { name: 'Close', exact: true }).click();
 await sessions.waitFor({ state: 'detached' });
+
+// A Claude session running in a terminal on the PC (the demo fakes one that alternates
+// between working and idle every DEMO_PC_TOGGLE_MS): view it, then continue it here.
+await page.getByRole('button', { name: /^Sessions/ }).click();
+await sessions.getByRole('button', { name: /rate limiting/ }).click();
+await page.waitForTimeout(600);
+await shot('7b-pc-session');
+page.once('dialog', (dialog) => dialog.accept()); // "Allow Claude to work in this folder?"
+await page.locator('.pc-bar .btn:not([disabled])').waitFor({ timeout: 30_000 });
+await page.getByRole('button', { name: 'Continue on phone' }).click();
+await page.locator('.pc-bar').waitFor({ state: 'detached' });
+await page.waitForTimeout(500);
+await shot('7c-continued');
+// The terminal session finishing again while it is not on screen raises a toast.
+await page.locator('.toast').first().waitFor({ timeout: 30_000 });
+await shot('7d-toast');
 await page.getByRole('tab', { name: /Trackpad/ }).click();
 await page.waitForTimeout(600);
 await shot('8-trackpad');

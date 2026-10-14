@@ -2,7 +2,7 @@
  * Bump when a change to the wire format is not backwards compatible.
  * The agent rejects clients that speak a different major version.
  */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** WebSocket endpoint path served by the agent. */
 export const WS_PATH = '/ws';

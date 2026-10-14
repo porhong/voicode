@@ -12,6 +12,7 @@ const welcome = (protocolVersion = PROTOCOL_VERSION): ServerMessage => ({
   agent: { version: '0.1.0', hostname: 'pc', platform: 'win32' },
   projects: [{ id: 'p1', name: 'app', path: '/app' }],
   sessions: [{ id: 's1', projectId: 'p1', state: 'idle', createdAt: 1 }],
+  pcSessions: [{ sessionId: 'pc1', pid: 10, cwd: '/term', folder: 'term', status: 'working' }],
   mouse: { available: true, driver: 'fake' },
 });
 
@@ -54,6 +55,44 @@ describe('app state', () => {
     // Duplicate/old sequence numbers (e.g. after a snapshot) are ignored.
     s = apply(s, ev(2, { kind: 'assistant_text', text: 'Hello' }));
     expect(s.events.s1).toHaveLength(1);
+  });
+
+  it('follows PC sessions and toasts finished tasks that are not on screen', () => {
+    let s = apply(initialState, welcome());
+    expect(s.pcSessions.map((p) => p.sessionId)).toEqual(['pc1']);
+    s = reducer(s, { type: 'selectPcSession', sessionId: 'pc1' });
+    s = apply(s, {
+      type: 'pc.session.snapshot',
+      sessionId: 'pc1',
+      events: [{ seq: 1, at: 0, event: { kind: 'user_prompt', text: 'Hi', deviceName: 'PC' } }],
+    });
+    s = apply(s, {
+      type: 'pc.session.event',
+      sessionId: 'pc1',
+      seq: 2,
+      at: 0,
+      event: { kind: 'assistant_text', text: 'Hello' },
+    });
+    expect(s.pcEvents.pc1?.map((e) => e.seq)).toEqual([1, 2]);
+
+    const done = (source: 'agent' | 'pc', sessionId: string): ServerMessage => ({
+      type: 'claude.task.done',
+      source,
+      sessionId,
+      place: 'app',
+      isError: false,
+    });
+    // The PC session is on screen, so its own completion needs no toast.
+    s = apply(s, done('pc', 'pc1'));
+    expect(s.toasts).toEqual([]);
+    s = apply(s, done('agent', 's1'));
+    expect(s.toasts.map((t) => [t.source, t.sessionId])).toEqual([['agent', 's1']]);
+    s = reducer(s, { type: 'dismissToast', id: s.toasts[0]!.id });
+    expect(s.toasts).toEqual([]);
+
+    // Opening a phone session leaves the PC view.
+    s = reducer(s, { type: 'selectSession', sessionId: 's1' });
+    expect(s.activePcSessionId).toBeUndefined();
   });
 
   it('tracks pending approvals until any device resolves them', () => {

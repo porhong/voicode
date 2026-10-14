@@ -52,6 +52,19 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     text: z.string().trim().min(1).max(LIMITS.maxPromptLength),
   }),
   z.object({ type: z.literal('claude.interrupt'), sessionId: id }),
+  // --- Claude sessions elsewhere on the PC ---------------------------------
+  /** Follow one PC session's transcript (replaces any earlier subscription). */
+  z.object({ type: z.literal('pc.session.subscribe'), sessionId: id }),
+  z.object({ type: z.literal('pc.session.unsubscribe') }),
+  /**
+   * Continue an idle PC session from the phone, as a fork so the terminal's own copy is
+   * untouched. `allowFolder` confirms adding its folder to the allow-list if needed.
+   */
+  z.object({
+    type: z.literal('pc.session.continue'),
+    sessionId: id,
+    allowFolder: z.boolean().optional(),
+  }),
   z.object({
     type: z.literal('claude.permission.respond'),
     sessionId: id,

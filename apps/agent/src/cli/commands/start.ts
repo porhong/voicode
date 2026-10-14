@@ -144,6 +144,9 @@ async function start(opts: StartOptions): Promise<void> {
       out(pc.dim('  The quick tunnel URL changed; run `voicecode-agent pair` for a new code.'));
     }
   });
+  agent.on('folderAllowed', (dir, device) =>
+    out(`${timestamp()} ${warn('Folder allowed')} ${clean(dir)} by ${clean(device)}`),
+  );
   agent.on('connections', (n) => out(`${timestamp()} ${n} client${n === 1 ? '' : 's'} connected`));
 
   let shuttingDown = false;

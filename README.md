@@ -189,6 +189,16 @@ session to auto-accept edits (commands still ask). Turn on approval notification
 settings to get a system notification when Claude is waiting while you're in another
 app.
 
+**Every Claude session on the PC.** The sessions sheet (tap the session title) also lists
+Claude Code sessions running elsewhere on the PC, such as in a terminal, with their status
+(working, idle, needs input). Tap one to follow it live, read-only. Once it's idle, **Continue on
+phone** resumes it as a copy that you drive from the phone, with every tool call approved there.
+The terminal keeps its own copy. A folder that isn't allow-listed yet is added only after you
+confirm on the phone, and the PC terminal logs it. Wherever you are in the app, a toast tells you
+when a task finishes in any other session, on the phone or the PC; tap it to jump there. The agent
+only reads Claude Code's own session files (`~/.claude/sessions` and `~/.claude/projects`, or
+`CLAUDE_CONFIG_DIR`) for this.
+
 **Trackpad tab.** One finger moves the pointer (with acceleration), tap = left click,
 two-finger tap = right click, three-finger tap = middle click, two fingers scroll, tap then
 touch-and-drag = drag/select. L/M/R buttons can be held while dragging with another

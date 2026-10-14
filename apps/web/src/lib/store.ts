@@ -3,6 +3,7 @@ import {
   type ClaudeEvent,
   type HistoricSession,
   type MouseStatus,
+  type PcSession,
   type PermissionRequest,
   type ProjectInfo,
   type ServerMessage,
@@ -14,6 +15,19 @@ export interface EventItem {
   at: number;
   event: Exclude<ClaudeEvent, { kind: 'assistant_text_delta' }>;
 }
+
+/** "Task finished" notice for a session other than the one on screen. */
+export interface Toast {
+  id: number;
+  source: 'agent' | 'pc';
+  sessionId: string;
+  place: string;
+  title?: string;
+  isError: boolean;
+}
+
+/** Most toasts shown at once; older ones are dropped. */
+const TOAST_LIMIT = 3;
 
 export interface AppState {
   device?: { id: string; name: string };
@@ -27,6 +41,12 @@ export interface AppState {
   permissions: Record<string, PermissionRequest>;
   mouse: { status: MouseStatus; youHoldLease: boolean };
   history: Record<string, HistoricSession[]>;
+  /** Claude sessions running elsewhere on the PC (terminals), read-only. */
+  pcSessions: PcSession[];
+  pcEvents: Record<string, EventItem[]>;
+  /** Set while a PC session is on screen instead of a phone session. */
+  activePcSessionId?: string;
+  toasts: Toast[];
   error?: { message: string; at: number };
   /** The agent speaks a different protocol version than this (cached) page. */
   protocolMismatch: boolean;
@@ -40,12 +60,17 @@ export const initialState: AppState = {
   permissions: {},
   mouse: { status: { available: false, driver: 'none' }, youHoldLease: false },
   history: {},
+  pcSessions: [],
+  pcEvents: {},
+  toasts: [],
   protocolMismatch: false,
 };
 
 export type Action =
   | { type: 'server'; message: ServerMessage }
   | { type: 'selectSession'; sessionId: string | undefined }
+  | { type: 'selectPcSession'; sessionId: string }
+  | { type: 'dismissToast'; id: number }
   | { type: 'dismissError' }
   | { type: 'reset' };
 
@@ -59,7 +84,11 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'reset':
       return initialState;
     case 'selectSession':
-      return { ...state, activeSessionId: action.sessionId };
+      return { ...state, activeSessionId: action.sessionId, activePcSessionId: undefined };
+    case 'selectPcSession':
+      return { ...state, activePcSessionId: action.sessionId };
+    case 'dismissToast':
+      return { ...state, toasts: state.toasts.filter((t) => t.id !== action.id) };
     case 'dismissError':
       return { ...state, error: undefined };
     case 'server':
@@ -82,6 +111,7 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
         projects: msg.projects,
         sessions,
         activeSessionId: active,
+        pcSessions: msg.pcSessions ?? [],
         mouse: { status: msg.mouse, youHoldLease: false },
         // Permissions are re-sent right after welcome.
         permissions: {},
@@ -120,7 +150,9 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
             (e): e is EventItem => e.event.kind !== 'assistant_text_delta',
           ),
         },
+        // Starting, continuing or opening a phone session takes over the screen.
         activeSessionId: msg.session.id,
+        activePcSessionId: undefined,
         permissions,
       };
     }
@@ -159,5 +191,46 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
     }
     case 'claude.sessions.history':
       return { ...state, history: { ...state.history, [msg.projectId]: msg.sessions } };
+
+    case 'claude.task.done': {
+      const onScreen =
+        msg.source === 'pc'
+          ? state.activePcSessionId === msg.sessionId
+          : !state.activePcSessionId && state.activeSessionId === msg.sessionId;
+      if (onScreen) return state;
+      const toast: Toast = {
+        id: (state.toasts[0]?.id ?? 0) + 1,
+        source: msg.source,
+        sessionId: msg.sessionId,
+        place: msg.place,
+        title: msg.title,
+        isError: msg.isError,
+      };
+      return { ...state, toasts: [toast, ...state.toasts].slice(0, TOAST_LIMIT) };
+    }
+
+    case 'pc.sessions':
+      return { ...state, pcSessions: msg.sessions };
+    case 'pc.session.snapshot':
+      return {
+        ...state,
+        pcEvents: {
+          ...state.pcEvents,
+          [msg.sessionId]: msg.events.filter(
+            (e): e is EventItem => e.event.kind !== 'assistant_text_delta',
+          ),
+        },
+      };
+    case 'pc.session.event': {
+      if (msg.event.kind === 'assistant_text_delta') return state;
+      const item: EventItem = { seq: msg.seq, at: msg.at, event: msg.event };
+      return {
+        ...state,
+        pcEvents: {
+          ...state.pcEvents,
+          [msg.sessionId]: appendEvent(state.pcEvents[msg.sessionId], item),
+        },
+      };
+    }
   }
 }

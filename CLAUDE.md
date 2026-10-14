@@ -21,6 +21,8 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/server        Fastify app, origin/host guard, cookie auth, WebSocket gateway
   src/claude        ClaudeSession (SDK query), ApprovalBroker (canUseTool), claude-executable (SEA download)
   src/tunnel        cloudflared config + process supervisor (optional Cloudflare Tunnel)
+  src/sessions      SessionManager (phone sessions), PcSessionWatcher (read-only view of all
+                    Claude sessions on the PC via ~/.claude/sessions + transcripts)
   src/mouse         InputRouter (lease, coalescing), helper-process / command drivers
   src/util          standalone.ts (SEA assets), tar.ts, logger, network
   scripts           copy-web, prepack, build-sea, smoke-sea, ui-demo (fake Claude for UI work)
@@ -100,6 +102,8 @@ Not verified yet:
 - A real phone: certificate install, microphone, touch.
 - The Wayland helper on a real desktop (it is only compile-checked).
 - The first npm publish, which needs the owner's token.
+- PC session discovery reads Claude Code internals (`~/.claude/sessions/<pid>.json`,
+  transcript JSONL); checked against Claude Code 2.1.299 only. Parsing is lenient.
 - Cloudflare Tunnel: quick mode was checked end to end through Cloudflare (pairing,
   cookie, WebSocket). `tunnel setup` and `tunnel token` need a Cloudflare account and a
   domain, so only their generated ingress config was validated with cloudflared.

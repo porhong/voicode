@@ -10,6 +10,8 @@ import {
 } from '@voicecode/protocol';
 import type { InputRouter, ClientIdentity, RouterResult } from '../mouse/input-router.js';
 import type { DeviceRegistry, PublicDevice } from '../pairing/device-registry.js';
+import type { ProjectConfig } from '../config/config.js';
+import type { PcSessionWatcher } from '../sessions/pc-sessions.js';
 import { SessionError, type SessionManager } from '../sessions/session-manager.js';
 import type { Logger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
@@ -30,6 +32,8 @@ interface Connection {
   lastErrorAt: Map<ErrorCode, number>;
   /** Set when the device is revoked: the socket may linger while closing, input must not. */
   revoked: boolean;
+  /** The PC session whose transcript this client is following, if any. */
+  pcSubscription?: string;
 }
 
 /**
@@ -48,9 +52,13 @@ export class WsGateway {
       registry: DeviceRegistry;
       logger: Logger;
       onConnectionsChanged?: (count: number) => void;
+      /** Claude sessions elsewhere on the PC; omitted in tests that don't need them. */
+      pcSessions?: PcSessionWatcher;
+      /** Adds a folder to the allow-list (after the user confirmed it on the phone). */
+      allowFolder?: (dir: string, deviceName: string) => Promise<ProjectConfig>;
     },
   ) {
-    const { router, sessions, registry } = deps;
+    const { router, sessions, registry, pcSessions } = deps;
 
     router.on('status', () => {
       const status = router.status();
@@ -60,8 +68,37 @@ export class WsGateway {
     });
 
     sessions.on('session', (session) => this.broadcast({ type: 'claude.session', session }));
-    sessions.on('event', (sessionId, r) =>
-      this.broadcast({ type: 'claude.event', sessionId, seq: r.seq, at: r.at, event: r.event }),
+    sessions.on('event', (sessionId, r) => {
+      this.broadcast({ type: 'claude.event', sessionId, seq: r.seq, at: r.at, event: r.event });
+      if (r.event.kind === 'result') {
+        const session = sessions.get(sessionId);
+        this.broadcast({
+          type: 'claude.task.done',
+          source: 'agent',
+          sessionId,
+          place: session.project.name,
+          title: session.summary().title,
+          isError: r.event.isError,
+        });
+      }
+    });
+
+    pcSessions?.on('changed', (list) => this.broadcast({ type: 'pc.sessions', sessions: list }));
+    pcSessions?.on('event', (sessionId, r) => {
+      for (const c of this.connections.values()) {
+        if (c.pcSubscription !== sessionId) continue;
+        this.send(c, { type: 'pc.session.event', sessionId, ...r });
+      }
+    });
+    pcSessions?.on('done', (pc) =>
+      this.broadcast({
+        type: 'claude.task.done',
+        source: 'pc',
+        sessionId: pc.sessionId,
+        place: pc.folder,
+        title: pc.lastPrompt ?? pc.name,
+        isError: false,
+      }),
     );
     sessions.on('delta', (sessionId, r) =>
       this.broadcast({ type: 'claude.event', sessionId, seq: r.seq, at: r.at, event: r.event }),
@@ -178,6 +215,7 @@ export class WsGateway {
       agent: { version: VERSION, hostname: os.hostname(), platform: process.platform },
       projects: sessions.projects.map(({ id, name, path }) => ({ id, name, path })),
       sessions: sessions.list(),
+      pcSessions: this.deps.pcSessions?.list() ?? [],
       mouse: router.status(),
     });
     for (const request of sessions.broker.pendingFor()) {
@@ -250,6 +288,43 @@ export class WsGateway {
         return sessions.prompt(msg.sessionId, msg.text, conn.device.name);
       case 'claude.interrupt':
         return sessions.interrupt(msg.sessionId);
+      case 'pc.session.subscribe': {
+        const pc = this.deps.pcSessions;
+        if (!pc?.get(msg.sessionId)) {
+          throw new SessionError('not_found', 'That session is no longer running on the PC');
+        }
+        conn.pcSubscription = msg.sessionId;
+        return this.send(conn, {
+          type: 'pc.session.snapshot',
+          sessionId: msg.sessionId,
+          events: pc.events(msg.sessionId),
+        });
+      }
+      case 'pc.session.unsubscribe':
+        conn.pcSubscription = undefined;
+        return;
+      case 'pc.session.continue': {
+        const pc = this.deps.pcSessions?.get(msg.sessionId);
+        if (!pc) throw new SessionError('not_found', 'That session is no longer running on the PC');
+        if (pc.status === 'working' || pc.status === 'waiting') {
+          // Two Claudes editing the same folder at once would trip over each other.
+          throw new SessionError(
+            'session_busy',
+            'It is still working on the PC. Continue once it has finished.',
+          );
+        }
+        let project = sessions.projectForFolder(pc.cwd);
+        if (!project) {
+          if (!msg.allowFolder || !this.deps.allowFolder) {
+            throw new SessionError('folder_not_allowed', `${pc.cwd} is not an allowed folder`);
+          }
+          project = await this.deps.allowFolder(pc.cwd, conn.device.name);
+        }
+        conn.pcSubscription = undefined;
+        const session = sessions.start(project.id, pc.sessionId, { fork: true });
+        return this.sendSnapshot(conn, session.id);
+      }
+
       case 'claude.permission.respond':
         return sessions.respond(msg.sessionId, msg.requestId, msg.decision, {
           rememberForSession: msg.rememberForSession,

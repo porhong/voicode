@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ProjectInfo, SessionSummary } from '@voicecode/protocol';
+import type { PcSession, PcSessionStatus, ProjectInfo, SessionSummary } from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
 import type { AppState } from '../lib/store';
 import { ChevronDownIcon, PlusIcon } from './Icons';
@@ -14,6 +14,17 @@ export const STATE_LABEL: Record<SessionSummary['state'], string> = {
   error: 'Error',
 };
 
+export const PC_STATUS: Record<PcSessionStatus, { label: string; chip: string }> = {
+  working: { label: 'Working', chip: 'running' },
+  idle: { label: 'Idle', chip: 'idle' },
+  waiting: { label: 'Needs input', chip: 'awaiting_permission' },
+  unknown: { label: 'Running', chip: 'starting' },
+};
+
+export function pcTitle(pc: PcSession): string {
+  return pc.lastPrompt ?? pc.name ?? 'Terminal session';
+}
+
 function projectName(projects: ProjectInfo[], id: string): string {
   return projects.find((p) => p.id === id)?.name ?? 'Project';
 }
@@ -24,6 +35,8 @@ interface Props {
   state: AppState;
   send: Send;
   onSelect: (sessionId: string) => void;
+  /** Opens a Claude session running elsewhere on the PC (read-only view). */
+  onSelectPc: (sessionId: string) => void;
   sheetOpen: boolean;
   onSheetOpenChange: (open: boolean) => void;
 }
@@ -36,13 +49,21 @@ export function SessionBar({
   state,
   send,
   onSelect,
+  onSelectPc,
   disabled = false,
   sheetOpen,
   onSheetOpenChange,
 }: Props) {
-  const active = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
+  const pc = state.activePcSessionId
+    ? state.pcSessions.find((p) => p.sessionId === state.activePcSessionId)
+    : undefined;
+  const active =
+    !state.activePcSessionId && state.activeSessionId
+      ? state.sessions[state.activeSessionId]
+      : undefined;
+  const pcWorking = state.pcSessions.filter((p) => p.status === 'working').length;
 
-  if (!state.projects.length) {
+  if (!state.projects.length && !state.pcSessions.length) {
     return (
       <div className="session-header">
         <p className="small muted session-empty">
@@ -55,9 +76,23 @@ export function SessionBar({
 
   // With no session open, "+" opens the sheet so the project is chosen explicitly.
   const newSessionProject = active?.projectId;
-  const sessionLabel = active
-    ? `${projectName(state.projects, active.projectId)}, ${active.title ?? 'New session'}`
-    : 'no session';
+  const sessionLabel = pc
+    ? `on this PC, ${pc.folder}, ${pcTitle(pc)}`
+    : active
+      ? `${projectName(state.projects, active.projectId)}, ${active.title ?? 'New session'}`
+      : 'no session';
+  const projectLine = pc
+    ? `On this PC · ${pc.folder}`
+    : active
+      ? projectName(state.projects, active.projectId)
+      : 'No session';
+  const titleLine = pc
+    ? pcTitle(pc)
+    : active
+      ? (active.title ?? 'New session')
+      : state.activePcSessionId
+        ? 'Session ended on the PC'
+        : 'Tap to start or resume';
 
   return (
     <>
@@ -70,14 +105,22 @@ export function SessionBar({
         >
           <span className="session-switch-text">
             <span className="session-project">
-              {active ? projectName(state.projects, active.projectId) : 'No session'}
+              {projectLine}
+              {pcWorking > 0 && !pc && (
+                <span className="pc-count" aria-label={`${pcWorking} working on the PC`}>
+                  {pcWorking} on PC
+                </span>
+              )}
             </span>
-            <span className="session-title">
-              {active ? (active.title ?? 'New session') : 'Tap to start or resume'}
-            </span>
+            <span className="session-title">{titleLine}</span>
           </span>
           <ChevronDownIcon />
         </button>
+        {pc && (
+          <span className={`chip chip-${PC_STATUS[pc.status].chip}`} role="status">
+            {PC_STATUS[pc.status].label}
+          </span>
+        )}
         {active && (
           <span className={`chip chip-${active.state}`} role="status">
             {STATE_LABEL[active.state]}
@@ -85,7 +128,7 @@ export function SessionBar({
         )}
         <button
           className="icon-button icon-button-filled"
-          disabled={disabled}
+          disabled={disabled || !state.projects.length}
           onClick={() =>
             newSessionProject
               ? send({ type: 'claude.session.start', projectId: newSessionProject })
@@ -109,6 +152,10 @@ export function SessionBar({
             onSelect(id);
             onSheetOpenChange(false);
           }}
+          onSelectPc={(id) => {
+            onSelectPc(id);
+            onSheetOpenChange(false);
+          }}
           onClose={() => onSheetOpenChange(false)}
         />
       )}
@@ -121,15 +168,20 @@ function SessionSheet({
   send,
   disabled,
   onSelect,
+  onSelectPc,
   onClose,
 }: {
   state: AppState;
   send: Send;
   disabled: boolean;
   onSelect: (sessionId: string) => void;
+  onSelectPc: (sessionId: string) => void;
   onClose: () => void;
 }) {
-  const active = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
+  const active =
+    !state.activePcSessionId && state.activeSessionId
+      ? state.sessions[state.activeSessionId]
+      : undefined;
   const [projectId, setProjectId] = useProjectChoice(state.projects, active?.projectId);
   const live = Object.values(state.sessions).filter((s) => s.state !== 'closed');
   const history = state.history[projectId];
@@ -141,16 +193,23 @@ function SessionSheet({
 
   return (
     <Sheet title="Sessions" onClose={onClose}>
-      <StartSession
-        projects={state.projects}
-        projectId={projectId}
-        onProjectChange={setProjectId}
-        disabled={disabled}
-        onStart={() => {
-          send({ type: 'claude.session.start', projectId });
-          onClose();
-        }}
-      />
+      {state.projects.length > 0 ? (
+        <StartSession
+          projects={state.projects}
+          projectId={projectId}
+          onProjectChange={setProjectId}
+          disabled={disabled}
+          onStart={() => {
+            send({ type: 'claude.session.start', projectId });
+            onClose();
+          }}
+        />
+      ) : (
+        <p className="small muted">
+          No project folders are allowed yet. Continue a PC session below to allow its folder, or
+          run <code>voicecode-agent projects add &lt;dir&gt;</code> on the PC.
+        </p>
+      )}
 
       {live.length > 0 && (
         <>
@@ -178,8 +237,32 @@ function SessionSheet({
         </>
       )}
 
-      <h3>Resume in {projectName(state.projects, projectId)}</h3>
+      <h3>On this PC</h3>
       <ul className="list">
+        {state.pcSessions.length === 0 && (
+          <li className="small muted list-note">
+            No other Claude sessions are running on the PC. Sessions started in a terminal show up
+            here.
+          </li>
+        )}
+        {state.pcSessions.map((p) => (
+          <li
+            key={p.sessionId}
+            className={p.sessionId === state.activePcSessionId ? 'list-row current' : 'list-row'}
+          >
+            <button className="list-main" onClick={() => onSelectPc(p.sessionId)}>
+              <span className="list-title">{pcTitle(p)}</span>
+              <span className="small muted">{p.folder} · terminal</span>
+            </button>
+            <span className={`chip chip-${PC_STATUS[p.status].chip}`}>
+              {PC_STATUS[p.status].label}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {state.projects.length > 0 && <h3>Resume in {projectName(state.projects, projectId)}</h3>}
+      <ul className="list" hidden={!state.projects.length}>
         {history === undefined && <li className="small muted list-note">Loading…</li>}
         {history?.length === 0 && (
           <li className="small muted list-note">No earlier sessions for this project.</li>

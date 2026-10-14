@@ -1,15 +1,16 @@
 import https from 'node:https';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import type { ServerMessage } from '@voicecode/protocol';
-import { ConfigSchema } from '../config/config.js';
+import { addProject, ConfigSchema } from '../config/config.js';
 import { resolvePaths } from '../config/paths.js';
 import { InputRouter } from '../mouse/input-router.js';
 import { DeviceRegistry } from '../pairing/device-registry.js';
 import { PairingService } from '../pairing/pairing-service.js';
+import { encodeProjectDir, PcSessionWatcher } from '../sessions/pc-sessions.js';
 import { SessionManager } from '../sessions/session-manager.js';
 import { createFakeQuery, FakeMouseDriver } from '../test-utils/fakes.js';
 import { ensureTls, type TlsMaterial } from '../tls/certificates.js';
@@ -26,6 +27,13 @@ let registry: DeviceRegistry;
 let router: InputRouter;
 let sessions: SessionManager;
 const tunnelHosts = new Set<string>();
+// A Claude session running in a terminal, in a folder that is not allow-listed.
+let pcWatcher: PcSessionWatcher;
+let pcCwd: string;
+let pcTranscript: string;
+let registerPc: (status: string) => Promise<void>;
+/** A device paired by the tunnel test, reused where a separate device isn't needed. */
+let tunnelCookie: string;
 const driver = new FakeMouseDriver();
 const fake = createFakeQuery({ permissionMode: 'bypassPermissions' });
 
@@ -135,7 +143,42 @@ beforeAll(async () => {
     projects: [{ id: 'p1', name: 'proj', path: home }],
   });
   sessions = new SessionManager(config, logger, fake.queryFn);
-  const gateway = new WsGateway({ router, sessions, registry, logger });
+
+  const claudeDir = path.join(home, 'claude-config');
+  pcCwd = path.join(home, 'terminal-project');
+  await mkdir(path.join(claudeDir, 'sessions'), { recursive: true });
+  await mkdir(pcCwd);
+  const transcriptDir = path.join(claudeDir, 'projects', encodeProjectDir(pcCwd));
+  await mkdir(transcriptDir, { recursive: true });
+  pcTranscript = path.join(transcriptDir, 'term-1.jsonl');
+  await writeFile(
+    pcTranscript,
+    `${JSON.stringify({ type: 'user', message: { content: 'Hi' } })}
+`,
+  );
+  registerPc = (status) =>
+    writeFile(
+      path.join(claudeDir, 'sessions', `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, sessionId: 'term-1', cwd: pcCwd, status }),
+    );
+  await registerPc('busy');
+  const sessionsRef = sessions;
+  pcWatcher = new PcSessionWatcher({
+    logger,
+    claudeDir,
+    isOwnSession: (id) => sessionsRef.owns(id),
+    projectFor: (cwd) => sessionsRef.projectForFolder(cwd)?.id,
+  });
+  await pcWatcher.poll();
+
+  const gateway = new WsGateway({
+    router,
+    sessions,
+    registry,
+    logger,
+    pcSessions: pcWatcher,
+    allowFolder: (dir) => addProject(config, dir),
+  });
   app = await buildServer({ tls, logger, registry, pairing, gateway, tunnelHosts });
   await app.listen({ host: '127.0.0.1', port: 0 });
   base = `https://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -226,6 +269,7 @@ describe('Cloudflare Tunnel host', () => {
       expect(res.setCookie).toMatch(/^__Host-vc_device=/);
       const cookie = res.setCookie!.split(';')[0]!;
       expect((await request('GET', '/api/info', { host, cookie })).body.hostname).toBeTruthy();
+      tunnelCookie = cookie;
     } finally {
       tunnelHosts.delete(host);
     }
@@ -293,6 +337,59 @@ describe('WebSocket gateway', () => {
     expect(router.status().holder).toBeUndefined();
   });
 
+  it('follows a terminal session and continues it from the phone as a fork', async () => {
+    // Pairing is rate limited per IP; reuse the device paired by the tunnel test.
+    const client = new Client(tunnelCookie);
+    const welcome = await client.waitFor('welcome');
+    expect(welcome.pcSessions).toEqual([
+      expect.objectContaining({
+        sessionId: 'term-1',
+        status: 'working',
+        folder: 'terminal-project',
+      }),
+    ]);
+    expect(welcome.pcSessions[0]!.projectId).toBeUndefined();
+
+    client.send({ type: 'pc.session.subscribe', sessionId: 'term-1' });
+    const snapshot = await client.waitFor('pc.session.snapshot');
+    expect(snapshot.events.map((r) => r.event)).toEqual([
+      { kind: 'user_prompt', text: 'Hi', deviceName: 'PC' },
+    ]);
+    await appendFile(
+      pcTranscript,
+      `${JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } })}
+`,
+    );
+    await pcWatcher.poll();
+    await client.waitFor('pc.session.event', (m) => m.event.kind === 'assistant_text');
+
+    // Not while the terminal is still working on it.
+    client.send({ type: 'pc.session.continue', sessionId: 'term-1' });
+    await client.waitFor('error', (m) => m.code === 'session_busy');
+
+    await registerPc('idle');
+    await pcWatcher.poll();
+    await client.waitFor(
+      'claude.task.done',
+      (m) => m.source === 'pc' && m.place === 'terminal-project',
+    );
+
+    // Its folder is not allowed yet: the phone has to confirm adding it.
+    client.send({ type: 'pc.session.continue', sessionId: 'term-1' });
+    await client.waitFor('error', (m) => m.code === 'folder_not_allowed');
+    client.send({ type: 'pc.session.continue', sessionId: 'term-1', allowFolder: true });
+    const started = await client.waitFor('claude.session.snapshot');
+    expect(fake.control.options).toMatchObject({
+      cwd: await realpath(pcCwd),
+      resume: 'term-1',
+      forkSession: true,
+    });
+    expect(sessions.projectForFolder(pcCwd)?.id).toBe(started.session.projectId);
+    sessions.close(started.session.id);
+    // The fake query is shared; later tests count its calls from zero.
+    fake.control.permissionModeSets.length = 0;
+  });
+
   it('runs a Claude turn with a remote approval', async () => {
     const client = new Client(await pairDevice('Phone'));
     await client.waitFor('welcome');
@@ -330,6 +427,10 @@ describe('WebSocket gateway', () => {
     await client.waitFor(
       'claude.session',
       (m) => m.session.state === 'idle' && m.session.totalCostUsd === 0.02,
+    );
+    await client.waitFor(
+      'claude.task.done',
+      (m) => m.source === 'agent' && m.sessionId === sessionId && m.place === 'proj',
     );
 
     // A bare Reject stops the turn; the SDK reports that as error_during_execution,

@@ -35,6 +35,8 @@ export interface ClaudeSessionOptions {
   id: string;
   project: ProjectConfig;
   resume?: string;
+  /** Resume into a new session id, leaving the original transcript untouched. */
+  fork?: boolean;
   config: AgentConfig['claude'];
   broker: ApprovalBroker;
   logger: Logger;
@@ -73,7 +75,8 @@ export class ClaudeSession extends EventEmitter<{
     super();
     this.id = opts.id;
     this.project = opts.project;
-    this.claudeSessionId = opts.resume;
+    // A fork gets its own id from the init message.
+    this.claudeSessionId = opts.fork ? undefined : opts.resume;
   }
 
   start(): void {
@@ -95,6 +98,7 @@ export class ClaudeSession extends EventEmitter<{
       ...(config.model ? { model: config.model } : {}),
       ...(config.maxBudgetUsd ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       ...(this.opts.resume ? { resume: this.opts.resume } : {}),
+      ...(this.opts.resume && this.opts.fork ? { forkSession: true } : {}),
     };
 
     this.q = (this.opts.queryFn ?? query)({ prompt: this.input, options });

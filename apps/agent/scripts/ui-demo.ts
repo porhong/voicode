@@ -6,7 +6,7 @@
 // Every prompt gets a short Markdown reply after one Bash approval. A pairing code is
 // printed at start, and GET /demo/pair-code (from this machine) issues a fresh one for
 // scripted runs. State lives in a temporary directory that is removed on exit.
-import { mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type {
@@ -16,13 +16,14 @@ import type {
   SDKUserMessage,
   query,
 } from '@anthropic-ai/claude-agent-sdk';
-import { ConfigSchema } from '../src/config/config.js';
+import { addProject, ConfigSchema } from '../src/config/config.js';
 import { resolvePaths } from '../src/config/paths.js';
 import { InputRouter } from '../src/mouse/input-router.js';
 import { DeviceRegistry } from '../src/pairing/device-registry.js';
 import { PairingService } from '../src/pairing/pairing-service.js';
 import { buildServer } from '../src/server/app.js';
 import { WsGateway } from '../src/server/ws-gateway.js';
+import { encodeProjectDir, PcSessionWatcher } from '../src/sessions/pc-sessions.js';
 import { SessionManager } from '../src/sessions/session-manager.js';
 import { FakeMouseDriver } from '../src/test-utils/fakes.js';
 import { ensureTls } from '../src/tls/certificates.js';
@@ -118,7 +119,82 @@ const config = ConfigSchema.parse({
   ],
 });
 const sessions = new SessionManager(config, logger, demoQuery);
-const gateway = new WsGateway({ router, sessions, registry, logger });
+
+// A pretend Claude session in a terminal, in a folder that is not allow-listed. It
+// alternates between working and idle so the PC list and "done" toasts can be seen.
+const claudeDir = path.join(home, 'claude');
+const terminalCwd = path.join(home, 'api-server');
+const transcriptDir = path.join(claudeDir, 'projects', encodeProjectDir(terminalCwd));
+await mkdir(path.join(claudeDir, 'sessions'), { recursive: true });
+await mkdir(terminalCwd, { recursive: true });
+await mkdir(transcriptDir, { recursive: true });
+const transcript = path.join(transcriptDir, 'terminal-1.jsonl');
+const line = (entry: unknown) =>
+  appendFile(
+    transcript,
+    `${JSON.stringify(entry)}
+`,
+  );
+const setStatus = (status: string) =>
+  writeFile(
+    path.join(claudeDir, 'sessions', `${process.pid}.json`),
+    JSON.stringify({
+      pid: process.pid,
+      sessionId: 'terminal-1',
+      cwd: terminalCwd,
+      name: 'api-server',
+      status,
+      startedAt: Date.now(),
+    }),
+  );
+await line({ type: 'user', message: { content: 'Add rate limiting to the login route' } });
+await line({ type: 'last-prompt', lastPrompt: 'Add rate limiting to the login route' });
+await line({
+  type: 'assistant',
+  message: {
+    content: [
+      { type: 'text', text: "I'll add a token bucket in front of `/login`." },
+      { type: 'tool_use', id: 'x1', name: 'Edit', input: { file_path: 'src/routes/login.ts' } },
+    ],
+  },
+});
+await setStatus('busy');
+let busy = true;
+setInterval(
+  () => {
+    busy = !busy;
+    void setStatus(busy ? 'busy' : 'idle');
+    if (!busy)
+      void line({
+        type: 'assistant',
+        message: {
+          content: [{ type: 'text', text: 'Done: login is limited to 10 attempts a minute.' }],
+        },
+      });
+  },
+  Number(process.env.DEMO_PC_TOGGLE_MS ?? 15_000),
+).unref();
+
+const pcSessions = new PcSessionWatcher({
+  logger,
+  claudeDir,
+  isOwnSession: (id) => sessions.owns(id),
+  projectFor: (cwd) => sessions.projectForFolder(cwd)?.id,
+  intervalMs: 1_000,
+});
+pcSessions.start();
+const gateway = new WsGateway({
+  router,
+  sessions,
+  registry,
+  logger,
+  pcSessions,
+  allowFolder: async (dir) => {
+    const project = await addProject(config, dir);
+    gateway.broadcastProjects(config.projects);
+    return project;
+  },
+});
 const app = await buildServer({
   tls,
   logger,
@@ -133,6 +209,7 @@ const code = pairing.issueCode();
 console.log(`UI demo on https://127.0.0.1:${port}  pairing code ${code.display}`);
 
 const shutdown = async () => {
+  await pcSessions.stop();
   sessions.closeAll();
   await app.close();
   await registry.close();

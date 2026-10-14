@@ -1143,3 +1143,125 @@ a {
     min-height: 44px;
   }
 }
+
+/* --- Sessions elsewhere on the PC and "task done" toasts ---------------------- */
+
+.pc-count {
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 0.7rem;
+}
+.pc-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem calc(0.6rem + var(--safe-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.pc-bar-text {
+  flex: 1;
+  margin: 0;
+  font-size: 0.9rem;
+}
+.pc-bar .btn {
+  flex: none;
+}
+
+.toasts {
+  position: fixed;
+  top: calc(var(--app-top, 0px) + var(--safe-top) + 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100% - 1.5rem, 480px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 20;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--ok);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  animation: sheet-in 0.2s ease-out;
+}
+.toast-error {
+  border-left-color: var(--danger);
+}
+.toast-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 0.6rem 0.4rem 0.6rem 0.8rem;
+  min-height: 52px;
+  cursor: pointer;
+}
+.toast-icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+.toast-error .toast-icon {
+  background: var(--danger);
+}
+.toast-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.toast-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.toast-tag {
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.toast-body {
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toast-close {
+  flex: none;
+  width: 44px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.3rem;
+  cursor: pointer;
+}

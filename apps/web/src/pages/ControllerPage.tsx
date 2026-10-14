@@ -4,6 +4,7 @@ import { Composer, type ComposerHandle } from '../components/Composer';
 import { GearIcon } from '../components/Icons';
 import { PermissionCard } from '../components/PermissionCard';
 import { SessionBar, StartSession, useProjectChoice } from '../components/SessionBar';
+import { Toasts } from '../components/Toasts';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { Trackpad } from '../components/Trackpad';
 import { Transcript } from '../components/Transcript';
@@ -12,7 +13,7 @@ import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
 import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
 import { useWakeLock } from '../hooks/useWakeLock';
-import { initialState, reducer } from '../lib/store';
+import { initialState, reducer, type Toast } from '../lib/store';
 
 type Tab = 'claude' | 'trackpad';
 
@@ -48,9 +49,12 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     if (connection === 'unpaired') onUnpaired();
   }, [connection, onUnpaired]);
 
-  // Subscribe to the active session after (re)connecting to get its history.
+  // Subscribe to whatever is on screen after (re)connecting to get its history.
   useEffect(() => {
-    if (connection === 'open' && state.activeSessionId) {
+    if (connection !== 'open') return;
+    if (state.activePcSessionId) {
+      send({ type: 'pc.session.subscribe', sessionId: state.activePcSessionId });
+    } else if (state.activeSessionId) {
       send({ type: 'claude.session.subscribe', sessionId: state.activeSessionId });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on (re)connect
@@ -69,7 +73,52 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     return () => window.clearTimeout(timer);
   }, [state.error]);
 
-  const active = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
+  const pcId = state.activePcSessionId;
+  const pc = pcId ? state.pcSessions.find((p) => p.sessionId === pcId) : undefined;
+  const active = !pcId && state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
+  const pcEvents = useMemo(
+    () => (pcId ? (state.pcEvents[pcId] ?? []) : []),
+    [pcId, state.pcEvents],
+  );
+
+  const openSession = (sessionId: string) => {
+    if (pcId) send({ type: 'pc.session.unsubscribe' });
+    dispatch({ type: 'selectSession', sessionId });
+    send({ type: 'claude.session.subscribe', sessionId });
+  };
+  const openPcSession = (sessionId: string) => {
+    dispatch({ type: 'selectPcSession', sessionId });
+    send({ type: 'pc.session.subscribe', sessionId });
+  };
+  const openToast = (toast: Toast) => {
+    dispatch({ type: 'dismissToast', id: toast.id });
+    setTab('claude');
+    if (toast.source === 'pc') openPcSession(toast.sessionId);
+    else openSession(toast.sessionId);
+  };
+  const dismissToast = useCallback((id: number) => dispatch({ type: 'dismissToast', id }), []);
+
+  // Continuing a terminal session forks it into a phone session. A folder that isn't
+  // allow-listed yet is added only after an explicit confirmation here.
+  const continuePc = () => {
+    if (!pc) return;
+    if (!pc.projectId) {
+      const ok = confirm(
+        `Allow Claude to work in this folder from your phone?\n\n${pc.cwd}\n\nEvery tool call still needs your approval.`,
+      );
+      if (!ok) return;
+    }
+    send({ type: 'pc.session.continue', sessionId: pc.sessionId, allowFolder: !pc.projectId });
+  };
+
+  // A light tap when a task finishes somewhere else.
+  const lastToast = useRef(state.toasts[0]?.id ?? 0);
+  useEffect(() => {
+    const newest = state.toasts[0]?.id ?? 0;
+    if (newest > lastToast.current) navigator.vibrate?.(20);
+    lastToast.current = Math.max(lastToast.current, newest);
+  }, [state.toasts]);
+
   const permissions = useMemo(
     () => Object.values(state.permissions).sort((a, b) => a.createdAt - b.createdAt),
     [state.permissions],
@@ -200,17 +249,28 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
             send={send}
             sheetOpen={sessionsOpen}
             onSheetOpenChange={setSessionsOpen}
-            onSelect={(sessionId) => {
-              dispatch({ type: 'selectSession', sessionId });
-              send({ type: 'claude.session.subscribe', sessionId });
-            }}
+            onSelect={openSession}
+            onSelectPc={openPcSession}
           />
-          <Transcript
-            key={active?.id ?? 'none'}
-            events={activeEvents}
-            streaming={active ? (state.streaming[active.id] ?? '') : ''}
-            empty={emptyState}
-          />
+          {pcId ? (
+            <Transcript
+              key={`pc-${pcId}`}
+              events={pcEvents}
+              streaming=""
+              empty={
+                <div className="empty-card">
+                  <p className="muted">No messages in this session yet.</p>
+                </div>
+              }
+            />
+          ) : (
+            <Transcript
+              key={active?.id ?? 'none'}
+              events={activeEvents}
+              streaming={active ? (state.streaming[active.id] ?? '') : ''}
+              empty={emptyState}
+            />
+          )}
           {otherPermissions > 0 && (
             <button className="banner banner-action" onClick={() => setSessionsOpen(true)}>
               {otherPermissions} approval{otherPermissions > 1 ? 's' : ''} waiting in another
@@ -228,6 +288,33 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                   disabled={connection !== 'open'}
                 />
               ))}
+            </div>
+          )}
+          {pcId && (
+            <div className="pc-bar">
+              {pc ? (
+                <>
+                  <p className="pc-bar-text">
+                    <strong>Running in a terminal on the PC.</strong>{' '}
+                    <span className="muted">
+                      {pc.status === 'working' || pc.status === 'waiting'
+                        ? 'You can continue it here once it finishes.'
+                        : 'Continue it here as a copy; the terminal keeps its own.'}
+                    </span>
+                  </p>
+                  <button
+                    className="btn btn-primary"
+                    disabled={
+                      connection !== 'open' || pc.status === 'working' || pc.status === 'waiting'
+                    }
+                    onClick={continuePc}
+                  >
+                    Continue on phone
+                  </button>
+                </>
+              ) : (
+                <p className="pc-bar-text muted">This session has ended on the PC.</p>
+              )}
             </div>
           )}
           {active && live && (
@@ -277,6 +364,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
           />
         </main>
       )}
+
+      <Toasts toasts={state.toasts} onOpen={openToast} onDismiss={dismissToast} />
 
       {settingsOpen && (
         <SettingsSheet
