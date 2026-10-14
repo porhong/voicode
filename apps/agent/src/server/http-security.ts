@@ -34,11 +34,19 @@ export function clearDeviceCookie(reply: FastifyReply): void {
 }
 
 /**
- * Accepts a request only when its Host is one of the names in our certificate and,
- * for state-changing requests and WebSocket upgrades, its Origin is that same host.
- * This blocks cross-site WebSocket hijacking and CSRF from other origins on the LAN.
+ * Accepts a request only when its Host is one of the names in our certificate (or the
+ * Cloudflare Tunnel's public host name) and, for state-changing requests and WebSocket
+ * upgrades, its Origin is that same host. This blocks cross-site WebSocket hijacking,
+ * CSRF from other origins on the LAN, and DNS rebinding.
+ *
+ * `tunnelHosts` is read live: a quick tunnel only learns its host name after the server
+ * is listening, and gets a new one whenever cloudflared restarts.
  */
-export function createOriginGuard(allowedHosts: Iterable<string>, extraOrigins: Iterable<string>) {
+export function createOriginGuard(
+  allowedHosts: Iterable<string>,
+  extraOrigins: Iterable<string>,
+  tunnelHosts: ReadonlySet<string> = new Set(),
+) {
   const hosts = new Set([...allowedHosts].map((h) => h.toLowerCase()));
   const extras = new Set(extraOrigins);
 
@@ -46,11 +54,16 @@ export function createOriginGuard(allowedHosts: Iterable<string>, extraOrigins: 
     const host = request.headers.host?.toLowerCase();
     if (!host) return undefined;
     const hostname = host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]!;
-    return hosts.has(hostname) ? host : undefined;
+    return hosts.has(hostname) || tunnelHosts.has(hostname) ? host : undefined;
   };
 
   return {
     hostAllowed: (request: FastifyRequest) => hostAllowed(request) !== undefined,
+    /** True when the request is addressed to the public tunnel host name. */
+    viaTunnel(request: FastifyRequest): boolean {
+      const host = hostAllowed(request);
+      return host !== undefined && tunnelHosts.has(host.split(':')[0]!);
+    },
     originAllowed(request: FastifyRequest): boolean {
       const origin = request.headers.origin;
       if (!origin) return false;
@@ -62,3 +75,19 @@ export function createOriginGuard(allowedHosts: Iterable<string>, extraOrigins: 
 }
 
 export type OriginGuard = ReturnType<typeof createOriginGuard>;
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * The client's address for rate limiting and logs. Behind Cloudflare Tunnel every
+ * request comes from cloudflared on loopback, so the visitor's address is taken from
+ * `CF-Connecting-IP` — but only when the tunnel is on and the request really arrived
+ * over loopback, so LAN clients cannot pick their own rate-limit bucket.
+ */
+export function clientAddress(request: FastifyRequest, behindTunnel: boolean): string {
+  if (behindTunnel && LOOPBACK.has(request.socket.remoteAddress ?? '')) {
+    const forwarded = request.headers['cf-connecting-ip'];
+    if (typeof forwarded === 'string' && forwarded) return forwarded;
+  }
+  return request.ip;
+}

@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import type { MouseStatus, SessionSummary } from '@voicecode/protocol';
+import type { AgentTunnelInfo } from '../../agent.js';
 import type { ProjectConfig } from '../../config/config.js';
 import { loadConfig } from '../../config/config.js';
 import { resolvePaths } from '../../config/paths.js';
@@ -14,6 +15,7 @@ interface StatusResponse {
   pid: number;
   startedAt: number;
   urls: string[];
+  tunnel?: AgentTunnelInfo;
   connections: Array<{ deviceName: string }>;
   mouse: MouseStatus;
   sessions: SessionSummary[];
@@ -37,6 +39,19 @@ export function registerStatus(program: Command): void {
       out(`${ok('●')} Running ${pc.dim(`v${status.version}, pid ${status.pid}`)}`);
       row('Uptime', formatDuration(Date.now() - status.startedAt));
       row('URL', status.urls[0] ?? '-');
+      const t = status.tunnel;
+      if (t && t.mode !== 'off') {
+        row(
+          'Tunnel',
+          'error' in t
+            ? warn(t.error)
+            : t.state === 'ready'
+              ? t.url
+              : t.state === 'down'
+                ? warn(`down (${t.reason})`)
+                : warn('connecting'),
+        );
+      }
       row(
         'Clients',
         status.connections.length

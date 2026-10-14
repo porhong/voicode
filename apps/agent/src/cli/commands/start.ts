@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import pc from 'picocolors';
-import { Agent } from '../../agent.js';
+import { Agent, type AgentTunnelInfo } from '../../agent.js';
 import { addProject, saveConfig } from '../../config/config.js';
 import { resolvePaths } from '../../config/paths.js';
 import { runChecks } from '../../doctor/checks.js';
@@ -28,6 +28,7 @@ interface StartOptions {
   host?: string;
   qr: boolean;
   verbose?: boolean;
+  tunnel?: boolean;
 }
 
 export function registerStart(program: Command): void {
@@ -38,6 +39,8 @@ export function registerStart(program: Command): void {
     .option('--port <port>', 'HTTPS port for this run', parsePort)
     .option('--host <address>', 'bind address for this run')
     .option('--no-qr', 'do not print the pairing QR code')
+    .option('--tunnel', 'use a Cloudflare quick tunnel for this run if none is configured')
+    .option('--no-tunnel', 'do not start the configured Cloudflare Tunnel this run')
     .option('-v, --verbose', 'mirror the JSON log to stderr')
     .action(start);
 }
@@ -52,6 +55,8 @@ async function start(opts: StartOptions): Promise<void> {
   }
   if (opts.port) config.server.port = opts.port;
   if (opts.host) config.server.host = opts.host;
+  if (opts.tunnel === false) config.tunnel.mode = 'off';
+  if (opts.tunnel === true && config.tunnel.mode === 'off') config.tunnel.mode = 'quick';
 
   if (await isAgentRunning(paths)) {
     out(fail('The agent is already running. Use `voicecode-agent status` or `stop`.'));
@@ -80,7 +85,9 @@ async function start(opts: StartOptions): Promise<void> {
       { cause: err },
     );
   }
-  const url = info.urls[0]!;
+  const lanUrl = info.urls[0]!;
+  const tunnelUrl = 'url' in info.tunnel ? info.tunnel.url : undefined;
+  const url = tunnelUrl ?? lanUrl;
 
   const auth = (await runChecks(config, paths, { probeMouse: false })).find(
     (c) => c.name === 'Claude Code auth',
@@ -100,8 +107,9 @@ async function start(opts: StartOptions): Promise<void> {
     'Projects',
     info.projects.map((p) => p.name).join(', ') || warn('none — add one with --project'),
   );
-  row('LAN URL', pc.bold(url));
+  row('LAN URL', tunnelUrl ? lanUrl : pc.bold(lanUrl));
   for (const extra of info.urls.slice(1)) row('', extra);
+  if (info.tunnel.mode !== 'off') row('Tunnel URL', describeTunnel(info.tunnel));
   row(
     'Pairing code',
     `${pc.bold(info.pairingCode.display)}  ${pc.dim(`expires in ${minutesUntil(info.pairingCode.expiresAt)} min`)}`,
@@ -112,8 +120,16 @@ async function start(opts: StartOptions): Promise<void> {
     out(pc.dim('  Scan with your phone to open and pair:'));
     await printQr(`${url}/#pair=${info.pairingCode.code}`);
   }
-  out(pc.dim(`  First time on a device? Install the CA from ${url}/voicecode-ca.crt`));
-  out(pc.dim('  so the browser trusts the agent (required for the microphone).'));
+  if (tunnelUrl) {
+    out(pc.dim('  The tunnel URL works on any phone without installing a certificate.'));
+    out(warn('  It is reachable from the internet: only share pairing codes with your devices.'));
+    if (info.tunnel.mode === 'quick') {
+      out(pc.dim('  Quick tunnel URLs change on every start, so devices pair again each time.'));
+    }
+  } else {
+    out(pc.dim(`  First time on a device? Install the CA from ${lanUrl}/voicecode-ca.crt`));
+    out(pc.dim('  so the browser trusts the agent (required for the microphone).'));
+  }
   out();
   out(`  Ready for browser connections ${pc.dim('(Ctrl+C to stop)')}`);
 
@@ -121,6 +137,13 @@ async function start(opts: StartOptions): Promise<void> {
   agent.on('pairingFailed', (reason, addr) =>
     out(`${timestamp()} ${warn('Pairing failed')} (${reason}) from ${addr}`),
   );
+  agent.on('tunnel', (t) => {
+    if (t.mode === 'off' || 'error' in t || t.state === 'connecting') return;
+    out(`${timestamp()} Tunnel ${describeTunnel(t)}`);
+    if (t.state === 'ready' && t.mode === 'quick' && t.url !== tunnelUrl) {
+      out(pc.dim('  The quick tunnel URL changed; run `voicecode-agent pair` for a new code.'));
+    }
+  });
   agent.on('connections', (n) => out(`${timestamp()} ${n} client${n === 1 ? '' : 's'} connected`));
 
   let shuttingDown = false;
@@ -139,4 +162,17 @@ async function start(opts: StartOptions): Promise<void> {
   process.on('SIGTERM', shutdown);
   // Sent when the terminal goes away (Node also emits it when a Windows console closes).
   process.on('SIGHUP', shutdown);
+}
+
+function describeTunnel(t: AgentTunnelInfo): string {
+  if (t.mode === 'off') return pc.dim('off');
+  if ('error' in t) return warn(`Unavailable — ${t.error}`);
+  switch (t.state) {
+    case 'ready':
+      return pc.bold(t.url);
+    case 'connecting':
+      return warn('Connecting… (check `voicecode-agent status` in a moment)');
+    case 'down':
+      return warn(`Down — ${t.reason}; retrying in ${Math.round(t.retryInMs / 1000)}s`);
+  }
 }

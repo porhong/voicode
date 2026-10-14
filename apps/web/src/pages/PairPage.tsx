@@ -86,10 +86,22 @@ export function PairPage({ hostname, onPaired }: { hostname?: string; onPaired: 
           {busy ? 'Pairing…' : 'Pair device'}
         </button>
       </form>
-      <p className="small muted">
-        Seeing a certificate warning or no microphone? Install the{' '}
-        <a href="/voicecode-ca.crt">VoiceCode certificate</a> on this device and mark it as trusted.
-      </p>
+      {servedFromLan() && (
+        <p className="small muted">
+          Seeing a certificate warning or no microphone? Install the{' '}
+          <a href="/voicecode-ca.crt">VoiceCode certificate</a> on this device and mark it as
+          trusted.
+        </p>
+      )}
     </main>
   );
+}
+
+/**
+ * Only the LAN address uses the agent's own certificate; a Cloudflare Tunnel host name
+ * has a publicly trusted one, so the install hint would just be noise there.
+ */
+function servedFromLan(): boolean {
+  const host = location.hostname;
+  return /^[\d.]+$|^\[|:/.test(host) || host === 'localhost' || host.endsWith('.local');
 }

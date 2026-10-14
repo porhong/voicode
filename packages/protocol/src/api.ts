@@ -24,7 +24,8 @@ export interface PairResponse {
 export interface AgentInfoResponse {
   name: 'voicecode-agent';
   version: string;
-  hostname: string;
+  /** The PC's name; withheld from unpaired visitors arriving over a public tunnel. */
+  hostname?: string;
   protocolVersion: number;
   /** True when the request carried a valid device cookie. */
   paired: boolean;

@@ -7,6 +7,7 @@ import { registerProjects } from './commands/projects.js';
 import { registerStart } from './commands/start.js';
 import { registerStatus } from './commands/status.js';
 import { registerSystem } from './commands/system.js';
+import { registerTunnel } from './commands/tunnel.js';
 import { fail, out } from './ui.js';
 
 const program = new Command()
@@ -22,6 +23,7 @@ registerStatus(program);
 registerPair(program);
 registerDevices(program);
 registerProjects(program);
+registerTunnel(program);
 registerSystem(program);
 
 program.parseAsync().catch((err: unknown) => {

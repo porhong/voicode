@@ -17,9 +17,10 @@ through native input helpers. Shipped on npm and as standalone executables (Node
 packages/protocol   zod wire schemas + types shared by agent and web (PROTOCOL_VERSION)
 packages/security   pairing codes, secret hashing, local CA (@peculiar/x509)
 apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
-  src/cli/commands  init start status pair devices sessions projects autostart firewall doctor stop
+  src/cli/commands  init start status pair devices sessions projects tunnel autostart firewall doctor stop
   src/server        Fastify app, origin/host guard, cookie auth, WebSocket gateway
   src/claude        ClaudeSession (SDK query), ApprovalBroker (canUseTool), claude-executable (SEA download)
+  src/tunnel        cloudflared config + process supervisor (optional Cloudflare Tunnel)
   src/mouse         InputRouter (lease, coalescing), helper-process / command drivers
   src/util          standalone.ts (SEA assets), tar.ts, logger, network
   scripts           copy-web, prepack, build-sea, smoke-sea
@@ -55,6 +56,8 @@ npm run e2e -- <url> <code>      # real browser + real Claude against a running 
   - Device secrets are stored hashed; HttpOnly `__Host-` cookie.
   - Every HTTP and WebSocket request passes the origin/host guard.
   - Certificates are limited by name constraints to private ranges.
+  - Cloudflare Tunnel is opt-in. cloudflared verifies the origin against the local CA
+    (never `--no-tls-verify`), and the tunnel token goes by file, never argv.
 - Untrusted text (device names, tool input) is stripped of control/format characters
   before reaching a terminal (`clean()` in `src/cli/ui.ts`).
 - Match the surrounding style: explanatory doc comments on non-obvious decisions, small
@@ -94,6 +97,9 @@ Not verified yet:
 - A real phone: certificate install, microphone, touch.
 - The Wayland helper on a real desktop (it is only compile-checked).
 - The first npm publish, which needs the owner's token.
+- Cloudflare Tunnel: quick mode was checked end to end through Cloudflare (pairing,
+  cookie, WebSocket). `tunnel setup` and `tunnel token` need a Cloudflare account and a
+  domain, so only their generated ingress config was validated with cloudflared.
 
 Next candidates, in rough priority:
 

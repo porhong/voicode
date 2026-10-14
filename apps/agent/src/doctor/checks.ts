@@ -25,6 +25,12 @@ import { silentLogger } from '../util/logger.js';
 import { rankedLanAddresses } from '../util/network.js';
 import { autostartStatus } from '../system/autostart.js';
 import { inspectWindowsFirewall } from '../system/firewall.js';
+import {
+  cloudflaredVersion,
+  findCloudflared,
+  INSTALL_HINT,
+  tunnelSetupProblem,
+} from '../tunnel/cloudflared.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
 export interface CheckResult {
@@ -150,9 +156,33 @@ export async function runChecks(
     });
   }
   if (process.platform === 'win32' && config) add(await checkFirewall(config.server.port));
+  if (config && config.tunnel.mode !== 'off') add(await checkTunnel(config, paths));
   if (config) add(await checkAutostart());
 
   return results;
+}
+
+async function checkTunnel(config: AgentConfig, paths: AgentPaths): Promise<CheckResult> {
+  const name = 'Cloudflare Tunnel';
+  const exe = findCloudflared(config.tunnel.cloudflared);
+  if (!exe) {
+    return { name, status: 'fail', detail: 'cloudflared not found', fix: INSTALL_HINT };
+  }
+  const problem = await tunnelSetupProblem(config.tunnel, paths);
+  if (problem) {
+    return { name, status: 'fail', detail: problem, fix: 'Run `voicecode-agent tunnel` for setup' };
+  }
+  const version = (await cloudflaredVersion(exe)) ?? 'unknown version';
+  const where =
+    config.tunnel.mode === 'quick'
+      ? 'random trycloudflare.com URL'
+      : `https://${config.tunnel.hostname}`;
+  return {
+    name,
+    status: 'warn',
+    detail: `${config.tunnel.mode}: ${where} (cloudflared ${version})`,
+    fix: 'Reachable from the internet; only share pairing codes with your own devices',
+  };
 }
 
 function checkClaudeExecutable(): CheckResult | undefined {

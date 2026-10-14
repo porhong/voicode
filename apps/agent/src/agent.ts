@@ -13,6 +13,12 @@ import { buildServer } from './server/app.js';
 import { WsGateway } from './server/ws-gateway.js';
 import { SessionManager } from './sessions/session-manager.js';
 import { ensureTls, type TlsMaterial } from './tls/certificates.js';
+import {
+  prepareTunnel,
+  staticTunnelHost,
+  type CloudflaredTunnel,
+  type TunnelState,
+} from './tunnel/cloudflared.js';
 import type { Logger } from './util/logger.js';
 import { formatUrl, rankedLanAddresses } from './util/network.js';
 import { packageRoot, VERSION } from './util/version.js';
@@ -23,7 +29,16 @@ export interface AgentRuntimeInfo {
   mouse: ReturnType<InputRouter['status']> & { details?: Record<string, string> };
   projects: ProjectConfig[];
   pairingCode: PairingCode;
+  tunnel: AgentTunnelInfo;
 }
+
+export type AgentTunnelInfo =
+  | { mode: 'off' }
+  | { mode: AgentConfig['tunnel']['mode']; error: string }
+  | ({ mode: AgentConfig['tunnel']['mode'] } & TunnelState);
+
+/** How long `start` waits for the tunnel before printing without its URL. */
+const TUNNEL_WAIT_MS = 30_000;
 
 /**
  * Composition root: TLS, device registry and pairing, the mouse router, Claude
@@ -33,6 +48,7 @@ export class Agent extends EventEmitter<{
   paired: [device: PublicDevice];
   pairingFailed: [reason: string, remoteAddress: string];
   connections: [count: number];
+  tunnel: [info: AgentTunnelInfo];
   stopped: [];
 }> {
   private registry!: DeviceRegistry;
@@ -44,6 +60,10 @@ export class Agent extends EventEmitter<{
   private control: http.Server | undefined;
   private tls!: TlsMaterial;
   private urls: string[] = [];
+  private tunnel: CloudflaredTunnel | undefined;
+  private tunnelInfo: AgentTunnelInfo = { mode: 'off' };
+  /** Host names the tunnel serves; the server's origin guard reads this set live. */
+  private readonly tunnelHosts = new Set<string>();
   private startedAt = 0;
   private stopping: Promise<void> | undefined;
 
@@ -110,6 +130,7 @@ export class Agent extends EventEmitter<{
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean),
+      tunnelHosts: config.tunnel.mode === 'off' ? undefined : this.tunnelHosts,
     });
     await this.app.listen({ host: config.server.host, port: config.server.port });
 
@@ -118,14 +139,49 @@ export class Agent extends EventEmitter<{
     const hosts = addresses.map((a) => a.address).filter((ip) => this.tls.names.includes(ip));
     this.urls = (hosts.length ? hosts : ['localhost']).map((h) => formatUrl(h, config.server.port));
     this.startedAt = Date.now();
-    logger.info({ urls: this.urls, version: VERSION }, 'agent started');
+    await this.startTunnel();
+    logger.info({ urls: this.urls, version: VERSION, tunnel: this.tunnelInfo }, 'agent started');
     return {
       urls: this.urls,
       caFingerprint: this.tls.caFingerprint,
       mouse: { ...this.router.status(), details: this.router.info?.details },
       projects: config.projects,
       pairingCode: this.pairing.issueCode(),
+      tunnel: this.tunnelInfo,
     };
+  }
+
+  /** The URL phones should open: the tunnel's when it is up, otherwise the LAN one. */
+  get publicUrl(): string | undefined {
+    return this.tunnelInfo.mode !== 'off' && 'url' in this.tunnelInfo
+      ? this.tunnelInfo.url
+      : undefined;
+  }
+
+  private async startTunnel(): Promise<void> {
+    const { tunnel: settings } = this.config;
+    if (settings.mode === 'off') return;
+    const logger = this.logger.child({ component: 'tunnel' });
+    const prepared = await prepareTunnel(this.config, this.paths, logger);
+    if ('error' in prepared) {
+      logger.warn({ error: prepared.error }, 'tunnel unavailable');
+      this.tunnelInfo = { mode: settings.mode, error: prepared.error };
+      return;
+    }
+    const fixedHost = staticTunnelHost(settings);
+    if (fixedHost) this.tunnelHosts.add(fixedHost);
+    this.tunnel = prepared.tunnel;
+    this.tunnel.on('state', (state) => {
+      if (state.state === 'ready' && !fixedHost) {
+        // A restarted quick tunnel has a new name; the old one must stop working.
+        this.tunnelHosts.clear();
+        this.tunnelHosts.add(new URL(state.url).hostname);
+      }
+      this.tunnelInfo = { mode: settings.mode, ...state };
+      this.emit('tunnel', this.tunnelInfo);
+    });
+    this.tunnel.start();
+    await this.tunnel.waitReady(TUNNEL_WAIT_MS);
   }
 
   issuePairingCode(): PairingCode {
@@ -137,6 +193,7 @@ export class Agent extends EventEmitter<{
       this.logger.info('agent stopping');
       this.sessions?.closeAll();
       this.gateway?.closeAll();
+      await this.tunnel?.stop();
       await this.router?.stop();
       await this.app?.close();
       await new Promise<void>((resolve) =>
@@ -155,6 +212,7 @@ export class Agent extends EventEmitter<{
         pid: process.pid,
         startedAt: this.startedAt,
         urls: this.urls,
+        tunnel: this.tunnelInfo,
         connections: this.gateway.devicesOnline(),
         mouse: this.router.status(),
         sessions: this.sessions.list(),
@@ -162,7 +220,12 @@ export class Agent extends EventEmitter<{
       }),
       'POST /pair': () => {
         const code = this.pairing.issueCode();
-        return { code: code.display, raw: code.code, expiresAt: code.expiresAt, url: this.urls[0] };
+        return {
+          code: code.display,
+          raw: code.code,
+          expiresAt: code.expiresAt,
+          url: this.publicUrl ?? this.urls[0],
+        };
       },
       'GET /devices': () => ({
         devices: this.registry.list(),

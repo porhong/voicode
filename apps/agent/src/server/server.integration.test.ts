@@ -25,21 +25,32 @@ let pairing: PairingService;
 let registry: DeviceRegistry;
 let router: InputRouter;
 let sessions: SessionManager;
+const tunnelHosts = new Set<string>();
 const driver = new FakeMouseDriver();
 const fake = createFakeQuery({ permissionMode: 'bypassPermissions' });
 
 function request(
   method: string,
   route: string,
-  opts: { body?: unknown; cookie?: string; origin?: string | null } = {},
+  opts: {
+    body?: unknown;
+    cookie?: string;
+    origin?: string | null;
+    host?: string;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<{ status: number; body: Record<string, unknown>; setCookie?: string }> {
   return new Promise((resolve, reject) => {
     const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body);
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...opts.headers };
+    if (opts.host) headers.host = opts.host;
     if (payload) headers['content-type'] = 'application/json';
     if (opts.cookie) headers.cookie = opts.cookie;
     if (opts.origin !== null) headers.origin = opts.origin ?? base;
-    const req = https.request(`${base}${route}`, { method, ca: tls.caCert, headers }, (res) => {
+    // A custom Host would otherwise become the TLS server name; the cert covers localhost.
+    const servername = opts.host ? 'localhost' : undefined;
+    const options = { method, ca: tls.caCert, headers, servername };
+    const req = https.request(`${base}${route}`, options, (res) => {
       let text = '';
       res.on('data', (c) => (text += c));
       res.on('end', () =>
@@ -125,7 +136,7 @@ beforeAll(async () => {
   });
   sessions = new SessionManager(config, logger, fake.queryFn);
   const gateway = new WsGateway({ router, sessions, registry, logger });
-  app = await buildServer({ tls, logger, registry, pairing, gateway });
+  app = await buildServer({ tls, logger, registry, pairing, gateway, tunnelHosts });
   await app.listen({ host: '127.0.0.1', port: 0 });
   base = `https://127.0.0.1:${(app.server.address() as { port: number }).port}`;
 });
@@ -191,6 +202,54 @@ describe('HTTPS API', () => {
         .end(),
     );
     expect(status).toBe(421);
+  });
+});
+
+describe('Cloudflare Tunnel host', () => {
+  const host = 'quiet-river-1234.trycloudflare.com';
+
+  it('is refused until the tunnel reports it, then needs its own origin', async () => {
+    expect((await request('GET', '/api/info', { host })).status).toBe(421);
+
+    tunnelHosts.add(host);
+    try {
+      const info = await request('GET', '/api/info', { host });
+      expect(info.status).toBe(200);
+      // Strangers on the internet don't learn the PC's name.
+      expect(info.body.hostname).toBeUndefined();
+      const { code } = pairing.issueCode();
+      const body = { code, deviceName: 'Tunnel phone' };
+      // The LAN origin is not valid for a request addressed to the tunnel host.
+      expect((await request('POST', '/api/pair', { host, body })).status).toBe(403);
+      const res = await request('POST', '/api/pair', { host, body, origin: `https://${host}` });
+      expect(res.status).toBe(200);
+      expect(res.setCookie).toMatch(/^__Host-vc_device=/);
+      const cookie = res.setCookie!.split(';')[0]!;
+      expect((await request('GET', '/api/info', { host, cookie })).body.hostname).toBeTruthy();
+    } finally {
+      tunnelHosts.delete(host);
+    }
+    expect((await request('GET', '/api/info', { host })).status).toBe(421);
+  });
+
+  it('reports the visitor address from CF-Connecting-IP for pairing failures', async () => {
+    tunnelHosts.add(host);
+    const failures: string[] = [];
+    const onFailed = (_reason: string, address: string) => failures.push(address);
+    pairing.on('failed', onFailed);
+    try {
+      const { code } = pairing.issueCode();
+      await request('POST', '/api/pair', {
+        host,
+        origin: `https://${host}`,
+        headers: { 'cf-connecting-ip': '203.0.113.7' },
+        body: { code: code === '000000' ? '111111' : '000000', deviceName: 'x' },
+      });
+      expect(failures).toEqual(['203.0.113.7']);
+    } finally {
+      pairing.off('failed', onFailed);
+      tunnelHosts.delete(host);
+    }
   });
 });
 

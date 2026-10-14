@@ -110,5 +110,6 @@ and the header of `apps/agent/scripts/build-sea.mjs`.
 | `npm ci` is slow / downloads ~250 MB                | Expected: the Agent SDK pulls the Claude Code binary for your platform as an optional dependency                              |
 | Phone can't connect on Windows                      | `voicecode-agent firewall` (one admin prompt); `doctor` warns when the network profile is Public                              |
 | Browser shows a certificate warning / no microphone | Install the CA from `https://<pc>:<port>/voicecode-ca.crt` on the device (README → Trust the agent's certificate)             |
+| Tunnel URL shows 502 / "Unavailable"                | `voicecode-agent tunnel` and `doctor`; cloudflared's own log lines are in `agent.log` (`"component":"tunnel"`)                |
 | `Port … is already in use`                          | Another agent is running (`voicecode-agent status` / `stop`) or pick `--port`                                                 |
 | Mouse unavailable                                   | `voicecode-agent doctor`; build the native helper or install `xdotool` / `ydotool`; the agent must run in the desktop session |

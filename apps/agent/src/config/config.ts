@@ -4,6 +4,9 @@ import path from 'node:path';
 import { z } from 'zod';
 import { readJsonFile, writeFileAtomic } from '../util/fs.js';
 
+/** A public DNS name such as `code.example.com` (lower case, at least one dot). */
+const HOSTNAME_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
 const ProjectSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -56,10 +59,38 @@ export const ConfigSchema = z.object({
       maxAttempts: z.number().int().min(1).max(20).default(5),
     })
     .prefault({}),
+  /**
+   * Optional Cloudflare Tunnel, which gives phones a publicly trusted HTTPS URL so they
+   * need no certificate install. Off by default: it makes the pairing page reachable
+   * from the internet. Secrets never live here — named-tunnel credentials and the
+   * dashboard token are separate `0600` files under `<home>/tunnel/`.
+   */
+  tunnel: z
+    .object({
+      /**
+       * - `off`: LAN only.
+       * - `quick`: an account-less `*.trycloudflare.com` URL that changes every run.
+       * - `named`: a tunnel on your own domain, created by `voicecode-agent tunnel setup`.
+       * - `token`: a tunnel managed in the Cloudflare dashboard (`tunnel token`).
+       */
+      mode: z.enum(['off', 'quick', 'named', 'token']).default('off'),
+      /** Public host name for `named` and `token` mode. */
+      hostname: z.string().regex(HOSTNAME_RE, 'not a valid host name').optional(),
+      /** Tunnel UUID for `named` mode. */
+      tunnelId: z.uuid().optional(),
+      /** Path to `cloudflared`; found on PATH or in its default install location if unset. */
+      cloudflared: z.string().min(1).optional(),
+    })
+    .prefault({}),
 });
+
+export function isValidHostname(name: string): boolean {
+  return HOSTNAME_RE.test(name);
+}
 
 export type AgentConfig = z.infer<typeof ConfigSchema>;
 export type ProjectConfig = z.infer<typeof ProjectSchema>;
+export type TunnelConfig = AgentConfig['tunnel'];
 
 export function defaultConfig(): AgentConfig {
   return ConfigSchema.parse({ version: 1 });

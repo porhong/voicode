@@ -13,6 +13,13 @@ export interface AgentPaths {
   caKey: string;
   serverCert: string;
   serverKey: string;
+  tunnelDir: string;
+  /** Generated cloudflared config (rewritten on every start). */
+  tunnelConfig: string;
+  /** Named-tunnel credentials written by `cloudflared tunnel create/token`. */
+  tunnelCredentials: string;
+  /** Dashboard tunnel token (`tunnel token`); passed to cloudflared by path, never argv. */
+  tunnelToken: string;
   /** Named pipe (Windows) or Unix domain socket (Linux) for the local control channel. */
   ipcEndpoint: string;
 }
@@ -36,6 +43,7 @@ export function resolveHome(env: NodeJS.ProcessEnv = process.env): string {
 
 export function resolvePaths(home = resolveHome()): AgentPaths {
   const tlsDir = path.join(home, 'tls');
+  const tunnelDir = path.join(home, 'tunnel');
   const id = createHash('sha256').update(home).digest('hex').slice(0, 12);
   const ipcEndpoint =
     process.platform === 'win32'
@@ -53,6 +61,10 @@ export function resolvePaths(home = resolveHome()): AgentPaths {
     caKey: path.join(tlsDir, 'ca.key.pem'),
     serverCert: path.join(tlsDir, 'server.crt.pem'),
     serverKey: path.join(tlsDir, 'server.key.pem'),
+    tunnelDir,
+    tunnelConfig: path.join(tunnelDir, 'cloudflared.yml'),
+    tunnelCredentials: path.join(tunnelDir, 'credentials.json'),
+    tunnelToken: path.join(tunnelDir, 'token'),
     ipcEndpoint,
   };
 }

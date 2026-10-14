@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Fastify, { LogController } from 'fastify';
+import Fastify, { LogController, type FastifyRequest } from 'fastify';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
@@ -22,6 +22,7 @@ import type { Logger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
 import {
   clearDeviceCookie,
+  clientAddress,
   createOriginGuard,
   readCookie,
   setDeviceCookie,
@@ -44,11 +45,15 @@ export interface ServerDeps {
   webRoot?: string;
   /** Extra origins allowed to connect (e.g. the Vite dev server). */
   extraOrigins?: string[];
+  /** Public host names of the Cloudflare Tunnel, if any (kept up to date by the agent). */
+  tunnelHosts?: ReadonlySet<string>;
 }
 
 export async function buildServer(deps: ServerDeps) {
   const { tls, registry, pairing, gateway } = deps;
-  const guard = createOriginGuard(tls.names, deps.extraOrigins ?? []);
+  const guard = createOriginGuard(tls.names, deps.extraOrigins ?? [], deps.tunnelHosts);
+  const behindTunnel = deps.tunnelHosts !== undefined;
+  const clientIp = (request: FastifyRequest) => clientAddress(request, behindTunnel);
 
   const app = Fastify({
     loggerInstance: deps.logger,
@@ -87,7 +92,11 @@ export async function buildServer(deps: ServerDeps) {
     reply.header('permissions-policy', 'microphone=(self), camera=(), geolocation=()');
   });
 
-  await app.register(fastifyRateLimit, { max: 600, timeWindow: '1 minute' });
+  await app.register(fastifyRateLimit, {
+    max: 600,
+    timeWindow: '1 minute',
+    keyGenerator: clientIp,
+  });
   await app.register(fastifyWebsocket, { options: { maxPayload: LIMITS.maxFrameBytes } });
 
   // Reject requests addressed to a host name that is not in our certificate.
@@ -99,7 +108,7 @@ export async function buildServer(deps: ServerDeps) {
   app.get('/api/info', async (request): Promise<AgentInfoResponse> => ({
     name: 'voicecode-agent',
     version: VERSION,
-    hostname: os.hostname(),
+    hostname: request.device || !guard.viaTunnel(request) ? os.hostname() : undefined,
     protocolVersion: PROTOCOL_VERSION,
     paired: request.device !== null,
     device: request.device ? { id: request.device.id, name: request.device.name } : undefined,
@@ -115,7 +124,7 @@ export async function buildServer(deps: ServerDeps) {
 
       const outcome = await pairing.pair(body.data.code, body.data.deviceName, {
         userAgent: request.headers['user-agent'],
-        remoteAddress: request.ip,
+        remoteAddress: clientIp(request),
       });
       if (!outcome.ok) {
         const status = outcome.reason === 'malformed' ? 400 : 401;
