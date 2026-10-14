@@ -217,7 +217,12 @@ export class SessionManager extends EventEmitter<{
       config: this.config.claude,
       broker: this.broker,
       logger: this.logger.child({ session: project.name, kind: 'voice', pid: pc.pid }),
-      attach: { pid: pc.pid, claudeSessionId: pc.sessionId, handle },
+      attach: {
+        pid: pc.pid,
+        claudeSessionId: pc.sessionId,
+        handle,
+        title: pc.name ?? pc.lastPrompt ?? `Terminal in ${pc.folder}`,
+      },
       claudeDir: this.voiceDeps.claudeDir,
     });
     this.track(session);
@@ -312,6 +317,10 @@ export class SessionManager extends EventEmitter<{
 
   async interrupt(sessionId: string): Promise<void> {
     await this.get(sessionId).interrupt();
+  }
+
+  rename(sessionId: string, title: string): void {
+    this.get(sessionId).rename(title);
   }
 
   close(sessionId: string): void {

@@ -115,7 +115,13 @@ export interface VoiceSessionOptions {
    * Take over a Claude Code the user started in a terminal instead of spawning one:
    * keys and screen go through `handle` (the console helper on Windows).
    */
-  attach?: { pid: number; claudeSessionId: string; handle: PtyHandle };
+  attach?: {
+    pid: number;
+    claudeSessionId: string;
+    handle: PtyHandle;
+    /** The terminal session's name as the PC list showed it, so the phone can tell it apart. */
+    title?: string;
+  };
   /** Injection points for tests. */
   spawn?: PtySpawn;
   claudePath?: string;
@@ -145,6 +151,8 @@ export class VoiceSession extends EventEmitter<{
   private state: SessionState = 'starting';
   private readonly claudeSessionId: string;
   private title: string | undefined;
+  /** Where the title came from: Claude Code's own name wins unless the user renamed here. */
+  private titleSource: 'prompt' | 'registry' | 'user' | undefined;
   private readonly history: SessionEventRecord[] = [];
   private seq = 0;
   private pty: PtyHandle | undefined;
@@ -181,6 +189,10 @@ export class VoiceSession extends EventEmitter<{
     this.id = opts.id;
     this.project = opts.project;
     this.claudeSessionId = opts.attach?.claudeSessionId ?? opts.resume ?? randomUUID();
+    if (opts.attach?.title) {
+      this.title = opts.attach.title;
+      this.titleSource = 'registry';
+    }
     this.term = new Terminal({
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
@@ -414,6 +426,13 @@ export class VoiceSession extends EventEmitter<{
     this.record({ kind: 'status', message });
   }
 
+  /** A name chosen on the phone; it then stays even if Claude Code's own name changes. */
+  rename(title: string): void {
+    this.title = title;
+    this.titleSource = 'user';
+    this.emitState();
+  }
+
   markRejected(): void {
     // A hook denial carries its reason to Claude; nothing to track here.
   }
@@ -573,6 +592,12 @@ export class VoiceSession extends EventEmitter<{
       .catch(() => undefined);
     if (registry) {
       if (this.state === 'starting') this.setState('idle');
+      // Claude Code's own session name (`/rename` in the terminal) names it here too.
+      if (registry.name && this.titleSource !== 'user' && registry.name !== this.title) {
+        this.title = registry.name;
+        this.titleSource = 'registry';
+        this.emitState();
+      }
       const status = mapStatus(registry.status);
       if (status === 'waiting') {
         // A prompt only the terminal shows (hosted: one the hook did not cover).
@@ -602,7 +627,10 @@ export class VoiceSession extends EventEmitter<{
       if (event.kind === 'user_prompt') {
         const typed = this.lastTyped?.text === event.text ? this.lastTyped.deviceName : undefined;
         event = { ...event, deviceName: typed ?? this.lastSpeaker ?? 'voice' };
-        this.title ??= event.text.slice(0, 80);
+        if (!this.title) {
+          this.title = event.text.slice(0, 80);
+          this.titleSource = 'prompt';
+        }
       }
       this.record(event, item.at);
     }

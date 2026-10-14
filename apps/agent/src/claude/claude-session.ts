@@ -154,6 +154,12 @@ export class ClaudeSession extends EventEmitter<{
   }
 
   /** Adds an informational line to the transcript. */
+  /** A name chosen on the phone; it replaces the first-prompt title. */
+  rename(title: string): void {
+    this.title = title;
+    this.emitState();
+  }
+
   noteStatus(message: string): void {
     this.record({ kind: 'status', message });
   }

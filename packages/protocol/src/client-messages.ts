@@ -88,6 +88,12 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     text: z.string().trim().min(1).max(LIMITS.maxPromptLength),
   }),
   z.object({ type: z.literal('claude.interrupt'), sessionId: id }),
+  /** Give a session the name shown on the phone (a controlled terminal session keeps Claude Code's otherwise). */
+  z.object({
+    type: z.literal('claude.session.rename'),
+    sessionId: id,
+    title: z.string().trim().min(1).max(80),
+  }),
   // --- Workspace roots -------------------------------------------------------
   /** List the subfolders of a folder inside a workspace root (the roots when omitted). */
   z.object({

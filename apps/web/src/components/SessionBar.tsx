@@ -97,7 +97,7 @@ export function SessionBar({
   const projectLine = pc
     ? `On this PC · ${pc.folder}`
     : active
-      ? projectName(state.projects, active.projectId)
+      ? `${projectName(state.projects, active.projectId)}${active.attached ? ' · your terminal' : ''}`
       : 'No session';
   const titleLine = pc
     ? pcTitle(pc)
@@ -259,6 +259,17 @@ function SessionSheet({
                     {projectName(state.projects, s.projectId)} · {STATE_LABEL[s.state]}
                     {s.attached ? ' · your terminal' : s.kind === 'voice' ? ' · Claude Code' : ''}
                   </span>
+                </button>
+                <button
+                  className="btn btn-small btn-ghost"
+                  disabled={disabled}
+                  onClick={() => {
+                    const title = prompt('Session name', s.title ?? '')?.trim();
+                    if (title) send({ type: 'claude.session.rename', sessionId: s.id, title });
+                  }}
+                  aria-label={`Rename ${s.title ?? 'new session'}`}
+                >
+                  Rename
                 </button>
                 <button
                   className="btn btn-small btn-ghost"

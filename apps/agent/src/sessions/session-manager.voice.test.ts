@@ -227,6 +227,7 @@ describe('voice sessions', () => {
       folder: 'proj',
       status: 'idle' as const,
       projectId: 'p1',
+      lastPrompt: 'add rate limiting',
     };
     // The fake process must look alive: a registry entry stands in for a real pid.
     await writeFile(
@@ -239,6 +240,7 @@ describe('voice sessions', () => {
       kind: 'voice',
       attached: true,
       claudeSessionId: 'term-1',
+      title: 'add rate limiting',
     });
     await expect(manager.controlPc(pc)).rejects.toThrow(/already controlled/);
 
@@ -248,11 +250,22 @@ describe('voice sessions', () => {
     attached.show('❯ /voice tap\n  ⎿  Voice mode enabled (tap). Tap space to start.\n❯\n');
     await until(() => session.summary().voice?.state === 'idle');
 
+    // Claude Code's own name (/rename in the terminal) replaces the prompt-derived one…
     await writeFile(
       path.join(claudeDir, 'sessions', '5151.json'),
-      JSON.stringify({ pid: 5151, sessionId: 'term-1', cwd: home, status: 'waiting_for_input' }),
+      JSON.stringify({
+        pid: 5151,
+        sessionId: 'term-1',
+        cwd: home,
+        name: 'auth-refactor',
+        status: 'waiting_for_input',
+      }),
     );
     await until(() => session.summary().state === 'awaiting_permission');
+    expect(session.summary().title).toBe('auth-refactor');
+    // …unless the phone renamed it.
+    manager.rename(session.id, 'login work');
+    expect(session.summary().title).toBe('login work');
     await writeFile(
       path.join(claudeDir, 'sessions', '5151.json'),
       JSON.stringify({ pid: 5151, sessionId: 'term-1', cwd: home, status: 'idle' }),

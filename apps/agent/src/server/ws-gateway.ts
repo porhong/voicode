@@ -372,6 +372,8 @@ export class WsGateway {
         return sessions.prompt(msg.sessionId, msg.text, conn.device.name);
       case 'claude.interrupt':
         return sessions.interrupt(msg.sessionId);
+      case 'claude.session.rename':
+        return sessions.rename(msg.sessionId, msg.title);
       case 'pc.session.subscribe': {
         const pc = this.deps.pcSessions;
         if (!pc?.get(msg.sessionId)) {

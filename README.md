@@ -317,8 +317,10 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
     `voicecode-console.exe`, turns on `/voice tap` there if needed, and from then on your
     dictation, typed prompts and the terminal keys go to the Claude Code in your
     terminal, whose screen is mirrored on the phone. Approvals it asks for show up in
-    the terminal view (it opens by itself) and are answered with the keys. Closing the
-    session on the phone only detaches. **Continue as copy** is the old behaviour: a
+    the terminal view (it opens by itself) and are answered with the keys. The session
+    keeps the terminal's name (Claude Code's `/rename` name, else its first prompt), and
+    any session can be renamed from the sessions list. Closing the session on the phone
+    only detaches. **Continue as copy** is the old behaviour: a
     fork of the conversation in a new phone session.
 
 ## Development
