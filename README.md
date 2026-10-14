@@ -25,7 +25,7 @@ Requires a logged-in Claude Code account (`claude` → `/login`) or an
   `voicecode-agent-<version>-windows-x64.zip`, `-linux-x64.tar.gz` or
   `-linux-arm64.tar.gz` — and extract `voicecode-agent` somewhere on your `PATH`. See
   [Standalone executables](#standalone-executables).
-- **npm** (Node.js 22.12+): `npm install -g voicecode-agent`
+- **npm** (Node.js 22.12+): `npm install -g @anantbot/voicecode-agent` (installs the `voicecode-agent` command)
 
 Then run it from any terminal, in any folder:
 

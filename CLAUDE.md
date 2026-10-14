@@ -9,7 +9,8 @@ Working notes for Claude Code on this repository. Machine setup and test command
 `voicecode-agent`: a CLI for Windows and Linux that serves a React PWA over LAN
 HTTPS/WebSocket. A paired phone drives Claude Code through `@anthropic-ai/claude-agent-sdk`
 (every tool call is approved or rejected on the phone) and uses the phone as a trackpad
-through native input helpers. Shipped on npm and as standalone executables (Node SEA).
+through native input helpers. Shipped on npm as `@anantbot/voicecode-agent` (command
+`voicecode-agent`; workspace name for `-w`) and as standalone executables (Node SEA).
 
 ## Layout
 

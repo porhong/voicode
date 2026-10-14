@@ -9,7 +9,7 @@ const requireNative = process.argv.includes('--require-native');
 
 // A fixed command string (no user input), so running it through the shell is safe and
 // works for npm's .cmd shim on Windows.
-const output = execSync('npm pack --dry-run --json -w voicecode-agent', {
+const output = execSync('npm pack --dry-run --json -w @anantbot/voicecode-agent', {
   encoding: 'utf8',
   stdio: ['ignore', 'pipe', 'inherit'],
 });

@@ -1,4 +1,4 @@
-# Publishes voicecode-agent to npm when a version tag (v1.2.3) is pushed, and attaches
+# Publishes @anantbot/voicecode-agent to npm when a version tag (v1.2.3) is pushed, and attaches
 # the standalone executables (Windows x64, Linux x64/arm64) to the GitHub release.
 #
 # Authentication uses npm trusted publishing (GitHub OIDC): no long-lived token, and
@@ -68,7 +68,7 @@ jobs:
           case "$VERSION" in *-*) DIST_TAG=next ;; *) DIST_TAG=latest ;; esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "dist_tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing voicecode-agent@$VERSION (dist-tag $DIST_TAG, dry run: $DRY_RUN)"
+          echo "Releasing @anantbot/voicecode-agent@$VERSION (dist-tag $DIST_TAG, dry run: $DRY_RUN)"
 
       - uses: actions/download-artifact@v8
         with:
@@ -113,9 +113,9 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
-            npm publish -w voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --dry-run
+            npm publish -w @anantbot/voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --dry-run
           else
-            npm publish -w voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --provenance
+            npm publish -w @anantbot/voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --provenance
           fi
 
       - name: Attest standalone builds

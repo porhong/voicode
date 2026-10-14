@@ -24,7 +24,7 @@ export function packageRoot(): string {
     const candidate = path.join(dir, 'package.json');
     if (existsSync(candidate)) {
       const pkg = JSON.parse(readFileSync(candidate, 'utf8')) as { name?: string };
-      if (pkg.name === 'voicecode-agent') return (cachedRoot = dir);
+      if (pkg.name === '@anantbot/voicecode-agent') return (cachedRoot = dir);
     }
     const parent = path.dirname(dir);
     if (parent === dir) throw new Error('Could not locate the voicecode-agent package root');
