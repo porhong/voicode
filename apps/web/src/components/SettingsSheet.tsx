@@ -133,7 +133,7 @@ export function SettingsSheet({
         {(
           [
             ['chat', 'Chat', 'Conversation and a prompt box'],
-            ['deck', 'Deck', 'Macro keys, dial and joystick'],
+            ['deck', 'Deck', 'Macro keys, scroll wheel and joystick'],
           ] as const
         ).map(([value, label, hint]) => (
           <button

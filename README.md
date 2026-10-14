@@ -213,8 +213,9 @@ app.
 the Claude tab from a chat to a deck: a macro pad modelled on Work Louder's Codex Micro,
 shown under a shorter conversation (beside it in landscape). Six programmable keys and a
 four-way joystick send preset or custom prompts (push the stick and release to fire; the
-display names what it will do first). Turn the dial to scroll the conversation and tap it
-to jump to the latest output. Command keys **Stop**, **Accept**, **Reject** and **New**
+display names what it will do first). Swipe the scroll wheel (a finger-wide strip, like a
+mouse wheel; flick it to let it spin on) to scroll the conversation and tap it to jump to
+the latest output. Command keys **Stop**, **Accept**, **Reject** and **New**
 work on the session on screen; Accept and Reject answer the approval card shown above the
 deck, which still carries the full tool input. Hold the wide mic key to talk and release to
 send. The sliders button on the deck opens the editor: pick a layout pack, or give any key
@@ -225,7 +226,7 @@ The deck is a flat glass panel lit from behind by the session's state, and the d
 spells the state out too: cyan when ready, the accent colour drifting while Claude works,
 amber pulsing for an approval, a green bloom when done, red after an error and violet while
 you talk. The expand button on the display hides the conversation so the deck fills the
-screen; the display then shows Claude's latest reply, and turning the dial pages through
+screen; the display then shows Claude's latest reply, and swiping the wheel pages through
 earlier ones. Approval cards still appear above the deck in full-screen mode. The rotate
 button locks the screen to portrait or landscape where the browser allows it: installed
 apps and fullscreen tabs on Android can lock rotation, but iOS can't, so the deck says so.

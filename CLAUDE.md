@@ -102,10 +102,10 @@ Done and verified:
 - Mobile UX pass on the web client (compact session header + sheet, one-button composer,
   smart scroll, keyboard-safe height, WCAG AA contrast, 44px targets) checked with
   `ui-demo.ts` screenshots at 390/360 px and landscape, dark and light.
-- Deck layout for the Claude tab (Codex Micro style: programmable keys, dial, joystick,
+- Deck layout for the Claude tab (Codex Micro style: programmable keys, scroll wheel, joystick,
   push-to-talk; `components/Deck*.tsx`, `hooks/useDeck.ts`) checked the same way;
-  real-phone touch feel (dial, joystick, hold-to-talk) is not verified yet. Redrawn flat
-  on glass with a state-coloured light, a full-screen mode (conversation hidden, dial
+  real-phone touch feel (wheel, joystick, hold-to-talk) is not verified yet. Redrawn flat
+  on glass with a state-coloured light, a full-screen mode (conversation hidden, wheel
   pages replies on the display) and an orientation lock (`hooks/useOrientationLock.ts`);
   all four portrait/landscape × full/normal layouts screenshotted dark and light. The
   lock itself only works on Android (installed or fullscreen) and was not tried on a

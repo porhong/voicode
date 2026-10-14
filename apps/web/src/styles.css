@@ -1583,16 +1583,18 @@ a {
   overflow-wrap: anywhere;
 }
 
-/* Controls placed by name: grid areas change per layout, the markup does not. */
+/* Controls placed by name: grid areas change per layout, the markup does not. Keys
+   share twelve columns; the last, finger-wide column holds the wheel over the pad. */
 .deck-grid {
+  --nav: 64px;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr)) var(--nav);
   grid-auto-rows: clamp(50px, 7vh, 60px);
   grid-template-areas:
-    'k1 k1 k1 k2 k2 k2 k3 k3 k3 dial dial dial'
-    'k4 k4 k4 k5 k5 k5 k6 k6 k6 stick stick stick'
-    'new new new stop stop stop reject reject reject accept accept accept'
-    'type type type mic mic mic mic mic mic sessions sessions sessions';
+    'k1 k1 k1 k1 k2 k2 k2 k2 k3 k3 k3 k3 wheel'
+    'k4 k4 k4 k4 k5 k5 k5 k5 k6 k6 k6 k6 wheel'
+    'new new new stop stop stop reject reject reject accept accept accept stick'
+    'type type type mic mic mic mic mic mic sessions sessions sessions stick';
   gap: 0.5rem;
 }
 
@@ -1677,8 +1679,6 @@ a {
   color: var(--text);
 }
 
-/* The dial: a flat ring with a marker that turns under the finger. */
-.deck-dial,
 .deck-stick {
   position: relative;
   min-width: 0;
@@ -1687,17 +1687,6 @@ a {
   place-items: center;
   container-type: size;
 }
-.deck-dial {
-  padding: 0;
-  border: none;
-  border-radius: 14px;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  cursor: grab;
-  touch-action: none;
-}
-.deck-dial-face,
 .deck-stick-base {
   position: relative;
   width: min(100cqw, 100cqh);
@@ -1708,32 +1697,45 @@ a {
   background: var(--key);
   border: 1px solid var(--key-edge);
 }
-.deck-dial-face::before {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: repeating-conic-gradient(currentColor 0deg 1.5deg, transparent 1.5deg 15deg);
-  mask: radial-gradient(circle, transparent 78%, #000 79%);
-  opacity: 0.45;
+
+/* The wheel: a mouse wheel from above, a finger wide, ridges moving with the swipe. */
+.deck-wheel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: ns-resize;
+  touch-action: none;
 }
-.deck-dial-marker {
-  position: absolute;
-  inset: 0;
+.deck-wheel-track {
+  position: relative;
+  width: min(100%, 60px);
+  height: 100%;
+  border-radius: 999px;
+  background: var(--key);
+  border: 1px solid var(--key-edge);
+  overflow: hidden;
+  transition: background-color 0.15s ease;
 }
-.deck-dial-marker::after {
-  content: '';
+.deck-wheel-ridges {
   position: absolute;
-  top: 12%;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  margin-left: -3px;
-  border-radius: 50%;
-  background: var(--text);
+  inset: 10px 24%;
+  /* Ridges every 9px; the ends fade so the strip reads as a rolling wheel. */
+  background-image: repeating-linear-gradient(currentColor 0 2px, transparent 2px 9px);
+  background-size: 100% 9px;
+  border-radius: 2px;
+  opacity: 0.55;
+  mask: linear-gradient(transparent, #000 25%, #000 75%, transparent);
 }
-.deck-dial:active .deck-dial-face {
-  background: var(--key-press);
+.deck-wheel:active .deck-wheel-track {
+  background-color: var(--key-press);
+  color: var(--text);
 }
 
 /* The four-way pad: drag the thumb, or (with room) tap a named direction. */
@@ -1802,7 +1804,7 @@ a {
   pointer-events: auto;
 }
 /* Names only fit on a big pad; a small one goes back to arrows and the drag. */
-@container (max-width: 170px) or (max-height: 170px) {
+@container (max-width: 150px) or (max-height: 150px) {
   .deck-stick.labelled .deck-stick-dir {
     min-width: 18px;
     min-height: 18px;
@@ -1853,10 +1855,12 @@ a {
   grid-template-rows:
     minmax(48px, 1fr) minmax(48px, 1fr) minmax(96px, 2fr) minmax(48px, 1fr)
     minmax(52px, 1.15fr);
+  /* Twelve even columns: the wheel takes three beside the macros and the pad. */
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-areas:
-    'k1 k1 k1 k1 k2 k2 k2 k2 k3 k3 k3 k3'
-    'k4 k4 k4 k4 k5 k5 k5 k5 k6 k6 k6 k6'
-    'dial dial dial dial dial dial stick stick stick stick stick stick'
+    'k1 k1 k1 k2 k2 k2 k3 k3 k3 wheel wheel wheel'
+    'k4 k4 k4 k5 k5 k5 k6 k6 k6 wheel wheel wheel'
+    'stick stick stick stick stick stick stick stick stick wheel wheel wheel'
     'new new new stop stop stop reject reject reject accept accept accept'
     'type type type mic mic mic mic mic mic sessions sessions sessions';
 }
@@ -2013,12 +2017,13 @@ a {
     line-clamp: 6;
   }
   .claude-deck-full .deck-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr)) var(--nav);
     grid-template-rows: repeat(4, minmax(40px, 1fr));
     grid-template-areas:
-      'k1 k1 k1 k2 k2 k2 k3 k3 k3 dial dial dial'
-      'k4 k4 k4 k5 k5 k5 k6 k6 k6 stick stick stick'
-      'new new new stop stop stop reject reject reject accept accept accept'
-      'type type type mic mic mic mic mic mic sessions sessions sessions';
+      'k1 k1 k1 k1 k2 k2 k2 k2 k3 k3 k3 k3 wheel'
+      'k4 k4 k4 k4 k5 k5 k5 k5 k6 k6 k6 k6 wheel'
+      'new new new stop stop stop reject reject reject accept accept accept stick'
+      'type type type mic mic mic mic mic mic sessions sessions sessions stick';
   }
   /* An approval needs the room: it sits on the left, the deck on the right. */
   .claude-deck-full.claude-deck-approval {

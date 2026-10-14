@@ -6,7 +6,7 @@ import {
   type OrientationChoice,
 } from '../hooks/useOrientationLock';
 import { DeckIcon, type DeckIconName } from './DeckIcons';
-import { ArrowDownIcon, CollapseIcon, ExpandIcon, MicIcon, RotateIcon, StopIcon } from './Icons';
+import { CollapseIcon, ExpandIcon, MicIcon, RotateIcon, StopIcon } from './Icons';
 
 /** What the deck's light shows: the session on screen, roughly as the hardware does. */
 export type DeckStatus =
@@ -123,102 +123,133 @@ function Key({
 }
 
 /**
- * The scroll dial: turn it (circular drag) to scroll the conversation, tap it to jump to
- * the latest output. Each detent gives a small buzz and a step, which the full-screen
- * deck uses to page through replies on its display.
+ * The scroll wheel, drawn like a mouse wheel seen from above: swipe it to scroll the
+ * conversation (a downward swipe shows later output, as rolling a mouse wheel back
+ * does), flick it to let it spin on, tap it to jump to the latest. The ridges move
+ * with the finger; each notch gives a small buzz and a step, which the full-screen
+ * deck uses to page through replies (it spins only when scrolling).
  */
-function Dial({
+function Wheel({
   hint,
+  momentum,
   onScroll,
   onStep,
   onLatest,
   onHint,
 }: {
   hint: string;
+  momentum: boolean;
   onScroll: (dy: number) => void;
   onStep: (dir: 1 | -1) => void;
   onLatest: () => void;
   onHint: (text: string | undefined) => void;
 }) {
-  const [angle, setAngle] = useState(0);
-  const drag = useRef<{ last: number; travel: number; start: number; detent: number }>(null);
-  const DETENT = 24;
-  /** Pixels scrolled per degree: one full turn ≈ two screens of text. */
-  const PX_PER_DEG = 2.4;
+  const [offset, setOffset] = useState(0);
+  const drag = useRef<{
+    last: number;
+    travel: number;
+    start: number;
+    at: number;
+    velocity: number;
+    stopped: boolean;
+  }>(null);
+  const notch = useRef(0);
+  const spin = useRef(0);
+  /** Finger travel per notch, and content pixels per pixel of finger travel. */
+  const NOTCH = 22;
+  const GAIN = 3;
 
-  const pointerAngle = (e: React.PointerEvent<HTMLElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return (
-      (Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180) /
-      Math.PI
-    );
+  const stopSpin = () => {
+    const spinning = spin.current !== 0;
+    cancelAnimationFrame(spin.current);
+    spin.current = 0;
+    return spinning;
   };
-  const turn = (degrees: number) => {
-    setAngle((prev) => prev + degrees);
-    onScroll(degrees * PX_PER_DEG);
+  useEffect(() => () => cancelAnimationFrame(spin.current), []);
+
+  const roll = (dy: number) => {
+    setOffset((prev) => prev + dy);
+    onScroll(dy * GAIN);
+    notch.current += dy;
+    if (Math.abs(notch.current) >= NOTCH) {
+      buzz(3);
+      onStep(notch.current > 0 ? 1 : -1);
+      notch.current %= NOTCH;
+    }
   };
 
   return (
     <button
-      className="deck-dial"
-      style={{ gridArea: 'dial' }}
-      aria-label={`Scroll dial. ${hint}`}
+      className="deck-wheel"
+      style={{ gridArea: 'wheel' }}
+      aria-label={`Scroll wheel. ${hint}`}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { last: pointerAngle(e), travel: 0, start: e.timeStamp, detent: 0 };
+        // Touching a spinning wheel stops it, and that touch is not a tap.
+        const stopped = stopSpin();
+        drag.current = {
+          last: e.clientY,
+          travel: 0,
+          start: e.timeStamp,
+          at: e.timeStamp,
+          velocity: 0,
+          stopped,
+        };
         onHint(hint);
       }}
       onPointerMove={(e) => {
         const d = drag.current;
         if (!d) return;
-        const a = pointerAngle(e);
-        // Unwrap across the ±180° seam.
-        let delta = a - d.last;
-        if (delta > 180) delta -= 360;
-        if (delta < -180) delta += 360;
-        d.last = a;
-        d.travel += Math.abs(delta);
-        d.detent += delta;
-        if (Math.abs(d.detent) >= DETENT) {
-          buzz(4);
-          onStep(d.detent > 0 ? 1 : -1);
-          d.detent %= DETENT;
-        }
-        turn(delta);
+        const dy = e.clientY - d.last;
+        const dt = Math.max(1, e.timeStamp - d.at);
+        d.last = e.clientY;
+        d.at = e.timeStamp;
+        d.travel += Math.abs(dy);
+        d.velocity = 0.8 * (dy / dt) + 0.2 * d.velocity;
+        if (dy) roll(dy);
       }}
       onPointerUp={(e) => {
         const d = drag.current;
         drag.current = null;
         onHint(undefined);
-        if (d && d.travel < 10 && e.timeStamp - d.start < 400) {
+        if (!d) return;
+        if (d.travel < 6 && e.timeStamp - d.start < 350 && !d.stopped) {
           buzz();
           onLatest();
+          return;
         }
+        // A flick keeps the wheel turning and slowing, like a free-spinning mouse wheel.
+        let v = e.timeStamp - d.at < 80 ? d.velocity * 16 : 0;
+        if (!momentum || Math.abs(v) < 4) return;
+        const tick = () => {
+          v *= 0.94;
+          if (Math.abs(v) < 0.6) {
+            spin.current = 0;
+            return;
+          }
+          roll(v);
+          spin.current = requestAnimationFrame(tick);
+        };
+        spin.current = requestAnimationFrame(tick);
       }}
       onPointerCancel={() => {
         drag.current = null;
         onHint(undefined);
       }}
-      onWheel={(e) => {
-        turn(e.deltaY / PX_PER_DEG);
-        onStep(e.deltaY > 0 ? 1 : -1);
-      }}
+      onWheel={(e) => roll(e.deltaY / GAIN)}
       onKeyDown={(e) => {
-        const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key] as
-          1 | -1 | undefined;
+        const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
         if (step === undefined) return;
         e.preventDefault();
-        turn((step * 120) / PX_PER_DEG);
-        onStep(step);
+        roll(step * NOTCH);
       }}
       onClick={(e) => {
         // Keyboard activation (Enter/Space) arrives as a click with no pointer.
         if (e.detail === 0) onLatest();
       }}
     >
-      <span className="deck-dial-face" aria-hidden>
-        <span className="deck-dial-marker" style={{ transform: `rotate(${angle}deg)` }} />
-        <ArrowDownIcon size={18} />
+      <span className="deck-wheel-track" aria-hidden>
+        <span className="deck-wheel-ridges" style={{ backgroundPositionY: `${offset}px` }} />
       </span>
     </button>
   );
@@ -378,15 +409,16 @@ function RotateMenu({
 
 /**
  * The Claude tab as a macro pad, after Work Louder's Codex Micro but drawn flat: six
- * programmable keys, a scroll dial, a four-way pad, command keys (new, stop, reject,
+ * programmable keys, a scroll wheel, a four-way pad, command keys (new, stop, reject,
  * accept) and a wide push-to-talk key on one sheet of glass. A light behind the glass
  * takes the session's state, and the display spells the state out, so colour is never
  * the only signal.
  *
- * The keys sit where a thumb reaches: talk and Accept along the bottom right, settings
- * and the dial up top. Accept and Reject answer the approval card shown above the deck,
- * which always carries the complete tool input (it stays on screen when the deck is
- * full); an incomplete one can only be rejected, as on the card.
+ * The keys sit where a thumb reaches: talk and Accept along the bottom, the wheel and
+ * the pad down the right edge, settings on the display up top. Accept and Reject answer
+ * the approval card shown above the deck, which always carries the complete tool input
+ * (it stays on screen when the deck is full); an incomplete one can only be rejected, as
+ * on the card.
  */
 export function Deck(props: Props) {
   const { deck, status, canPrompt, connected, approval, full, replies } = props;
@@ -524,18 +556,22 @@ export function Deck(props: Props) {
 
         <div className="deck-grid">
           {deck.keys.slice(0, 3).map(macroKey)}
-          <Dial
+          <Wheel
             hint={
               full
-                ? 'Turn to read earlier replies · tap for the latest'
-                : 'Turn to scroll · tap for the latest'
+                ? 'Swipe to read earlier replies · tap for the latest'
+                : 'Swipe to scroll · tap for the latest'
             }
+            momentum={!full}
             onScroll={props.onScroll}
             onStep={(dir) =>
               full &&
-              setPaged({
-                back: Math.max(0, Math.min(replies.length - 1, back - dir)),
-                of: replies.length,
+              setPaged((prev) => {
+                const from = prev?.of === replies.length ? prev.back : 0;
+                return {
+                  back: Math.max(0, Math.min(replies.length - 1, from - dir)),
+                  of: replies.length,
+                };
               })
             }
             onLatest={() => {
