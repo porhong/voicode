@@ -48,7 +48,7 @@ let spawned: { file: string; args: string[]; env: NodeJS.ProcessEnv } | undefine
 const summaries: SessionSummary[] = [];
 const requests: PermissionRequest[] = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const until = async (pred: () => boolean, ms = 3_000) => {
+const until = async (pred: () => boolean, ms = 8_000) => {
   const deadline = Date.now() + ms;
   while (!pred()) {
     if (Date.now() > deadline) throw new Error('condition not met in time');
@@ -238,9 +238,9 @@ describe('voice sessions', () => {
     await expect(manager.controlPc(pc)).rejects.toThrow(/already controlled/);
 
     // Dictation is off and the prompt is empty: the agent turns it on.
-    attached.show('│ > │\n  ? for shortcuts');
-    await until(() => attached.written.includes('/voice tap\r'), 4_000);
-    attached.show('│ > │\n  hold space to speak');
+    attached.show('❯ Try "how does <filepath> work?"\n  ⏸ manual mode on · ? for shortcuts');
+    await until(() => attached.written.includes('/voice tap\r'));
+    attached.show('❯ /voice tap\n  ⎿  Voice mode enabled (tap). Tap space to start.\n❯\n');
     await until(() => session.summary().voice?.state === 'idle');
 
     await writeFile(

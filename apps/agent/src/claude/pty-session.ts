@@ -165,11 +165,16 @@ export class VoiceSession extends EventEmitter<{
   private lastSpeaker: string | undefined;
   /** The registry (not the broker) put the session into `awaiting_permission`. */
   private registryAwaiting = false;
+  /** A dialog on the screen (folder safety check, a menu) is what the session waits on. */
+  private dialogAwaiting: string | undefined;
   private lastTyped: { text: string; deviceName: string } | undefined;
   private pendingRelease = false;
   private exitCode: number | undefined;
   private closing = false;
-  private dictationTimer: NodeJS.Timeout | undefined;
+  /** `/voice tap` was typed (once per session; the command is idempotent anyway). */
+  private dictationRequested = false;
+  /** The last voice error line seen on screen, so a persistent one is reported once. */
+  private screenError: string | undefined;
 
   constructor(private readonly opts: VoiceSessionOptions) {
     super();
@@ -191,9 +196,6 @@ export class VoiceSession extends EventEmitter<{
       this.pty = opts.attach.handle;
       this.wire();
       opts.logger.info({ session: this.id, pid: opts.attach.pid }, 'attached to a terminal claude');
-      // The terminal's Claude Code may not have dictation on; turn it on if the prompt is free.
-      this.dictationTimer = setTimeout(() => this.ensureDictation(), 2_500);
-      this.dictationTimer.unref();
       return;
     }
     if (!opts.hook) return this.fail('No hook endpoint for a hosted Claude Code session.');
@@ -204,6 +206,8 @@ export class VoiceSession extends EventEmitter<{
       return;
     }
     const settings = {
+      // Both spellings: `voiceEnabled` is the older key, `voice` the current object.
+      voiceEnabled: true,
       voice: { enabled: true, mode: 'tap' },
       hooks: {
         PreToolUse: [
@@ -236,6 +240,12 @@ export class VoiceSession extends EventEmitter<{
       VOICECODE_HOOK_URL: hook.url,
       VOICECODE_HOOK_TOKEN: hook.token,
     };
+    // Markers an enclosing Claude Code leaves in the environment (e.g. when the agent
+    // itself was started from one) would make this session a "child" with transcript
+    // saving off, and the transcript is how the phone follows the conversation.
+    for (const key of Object.keys(env)) {
+      if (key === 'CLAUDECODE' || key.startsWith('CLAUDE_CODE_CHILD_SESSION')) delete env[key];
+    }
     try {
       const spawn = opts.spawn ?? loadPtySpawn();
       this.pty = spawn(claude, args, {
@@ -276,21 +286,19 @@ export class VoiceSession extends EventEmitter<{
     return this.opts.attach !== undefined;
   }
 
-  /** `/voice tap` in the terminal's Claude Code, when the footer shows dictation is off. */
-  private ensureDictation(): void {
-    if (this.isClosed || !this.pty) return;
-    this.scan();
-    if (this.lastScreen.enabled || this.lastScreen.dialog) return;
-    if (!promptIsEmpty(this.screenLines())) {
-      this.record({
-        kind: 'status',
-        message:
-          'Dictation looks off in the terminal and its prompt is not empty; run /voice tap there (or clear the prompt from the terminal view).',
-      });
-      return;
-    }
+  /**
+   * Types `/voice tap` once the prompt is visible and empty and no dictation hint is on
+   * screen. Claude Code 2.1.299 shows no footer hint even with voice enabled in settings,
+   * so the command (idempotent) is the reliable way to know the mode is on: it answers
+   * with "Voice mode enabled (tap)…", which `readVoiceScreen` recognises.
+   */
+  private ensureDictation(lines: string[]): void {
+    if (this.dictationRequested || this.isClosed || !this.pty) return;
+    const screen = this.lastScreen;
+    if (screen.enabled || screen.dialog || !promptIsEmpty(lines)) return;
+    this.dictationRequested = true;
     this.pty.write('/voice tap\r');
-    this.record({ kind: 'status', message: 'Turned on dictation in the terminal (/voice tap).' });
+    this.record({ kind: 'status', message: 'Turned on dictation in Claude Code (/voice tap).' });
   }
 
   private get config(): AgentConfig['claude'] {
@@ -419,7 +427,6 @@ export class VoiceSession extends EventEmitter<{
   close(): void {
     if (this.isClosed || this.closing) return;
     this.closing = true;
-    clearTimeout(this.dictationTimer);
     this.opts.broker.cancelSession(this.id, 'cancelled');
     const pty = this.pty;
     if (!pty) return this.setState('closed');
@@ -481,13 +488,54 @@ export class VoiceSession extends EventEmitter<{
   }
 
   private scan(): void {
-    const screen = readVoiceScreen(this.screenLines());
+    const lines = this.screenLines();
+    const screen = readVoiceScreen(lines);
     this.lastScreen = screen;
     if (this.voice === 'off' && screen.enabled) this.setVoice('idle');
-    if (this.state === 'starting' && screen.enabled) this.setState('idle');
+    if (this.state === 'starting' && (screen.enabled || promptIsEmpty(lines)))
+      this.setState('idle');
+    this.trackDialog(screen);
+    this.trackError(screen);
+    if (this.state !== 'starting') this.ensureDictation(lines);
     for (const w of this.screenWaiters.splice(0)) {
       if (w.pred(screen)) w.resolve();
       else this.screenWaiters.push(w);
+    }
+  }
+
+  /**
+   * Questions only the terminal shows (Claude Code's folder safety check comes first on
+   * a new project, and its default answer is "No, exit") put the session into
+   * `awaiting_permission` so the phone opens the terminal view; they are answered there.
+   */
+  private trackDialog(screen: VoiceScreen): void {
+    if (this.isClosed) return;
+    if (screen.dialog && this.dialogAwaiting !== screen.dialog) {
+      this.dialogAwaiting = screen.dialog;
+      this.record({
+        kind: 'status',
+        message: `Claude Code is asking in the terminal: "${screen.dialog}". Answer it from the terminal view (↓ and Enter pick an option).`,
+      });
+      this.setState('awaiting_permission');
+    } else if (!screen.dialog && this.dialogAwaiting) {
+      this.dialogAwaiting = undefined;
+      if (this.state === 'awaiting_permission') this.setState('idle');
+    }
+  }
+
+  /** A voice error line that appears later (after a release, say) still reaches the phone. */
+  private trackError(screen: VoiceScreen): void {
+    if (screen.error === this.screenError) return;
+    this.screenError = screen.error;
+    if (!screen.error) return;
+    if (this.voice === 'idle' || this.voice === 'finalizing' || this.voice === 'off') {
+      this.setVoice('error', screen.error);
+    }
+    if (/Unknown command: \/voice|requires a Claude\.ai account/i.test(screen.error)) {
+      this.record({
+        kind: 'status',
+        message: `Claude Code dictation is unavailable: ${screen.error}`,
+      });
     }
   }
 
@@ -529,6 +577,8 @@ export class VoiceSession extends EventEmitter<{
       if (status === 'waiting') {
         // A prompt only the terminal shows (hosted: one the hook did not cover).
         this.setState('awaiting_permission');
+      } else if (this.dialogAwaiting) {
+        // The screen dialog decides until it is gone.
       } else if (this.state === 'awaiting_permission' && this.registryAwaiting) {
         this.setState(status === 'working' ? 'running' : 'idle');
       } else if (this.state !== 'awaiting_permission') {
@@ -594,9 +644,12 @@ export class VoiceSession extends EventEmitter<{
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Whether Claude Code's input line shows nothing typed (so a tap starts dictation). */
+/**
+ * Whether Claude Code's input line shows nothing typed (so a tap starts dictation). The
+ * prompt is `❯` (or `>` in older versions); a `Try "…"` suggestion is placeholder text.
+ */
 export function promptIsEmpty(lines: string[]): boolean {
-  const prompt = lines.find((l) => /^[\s│|]*>\s/.test(l) || /^[\s│|]*>$/.test(l));
+  const prompt = lines.find((l) => /^[\s│|]*[>❯](\s|$)/.test(l));
   if (!prompt) return false;
-  return /^[\s│|]*>[\s│|]*$/.test(prompt);
+  return /^[\s│|]*[>❯]\s*(Try\s+".*)?[\s│|]*$/.test(prompt);
 }

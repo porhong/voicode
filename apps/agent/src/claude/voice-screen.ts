@@ -20,7 +20,9 @@ const RECORDING_RE = /●\s*REC\b|\bREC\s*·|\blistening…|\blistening\.\.\./i;
 const ENABLED_RE = /hold \S+ to speak|tap \S+ to (?:speak|record)|Voice mode enabled/i;
 const ERROR_RE =
   /(Voice mode requires[^\n]*|Voice mode is disabled[^\n]*|Microphone access is denied[^\n]*|No audio detected[^\n]*|No speech detected[^\n]*|Voice connection failed[^\n]*|Voice stream error[^\n]*|Voice input is failing[^\n]*|Unknown command: \/voice[^\n]*|Voice mode could not[^\n]*|Voice mode requires SoX[^\n]*)/i;
-const DIALOG_RE = /(Do you trust the files in this folder\?|Yes, proceed|Press Enter to continue)/i;
+// Claude Code's folder safety check (its default answer is "No, exit"), and other menus.
+const DIALOG_RE =
+  /(Quick\s*safety\s*check|Do you trust the files in this folder\?|Is this a project you created|Yes,\s*I\s*trust\s*this\s*folder|Yes, proceed|Press Enter to continue)/i;
 
 export function readVoiceScreen(lines: string[]): VoiceScreen {
   const text = lines.join('\n');

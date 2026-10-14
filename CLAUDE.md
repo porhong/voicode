@@ -147,8 +147,17 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
     does `AttachConsole(pid)` + `WriteConsoleInput` for keys and reads the screen buffer;
     `console-attach.ts` turns the polled screen into full repaints for the headless xterm).
     Registry status `waiting` maps to `awaiting_permission` and the phone opens the
-    terminal view. Verified by attaching to a hidden conhost process (keys arrived, screen
-    read); Windows Terminal (ConPTY) and a real `claude` are not verified yet.
+    terminal view. Verified by attaching to a hidden conhost process and to a
+    ConPTY-hosted one (keys arrived, screen read); a real `claude` under control is not
+    verified yet.
+  - Verified against a real Claude Code 2.1.299 in the agent's pty (VB-CABLE installed on
+    the dev PC on 2026-10-14): the folder safety check (default "No, exit") is detected as
+    a dialog and answered with ↓ Enter from the terminal view; `--settings voice` does not
+    show a footer hint on this version, so the session types `/voice tap` itself once the
+    prompt is empty; push-to-talk gives `starting → recording → finalizing → idle` and, with
+    no phone audio, "No audio detected from microphone" is surfaced as a voice error. An
+    enclosing Claude Code's `CLAUDE_CODE_CHILD_SESSION` marker is stripped from the child
+    env (it switches transcript saving off).
   - Phase 3: the standalone build embeds the `@lydell/node-pty-<target>` package under
     `node-pty/` and `loadPtySpawn()` loads it from the extracted runtime (`doctor` row
     "Claude Code terminal", asserted by `smoke-sea.mjs`); the xterm packages are imported

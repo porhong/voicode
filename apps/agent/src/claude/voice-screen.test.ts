@@ -36,6 +36,14 @@ describe('readVoiceScreen', () => {
 
   it('notices questions only the terminal can answer', () => {
     expect(
+      readVoiceScreen([
+        'Quick safety check: Is this a project you created or one you trust?',
+        '❯ No, exit',
+        '  Yes, I trust this folder',
+        'Enter to confirm · Esc to cancel',
+      ]).dialog,
+    ).toMatch(/safety check/);
+    expect(
       readVoiceScreen(['Do you trust the files in this folder?', '❯ Yes, proceed']),
     ).toMatchObject({ dialog: 'Do you trust the files in this folder?' });
     expect(readVoiceScreen(['> hello']).dialog).toBeUndefined();
