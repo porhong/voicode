@@ -31,7 +31,7 @@ const CONNECTION_LABEL = {
   unpaired: 'Not paired',
 } as const;
 
-/** What the voice bar says about Claude Code's dictation. */
+/** The dictation state in words, for the terminal button's label (screen readers, long press). */
 function voiceText(session: SessionSummary): string {
   const voice = session.voice;
   if (session.attached && session.state === 'awaiting_permission') {
@@ -527,21 +527,25 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               </div>
             )}
             {voiceSession && live && (
-              <div className="pc-bar voice-bar">
-                <p className="pc-bar-text">
-                  <strong>
-                    {voiceSession.attached ? 'Your terminal session.' : 'Claude Code on the PC.'}
-                  </strong>{' '}
-                  <span className={voiceSession.voice?.state === 'error' ? 'error-text' : 'muted'}>
-                    {voiceText(voiceSession)}
-                  </span>
-                </p>
+              // One small floating toggle instead of a banner: errors already show under
+              // the input, and the terminal opens by itself when Claude asks something.
+              <div className="terminal-toggle-anchor">
                 <button
-                  className="btn btn-small"
+                  className="terminal-toggle"
                   aria-expanded={showTerminal}
+                  aria-label={`${showTerminal ? 'Hide' : 'Show'} terminal. ${voiceText(voiceSession)}`}
+                  title={voiceText(voiceSession)}
                   onClick={() => setTerminalOpen(!showTerminal)}
                 >
-                  {showTerminal ? 'Hide terminal' : 'Terminal'}
+                  <span
+                    className={`terminal-dot terminal-dot-${
+                      voiceSession.state === 'awaiting_permission'
+                        ? 'waiting'
+                        : (voiceSession.voice?.state ?? 'off')
+                    }`}
+                    aria-hidden
+                  />
+                  {showTerminal ? 'Hide' : 'Terminal'}
                 </button>
               </div>
             )}

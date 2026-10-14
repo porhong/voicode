@@ -320,7 +320,9 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
     the terminal view (it opens by itself) and are answered with the keys. The session
     keeps the terminal's name (Claude Code's `/rename` name, else its first prompt), and
     any session can be renamed from the sessions list. Closing the session on the phone
-    only detaches. **Continue as copy** is the old behaviour: a
+    only detaches. Dictation into a controlled terminal still goes through the virtual
+    microphone (Claude Code records from the default input); without VB-CABLE, choose
+    **Phone** dictation and the agent types the browser's transcript into the terminal. **Continue as copy** is the old behaviour: a
     fork of the conversation in a new phone session.
 
 ## Development

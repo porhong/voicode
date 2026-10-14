@@ -2082,9 +2082,67 @@ a {
   margin: 0.5rem 0 0;
 }
 
-/* Claude Code voice sessions: the dictation strip and the raw terminal under it. */
-.voice-bar {
-  padding-bottom: 0.6rem;
+/* Claude Code voice sessions: a small floating terminal toggle and the raw terminal. */
+.terminal-toggle-anchor {
+  position: relative;
+  flex: none;
+  height: 0;
+  z-index: 2;
+}
+.terminal-toggle {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 28px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+/* A 44px touch target around the small pill. */
+.terminal-toggle::after {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
+}
+.terminal-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.terminal-dot-idle {
+  background: var(--ok);
+}
+.terminal-dot-starting,
+.terminal-dot-finalizing,
+.terminal-dot-waiting {
+  background: var(--warn);
+}
+.terminal-dot-recording {
+  background: var(--danger);
+  animation: terminal-dot-pulse 1s ease-in-out infinite;
+}
+.terminal-dot-error {
+  background: var(--danger);
+}
+@keyframes terminal-dot-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-dot-recording {
+    animation: none;
+  }
 }
 .terminal-panel {
   flex: none;
