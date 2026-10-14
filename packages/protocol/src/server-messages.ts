@@ -1,4 +1,4 @@
-import type { MouseButton, SessionState } from './constants.js';
+import type { MouseButton, SessionState, VoiceState } from './constants.js';
 
 /*
  * Messages the agent sends to browser clients. These are produced by trusted code,
@@ -43,6 +43,10 @@ export interface SessionSummary {
   title?: string;
   model?: string;
   totalCostUsd?: number;
+  /** Absent for a session driven through the Agent SDK. */
+  kind?: 'voice';
+  /** Voice sessions: what Claude Code's dictation is doing. */
+  voice?: { state: VoiceState; detail?: string };
 }
 
 export interface HistoricSession {
@@ -159,6 +163,11 @@ export type ServerMessage =
 
   // --- Microphone ----------------------------------------------------------
   | { type: 'voice.mic.status'; status: VoiceMicStatus; youHoldLease: boolean }
+
+  // --- Terminal of a voice session (base64 of the raw bytes) ---------------
+  | { type: 'terminal.snapshot'; sessionId: string; data: string; cols: number; rows: number }
+  | { type: 'terminal.data'; sessionId: string; data: string }
+  | { type: 'terminal.exit'; sessionId: string; code: number }
 
   // --- Claude Code ---------------------------------------------------------
   | { type: 'claude.session'; session: SessionSummary }

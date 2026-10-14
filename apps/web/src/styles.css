@@ -2081,3 +2081,33 @@ a {
 .folder-actions p {
   margin: 0.5rem 0 0;
 }
+
+/* Claude Code voice sessions: the dictation strip and the raw terminal under it. */
+.voice-bar {
+  padding-bottom: 0.6rem;
+}
+.terminal-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  background: #14161a;
+  border-top: 1px solid var(--border);
+}
+.terminal-screen {
+  height: min(40vh, 320px);
+  overflow: hidden;
+}
+.terminal-keys {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+.terminal-keys .btn {
+  flex: none;
+  min-width: 44px;
+  color: #e6e8ec;
+  border-color: #3a3f48;
+}

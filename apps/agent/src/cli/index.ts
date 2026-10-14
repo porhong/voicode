@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { VERSION } from '../util/version.js';
 import { registerDevices, registerPair } from './commands/devices.js';
+import { registerHook } from './commands/hook.js';
 import { registerInit } from './commands/init.js';
 import { registerProjects, registerRoots } from './commands/projects.js';
 import { registerStart } from './commands/start.js';
@@ -26,6 +27,7 @@ registerProjects(program);
 registerRoots(program);
 registerTunnel(program);
 registerSystem(program);
+registerHook(program);
 
 program.parseAsync().catch((err: unknown) => {
   out(fail((err as Error).message));

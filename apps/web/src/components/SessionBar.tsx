@@ -41,6 +41,15 @@ interface Props {
   onOpenFolder?: () => void;
   sheetOpen: boolean;
   onSheetOpenChange: (open: boolean) => void;
+  /** New sessions run Claude Code in a terminal on the PC, for its own dictation. */
+  voice?: boolean;
+}
+
+/** The message that starts a session of the chosen kind. */
+function startMessage(voice: boolean | undefined, projectId: string, resume?: string) {
+  return voice
+    ? ({ type: 'voice.session.start', projectId, resume } as const)
+    : ({ type: 'claude.session.start', projectId, resume } as const);
 }
 
 /**
@@ -56,6 +65,7 @@ export function SessionBar({
   disabled = false,
   sheetOpen,
   onSheetOpenChange,
+  voice,
 }: Props) {
   const pc = state.activePcSessionId
     ? state.pcSessions.find((p) => p.sessionId === state.activePcSessionId)
@@ -134,7 +144,7 @@ export function SessionBar({
           disabled={disabled || !state.projects.length}
           onClick={() =>
             newSessionProject
-              ? send({ type: 'claude.session.start', projectId: newSessionProject })
+              ? send(startMessage(voice, newSessionProject))
               : onSheetOpenChange(true)
           }
           aria-label={
@@ -151,6 +161,7 @@ export function SessionBar({
           state={state}
           send={send}
           disabled={disabled}
+          voice={voice}
           onSelect={(id) => {
             onSelect(id);
             onSheetOpenChange(false);
@@ -177,6 +188,7 @@ function SessionSheet({
   state,
   send,
   disabled,
+  voice,
   onSelect,
   onSelectPc,
   onOpenFolder,
@@ -185,6 +197,7 @@ function SessionSheet({
   state: AppState;
   send: Send;
   disabled: boolean;
+  voice?: boolean;
   onSelect: (sessionId: string) => void;
   onSelectPc: (sessionId: string) => void;
   onOpenFolder?: () => void;
@@ -212,7 +225,7 @@ function SessionSheet({
           onProjectChange={setProjectId}
           disabled={disabled}
           onStart={() => {
-            send({ type: 'claude.session.start', projectId });
+            send(startMessage(voice, projectId));
             onClose();
           }}
           onOpenFolder={onOpenFolder}
@@ -244,6 +257,7 @@ function SessionSheet({
                   <span className="list-title">{s.title ?? 'New session'}</span>
                   <span className="small muted">
                     {projectName(state.projects, s.projectId)} · {STATE_LABEL[s.state]}
+                    {s.kind === 'voice' ? ' · Claude Code' : ''}
                   </span>
                 </button>
                 <button
@@ -296,7 +310,7 @@ function SessionSheet({
               className="list-main"
               disabled={disabled}
               onClick={() => {
-                send({ type: 'claude.session.start', projectId, resume: h.claudeSessionId });
+                send(startMessage(voice, projectId, h.claudeSessionId));
                 onClose();
               }}
             >

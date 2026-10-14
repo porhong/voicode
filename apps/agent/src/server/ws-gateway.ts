@@ -36,6 +36,8 @@ interface Connection {
   revoked: boolean;
   /** The PC session whose transcript this client is following, if any. */
   pcSubscription?: string;
+  /** The voice session whose terminal this client has open, if any. */
+  terminal?: string;
 }
 
 /**
@@ -121,6 +123,18 @@ export class WsGateway {
     sessions.on('delta', (sessionId, r) =>
       this.broadcast({ type: 'claude.event', sessionId, seq: r.seq, at: r.at, event: r.event }),
     );
+    sessions.on('terminal', (sessionId, data) => {
+      const encoded = Buffer.from(data, 'utf8').toString('base64');
+      for (const c of this.connections.values()) {
+        if (c.terminal === sessionId)
+          this.send(c, { type: 'terminal.data', sessionId, data: encoded });
+      }
+    });
+    sessions.on('terminalExit', (sessionId, code) => {
+      for (const c of this.connections.values()) {
+        if (c.terminal === sessionId) this.send(c, { type: 'terminal.exit', sessionId, code });
+      }
+    });
     sessions.on('permissionRequest', (request) =>
       this.broadcast({ type: 'claude.permission.request', request }),
     );
@@ -305,6 +319,39 @@ export class WsGateway {
         });
       case 'voice.mic.stop':
         return this.check(conn, mic.release(id));
+      case 'voice.session.start': {
+        const session = await sessions.startVoice(msg.projectId, msg.resume);
+        return this.sendSnapshot(conn, session.id);
+      }
+      case 'voice.ptt':
+        return sessions.ptt(msg.sessionId, msg.pressed, conn.device.name);
+
+      case 'terminal.subscribe': {
+        const session = sessions.getVoice(msg.sessionId);
+        session.resize(msg.cols, msg.rows);
+        conn.terminal = msg.sessionId;
+        const snapshot = session.snapshot();
+        return this.send(conn, {
+          type: 'terminal.snapshot',
+          sessionId: msg.sessionId,
+          data: Buffer.from(snapshot.data, 'utf8').toString('base64'),
+          cols: snapshot.cols,
+          rows: snapshot.rows,
+        });
+      }
+      case 'terminal.unsubscribe':
+        conn.terminal = undefined;
+        return;
+      case 'terminal.input':
+        if (conn.terminal !== msg.sessionId) {
+          throw new SessionError('bad_request', 'Open the terminal first');
+        }
+        return sessions.getVoice(msg.sessionId).writeInput(msg.data);
+      case 'terminal.resize':
+        if (conn.terminal !== msg.sessionId) {
+          throw new SessionError('bad_request', 'Open the terminal first');
+        }
+        return sessions.getVoice(msg.sessionId).resize(msg.cols, msg.rows);
 
       case 'claude.session.start': {
         const session = sessions.start(msg.projectId, msg.resume);

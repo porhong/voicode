@@ -26,6 +26,7 @@ import { buildServer } from '../src/server/app.js';
 import { WsGateway } from '../src/server/ws-gateway.js';
 import { encodeProjectDir, PcSessionWatcher } from '../src/sessions/pc-sessions.js';
 import { SessionManager } from '../src/sessions/session-manager.js';
+import type { PtyHandle } from '../src/claude/pty-session.js';
 import { FakeMicDriver, FakeMouseDriver } from '../src/test-utils/fakes.js';
 import { ensureTls } from '../src/tls/certificates.js';
 import { silentLogger } from '../src/util/logger.js';
@@ -128,7 +129,61 @@ for (const dir of ['api-server/.git', 'mobile-app/.git', 'scratch', 'website/.gi
   await mkdir(path.join(workspace, dir), { recursive: true });
 }
 config.roots = [await realpath(workspace)];
-const sessions = new SessionManager(config, logger, demoQuery);
+/**
+ * Stands in for an interactive Claude Code in a pty (voice sessions): draws a prompt
+ * with the dictation footer, toggles "REC" on Space and echoes what is typed.
+ */
+class DemoPty implements PtyHandle {
+  pid = process.pid + 1000;
+  private dataListener: ((data: string) => void) | undefined;
+  private exitListener: ((e: { exitCode: number }) => void) | undefined;
+  private recording = false;
+  private typed = '';
+  private lines: string[] = ['▐ Welcome back! This is the UI demo, not a real Claude Code.'];
+  onData(listener: (data: string) => void): void {
+    this.dataListener = listener;
+    setTimeout(() => this.render(), 100);
+  }
+  onExit(listener: (e: { exitCode: number }) => void): void {
+    this.exitListener = listener;
+  }
+  write(data: string): void {
+    if (data === ' ') {
+      this.recording = !this.recording;
+      if (!this.recording) this.typed += 'refactor the auth middleware ';
+    } else if (data.includes('/exit')) {
+      setTimeout(() => this.exitListener?.({ exitCode: 0 }), 50);
+      return;
+    } else if (data === '\r') {
+      if (this.typed.trim()) this.lines.push(`> ${this.typed.trim()}`, '  (demo: nothing happens)');
+      this.typed = '';
+    } else if (data === '\x1b' || data === '\x03') {
+      this.typed = '';
+    } else {
+      // Bracketed-paste markers and cursor keys are not text.
+      // eslint-disable-next-line no-control-regex
+      this.typed += data.replace(/\x1b\[200~|\x1b\[201~|\x1b\[[A-Z]/g, '');
+    }
+    this.render();
+  }
+  resize(): void {}
+  kill(): void {
+    this.exitListener?.({ exitCode: 137 });
+  }
+  private render(): void {
+    const footer = this.recording ? '● REC · tap to send' : 'hold space to speak';
+    const body = this.lines.slice(-12).join('\r\n');
+    this.dataListener?.(
+      `\x1b[2J\x1b[H\x1b[1m Claude Code\x1b[0m  demo\r\n\r\n${body}\r\n\r\n╭──────────────────────────────╮\r\n│ > ${this.typed}\r\n╰──────────────────────────────╯\r\n  ${footer}\r\n`,
+    );
+  }
+}
+
+const sessions = new SessionManager(config, logger, demoQuery, {
+  claudeDir: path.join(home, 'claude'),
+  claudePath: 'demo-claude',
+  spawn: () => new DemoPty(),
+});
 
 // A pretend Claude session in a terminal, in a folder that is not allow-listed. It
 // alternates between working and idle so the PC list and "done" toasts can be seen.

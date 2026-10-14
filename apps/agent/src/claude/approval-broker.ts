@@ -67,44 +67,81 @@ export class ApprovalBroker extends EventEmitter<{
   /** Creates the `canUseTool` callback for one session. */
   forSession(sessionId: string): CanUseTool {
     return (toolName, input, options) =>
-      new Promise<PermissionResult>((resolve) => {
-        const requestId = randomUUID();
-        const now = Date.now();
-        const rememberable = options.suppressAlwaysAllowRule
-          ? []
-          : rememberableUpdates(options.suggestions ?? []);
-        const acceptsEdits = rememberable.some((u) => u.type === 'setMode');
-
-        const { detail, complete } = describeToolInput(toolName, input);
-        const request: PermissionRequest = {
-          sessionId,
-          requestId,
-          toolName,
-          title: options.title ?? describeToolTitle(toolName, input, options.displayName),
-          description: options.description ?? options.decisionReason,
-          detail,
-          complete,
-          // Never offer a standing approval for something the user could not fully see.
-          canRemember: complete && rememberable.length > 0,
-          rememberLabel: acceptsEdits ? 'Allow all edits this session' : undefined,
-          createdAt: now,
-          expiresAt: now + this.options.timeoutMs,
-        };
-
-        const timer = setTimeout(
-          () => this.settle(requestId, 'deny', 'timeout', 'No response from the user in time.'),
-          this.options.timeoutMs,
-        );
-        timer.unref();
-
-        this.pending.set(requestId, { request, input, rememberable, timer, settle: resolve });
-        options.signal.addEventListener(
-          'abort',
-          () => this.settle(requestId, 'deny', 'cancelled', 'Request was cancelled.'),
-          { once: true },
-        );
-        this.emit('request', request);
+      this.enqueue(sessionId, toolName, input, {
+        signal: options.signal,
+        suggestions: options.suppressAlwaysAllowRule ? [] : options.suggestions,
+        title: options.title,
+        description: options.description ?? options.decisionReason,
+        displayName: options.displayName,
       });
+  }
+
+  /**
+   * A permission check that did not come through the SDK (a Claude Code hook): the same
+   * phone approval, answered as a plain decision. Nothing can be "remembered" here, since
+   * hooks carry no rule suggestions.
+   */
+  async ask(
+    sessionId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+  ): Promise<{ decision: 'allow' | 'deny'; reason?: string }> {
+    const result = await this.enqueue(sessionId, toolName, input, {
+      signal: new AbortController().signal,
+    });
+    return result.behavior === 'allow'
+      ? { decision: 'allow' }
+      : { decision: 'deny', reason: result.message };
+  }
+
+  private enqueue(
+    sessionId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+    options: {
+      signal: AbortSignal;
+      suggestions?: PermissionUpdate[];
+      title?: string;
+      description?: string;
+      displayName?: string;
+    },
+  ): Promise<PermissionResult> {
+    return new Promise<PermissionResult>((resolve) => {
+      const requestId = randomUUID();
+      const now = Date.now();
+      const rememberable = rememberableUpdates(options.suggestions ?? []);
+      const acceptsEdits = rememberable.some((u) => u.type === 'setMode');
+
+      const { detail, complete } = describeToolInput(toolName, input);
+      const request: PermissionRequest = {
+        sessionId,
+        requestId,
+        toolName,
+        title: options.title ?? describeToolTitle(toolName, input, options.displayName),
+        description: options.description,
+        detail,
+        complete,
+        // Never offer a standing approval for something the user could not fully see.
+        canRemember: complete && rememberable.length > 0,
+        rememberLabel: acceptsEdits ? 'Allow all edits this session' : undefined,
+        createdAt: now,
+        expiresAt: now + this.options.timeoutMs,
+      };
+
+      const timer = setTimeout(
+        () => this.settle(requestId, 'deny', 'timeout', 'No response from the user in time.'),
+        this.options.timeoutMs,
+      );
+      timer.unref();
+
+      this.pending.set(requestId, { request, input, rememberable, timer, settle: resolve });
+      options.signal.addEventListener(
+        'abort',
+        () => this.settle(requestId, 'deny', 'cancelled', 'Request was cancelled.'),
+        { once: true },
+      );
+      this.emit('request', request);
+    });
   }
 
   respond(

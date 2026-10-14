@@ -1,12 +1,14 @@
 import { EventEmitter } from 'node:events';
-import { open, readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
-import type { ClaudeEvent, PcSession, PcSessionStatus } from '@voicecode/protocol';
-import { summarizeToolResult, summarizeToolUse } from '../claude/tool-summary.js';
+import type { PcSession, PcSessionStatus } from '@voicecode/protocol';
 import type { Logger } from '../util/logger.js';
 import type { SessionEventRecord } from '../claude/claude-session.js';
+import { findTranscript, TranscriptTail } from './transcript-tail.js';
+
+export { encodeProjectDir, transcriptEvents } from './transcript-tail.js';
 
 /**
  * Claude Code sessions running anywhere on this PC, including ones started in a
@@ -30,17 +32,10 @@ const RegistrySchema = z.object({
 
 /** Events kept per PC session for clients that open it. */
 const EVENT_LIMIT = 300;
-/** A first read of a long transcript starts this far from its end. */
-const INITIAL_TAIL_BYTES = 512 * 1024;
 const MAX_SESSIONS = 32;
 
 export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
-}
-
-/** How Claude Code names a project's transcript folder: every non-alphanumeric → "-". */
-export function encodeProjectDir(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 export function mapStatus(status: string | undefined): PcSessionStatus {
@@ -60,77 +55,9 @@ function isAlive(pid: number): boolean {
   }
 }
 
-/** Text a user typed, as opposed to command wrappers and injected context. */
-function typedText(text: string): string | undefined {
-  const t = text.trim();
-  return t && !t.startsWith('<') ? t : undefined;
-}
-
-/** Turns one transcript line into phone transcript events (often none). */
-export function transcriptEvents(entry: unknown): ClaudeEvent[] {
-  if (!entry || typeof entry !== 'object') return [];
-  const e = entry as {
-    type?: string;
-    isMeta?: boolean;
-    isSidechain?: boolean;
-    message?: { content?: unknown };
-  };
-  // Subagent chatter and injected context are not part of the visible conversation.
-  if (e.isMeta || e.isSidechain) return [];
-  const content = e.message?.content;
-  const out: ClaudeEvent[] = [];
-
-  if (e.type === 'user') {
-    if (typeof content === 'string') {
-      const text = typedText(content);
-      if (text) out.push({ kind: 'user_prompt', text, deviceName: 'PC' });
-      return out;
-    }
-    if (!Array.isArray(content)) return out;
-    for (const block of content as Array<Record<string, unknown>>) {
-      if (block.type === 'text' && typeof block.text === 'string') {
-        const text = typedText(block.text);
-        if (!text) continue;
-        out.push(
-          text.startsWith('[Request interrupted')
-            ? { kind: 'status', message: 'Interrupted.' }
-            : { kind: 'user_prompt', text, deviceName: 'PC' },
-        );
-      } else if (block.type === 'tool_result') {
-        out.push({
-          kind: 'tool_result',
-          toolUseId: String(block.tool_use_id ?? ''),
-          isError: block.is_error === true,
-          summary: summarizeToolResult(block.content),
-        });
-      }
-    }
-    return out;
-  }
-
-  if (e.type === 'assistant' && Array.isArray(content)) {
-    for (const block of content as Array<Record<string, unknown>>) {
-      if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-        out.push({ kind: 'assistant_text', text: block.text });
-      } else if (block.type === 'tool_use' && typeof block.name === 'string') {
-        out.push({
-          kind: 'tool_use',
-          toolUseId: String(block.id ?? ''),
-          name: block.name,
-          summary: summarizeToolUse(block.name, (block.input ?? {}) as Record<string, unknown>),
-        });
-      }
-    }
-  }
-  return out;
-}
-
 interface Tracked {
   info: PcSession;
-  transcript?: string;
-  offset: number;
-  /** Bytes after the last complete line, waiting for the rest of it. */
-  partial: string;
+  tail?: TranscriptTail;
   seq: number;
   events: SessionEventRecord[];
 }
@@ -207,8 +134,6 @@ export class PcSessionWatcher extends EventEmitter<{
       const previousStatus = previous?.info.status;
       const tracked: Tracked = previous ?? {
         info: { sessionId: entry.sessionId } as PcSession,
-        offset: 0,
-        partial: '',
         seq: 0,
         events: [],
       };
@@ -256,87 +181,20 @@ export class PcSessionWatcher extends EventEmitter<{
     return entries;
   }
 
-  private async findTranscript(info: PcSession): Promise<string | undefined> {
-    const projects = path.join(this.dir, 'projects');
-    const direct = path.join(projects, encodeProjectDir(info.cwd), `${info.sessionId}.jsonl`);
-    if (
-      await stat(direct).then(
-        () => true,
-        () => false,
-      )
-    )
-      return direct;
-    // Long paths are shortened differently; fall back to looking in every project.
-    for (const dir of await readdir(projects).catch(() => [] as string[])) {
-      const candidate = path.join(projects, dir, `${info.sessionId}.jsonl`);
-      if (
-        await stat(candidate).then(
-          () => true,
-          () => false,
-        )
-      )
-        return candidate;
-    }
-    return undefined;
-  }
-
   /** Reads what was appended to the transcript since the last scan. */
   private async tail(t: Tracked): Promise<void> {
-    t.transcript ??= await this.findTranscript(t.info);
-    if (!t.transcript) return;
-    const size = await stat(t.transcript).then(
-      (s) => s.size,
-      () => -1,
+    t.tail ??= await findTranscript(this.dir, t.info.cwd, t.info.sessionId).then((f) =>
+      f ? new TranscriptTail(f) : undefined,
     );
-    if (size < 0) return;
-    if (size < t.offset) {
-      // Rewritten from scratch (compaction or a new file): start over.
-      t.offset = 0;
-      t.partial = '';
-      t.events = [];
-    }
-    let start = t.offset;
-    let skipFirst = false;
-    if (start === 0 && size > INITIAL_TAIL_BYTES) {
-      start = size - INITIAL_TAIL_BYTES;
-      skipFirst = true;
-    }
-    if (size === start) return;
-
-    const handle = await open(t.transcript, 'r');
-    let chunk: string;
-    try {
-      const buffer = Buffer.alloc(size - start);
-      await handle.read(buffer, 0, buffer.length, start);
-      chunk = buffer.toString('utf8');
-    } finally {
-      await handle.close();
-    }
-    t.offset = size;
-
-    const lines = (t.partial + chunk).split('\n');
-    t.partial = lines.pop() ?? '';
-    if (skipFirst) lines.shift();
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let entry: unknown;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const e = entry as { type?: string; lastPrompt?: unknown; timestamp?: unknown };
-      if (e.type === 'last-prompt' && typeof e.lastPrompt === 'string') {
-        t.info.lastPrompt = e.lastPrompt.slice(0, 200);
-      }
-      const at =
-        typeof e.timestamp === 'string' ? Date.parse(e.timestamp) || Date.now() : Date.now();
-      for (const event of transcriptEvents(entry)) {
-        const record = { seq: ++t.seq, at, event };
-        t.events.push(record);
-        if (t.events.length > EVENT_LIMIT) t.events.shift();
-        this.emit('event', t.info.sessionId, record);
-      }
+    if (!t.tail) return;
+    const result = await t.tail.read();
+    if (result.reset) t.events = [];
+    if (result.lastPrompt) t.info.lastPrompt = result.lastPrompt;
+    for (const item of result.items) {
+      const record = { seq: ++t.seq, at: item.at, event: item.event };
+      t.events.push(record);
+      if (t.events.length > EVENT_LIMIT) t.events.shift();
+      this.emit('event', t.info.sessionId, record);
     }
   }
 }

@@ -44,6 +44,33 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
    */
   z.object({ type: z.literal('voice.mic.start'), sampleRate: z.literal(AUDIO.sampleRate) }),
   z.object({ type: z.literal('voice.mic.stop') }),
+  /**
+   * Start an interactive Claude Code session on the PC (in a pseudo-terminal) whose
+   * dictation is driven from here: the phone's microphone and push-to-talk.
+   */
+  z.object({ type: z.literal('voice.session.start'), projectId: id, resume: id.optional() }),
+  /** Push-to-talk for a voice session: press taps the dictation key, release sends. */
+  z.object({ type: z.literal('voice.ptt'), sessionId: id, pressed: z.boolean() }),
+
+  // --- Terminal of a voice session ---------------------------------------
+  z.object({
+    type: z.literal('terminal.subscribe'),
+    sessionId: id,
+    cols: z.number().int().min(20).max(400),
+    rows: z.number().int().min(5).max(200),
+  }),
+  z.object({ type: z.literal('terminal.unsubscribe') }),
+  z.object({
+    type: z.literal('terminal.input'),
+    sessionId: id,
+    data: z.string().min(1).max(LIMITS.maxTerminalInput),
+  }),
+  z.object({
+    type: z.literal('terminal.resize'),
+    sessionId: id,
+    cols: z.number().int().min(20).max(400),
+    rows: z.number().int().min(5).max(200),
+  }),
 
   // --- Claude Code ---------------------------------------------------------
   z.object({

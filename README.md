@@ -298,10 +298,18 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
   - **Linux:** PipeWire with `pipewire-pulse` (`pactl`, `pw-cat`). The agent creates a
     null sink `voicecode_mic` and makes its monitor the default source while the phone
     streams, restoring your microphone afterwards.
-  - In a terminal on the PC, sign in to Claude Code with a claude.ai account (an API key
-    disables `/voice`) and run `/voice tap`. Hold the mic on the phone and speak; tap
-    Space in the terminal to start and stop recording. `voicecode-agent doctor` checks
-    all of this ("Phone microphone", "Claude Code voice").
+  - Sign in to Claude Code on the PC with a claude.ai account (an API key disables
+    `/voice`). `voicecode-agent doctor` checks all of this ("Phone microphone", "Claude
+    Code voice").
+  - With this mode chosen, **New session** on the phone runs Claude Code itself in a
+    terminal on the PC (dictation on, tap mode) instead of going through the Agent SDK.
+    Hold the mic and speak: the agent taps Claude Code's dictation key, your words are
+    transcribed by Claude Code and sent when you release. The conversation shows on the
+    phone as usual, typed prompts go into the terminal, and every tool call still comes
+    to the phone for approval (a Claude Code `PreToolUse` hook calls back into the
+    agent; reads such as `Read`/`Grep` pass without asking, as in the CLI). The
+    **Terminal** button shows the raw CLI for what only it can do: the folder-trust
+    question on a new project, `/login`, or a prompt the hook did not cover.
 
 ## Development
 

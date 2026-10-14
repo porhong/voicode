@@ -150,6 +150,11 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
       return state;
     case 'voice.mic.status':
       return { ...state, voiceMic: { status: msg.status, youHoldLease: msg.youHoldLease } };
+    // Terminal bytes are delivered to the terminal view directly, never kept here.
+    case 'terminal.snapshot':
+    case 'terminal.data':
+    case 'terminal.exit':
+      return state;
 
     case 'claude.session': {
       const sessions = { ...state.sessions, [msg.session.id]: msg.session };

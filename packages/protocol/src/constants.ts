@@ -26,6 +26,8 @@ export const LIMITS = {
   maxPathLength: 4096,
   /** Max audio a device may stream per second, in bytes (2× real time for 16 kHz s16). */
   maxAudioBytesPerSecond: 64_000,
+  /** Max characters of raw terminal input per message. */
+  maxTerminalInput: 4096,
 } as const;
 
 /**
@@ -45,6 +47,17 @@ export const AUDIO = {
 
 export const MOUSE_BUTTONS = ['left', 'right', 'middle'] as const;
 export type MouseButton = (typeof MOUSE_BUTTONS)[number];
+
+/** Claude Code's dictation in a voice session, as the agent sees it on the terminal. */
+export const VOICE_STATES = [
+  'off',
+  'idle',
+  'starting',
+  'recording',
+  'finalizing',
+  'error',
+] as const;
+export type VoiceState = (typeof VOICE_STATES)[number];
 
 export const SESSION_STATES = [
   'starting',

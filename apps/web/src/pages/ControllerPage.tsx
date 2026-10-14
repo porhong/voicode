@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { ServerMessage } from '@voicecode/protocol';
+import type { ServerMessage, SessionSummary } from '@voicecode/protocol';
 import { Composer, type ComposerHandle } from '../components/Composer';
 import { Deck, type DeckStatus } from '../components/Deck';
 import { DeckEditor } from '../components/DeckEditor';
@@ -9,12 +9,13 @@ import { PermissionCard } from '../components/PermissionCard';
 import { SessionBar, StartSession, useProjectChoice } from '../components/SessionBar';
 import { Toasts } from '../components/Toasts';
 import { SettingsSheet } from '../components/SettingsSheet';
+import { TerminalView, type TerminalMessage } from '../components/TerminalView';
 import { Trackpad } from '../components/Trackpad';
 import { Transcript, type TranscriptHandle } from '../components/Transcript';
 import { useAgentSocket } from '../hooks/useAgentSocket';
 import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
 import { useDeck, type Macro } from '../hooks/useDeck';
-import { useMicStream } from '../hooks/useMicStream';
+import { useMicStream, type MicStream } from '../hooks/useMicStream';
 import { speechRecognitionSupported } from '../hooks/useSpeechRecognition';
 import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
@@ -29,6 +30,24 @@ const CONNECTION_LABEL = {
   reconnecting: 'Reconnecting',
   unpaired: 'Not paired',
 } as const;
+
+/** What the voice bar says about Claude Code's dictation. */
+function voiceText(voice: SessionSummary['voice']): string {
+  switch (voice?.state) {
+    case 'idle':
+      return 'Hold the mic to dictate through Claude Code.';
+    case 'starting':
+      return 'Starting to record…';
+    case 'recording':
+      return 'Recording… release to send.';
+    case 'finalizing':
+      return 'Sending…';
+    case 'error':
+      return voice.detail ?? 'Dictation failed.';
+    default:
+      return 'Dictation is not on yet. If it stays off, open the terminal and run /voice tap.';
+  }
+}
 
 /** One tap fills the composer; the prompt can still be edited before sending. */
 const SUGGESTIONS = [
@@ -49,18 +68,33 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [foldersOpen, setFoldersOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const deckMode = settings.claudeLayout === 'deck';
   /** The deck has the screen: the conversation is hidden, approvals still show. */
   const deckFull = deckMode && !settings.deckHistory;
 
-  const onMessage = useCallback(
-    (message: ServerMessage) => dispatch({ type: 'server', message }),
-    [],
-  );
+  // Terminal bytes go straight to the open terminal view, not through the reducer.
+  const terminalListeners = useRef(new Set<(message: TerminalMessage) => void>());
+  const onMessage = useCallback((message: ServerMessage) => {
+    if (
+      message.type === 'terminal.snapshot' ||
+      message.type === 'terminal.data' ||
+      message.type === 'terminal.exit'
+    ) {
+      for (const listener of terminalListeners.current) listener(message);
+      return;
+    }
+    dispatch({ type: 'server', message });
+  }, []);
+  const subscribeTerminal = useCallback((listener: (message: TerminalMessage) => void) => {
+    terminalListeners.current.add(listener);
+    return () => {
+      terminalListeners.current.delete(listener);
+    };
+  }, []);
   const { state: connection, send, sendBinary } = useAgentSocket(onMessage);
   // Claude Code dictation: the phone's audio goes to a virtual microphone on the PC.
   const micStream = useMicStream({ send, sendBinary, mic: state.voiceMic });
-  const remoteMic = settings.dictation === 'claude-code' ? micStream : undefined;
 
   useEffect(() => {
     if (connection === 'unpaired') onUnpaired();
@@ -97,6 +131,29 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     () => (pcId ? (state.pcEvents[pcId] ?? []) : []),
     [pcId, state.pcEvents],
   );
+
+  // In a voice session the agent also presses Claude Code's dictation key for us, so a
+  // press is "start recording there + stream the mic" and a release the reverse.
+  const voiceSession = active?.kind === 'voice' ? active : undefined;
+  const remoteMic: MicStream | undefined =
+    settings.dictation === 'claude-code'
+      ? {
+          ...micStream,
+          error:
+            micStream.error ??
+            (voiceSession?.voice?.state === 'error' ? voiceSession.voice.detail : undefined),
+          start: () => {
+            if (voiceSession)
+              send({ type: 'voice.ptt', sessionId: voiceSession.id, pressed: true });
+            micStream.start();
+          },
+          stop: () => {
+            micStream.stop();
+            if (voiceSession)
+              send({ type: 'voice.ptt', sessionId: voiceSession.id, pressed: false });
+          },
+        }
+      : undefined;
 
   const openSession = (sessionId: string) => {
     if (pcId) send({ type: 'pc.session.unsubscribe' });
@@ -151,7 +208,15 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const live = active && active.state !== 'closed' && active.state !== 'error';
   const [startProjectId, setStartProjectId] = useProjectChoice(state.projects, active?.projectId);
   const openFolder = state.roots.length ? () => setFoldersOpen(true) : undefined;
-  const startSession = (projectId: string) => send({ type: 'claude.session.start', projectId });
+  // With Claude Code dictation chosen and a virtual microphone on the PC, new sessions
+  // run Claude Code in a terminal there so its own /voice can be used.
+  const voiceSessions = settings.dictation === 'claude-code' && state.voiceMic.status.available;
+  const startSession = (projectId: string) =>
+    send(
+      voiceSessions
+        ? { type: 'voice.session.start', projectId }
+        : { type: 'claude.session.start', projectId },
+    );
 
   // A short buzz when a new approval arrives, so a phone in hand notices it.
   // Approvals re-sent after a reconnect are not new, so only buzz while connected.
@@ -338,6 +403,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               onSelect={openSession}
               onSelectPc={openPcSession}
               onOpenFolder={openFolder}
+              voice={voiceSessions}
             />
             {pcId ? (
               <Transcript
@@ -405,6 +471,26 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                   <p className="pc-bar-text muted">This session has ended on the PC.</p>
                 )}
               </div>
+            )}
+            {voiceSession && live && (
+              <div className="pc-bar voice-bar">
+                <p className="pc-bar-text">
+                  <strong>Claude Code on the PC.</strong>{' '}
+                  <span className={voiceSession.voice?.state === 'error' ? 'error-text' : 'muted'}>
+                    {voiceText(voiceSession.voice)}
+                  </span>
+                </p>
+                <button
+                  className="btn btn-small"
+                  aria-expanded={terminalOpen}
+                  onClick={() => setTerminalOpen((open) => !open)}
+                >
+                  {terminalOpen ? 'Hide terminal' : 'Terminal'}
+                </button>
+              </div>
+            )}
+            {voiceSession && live && terminalOpen && (
+              <TerminalView sessionId={voiceSession.id} send={send} subscribe={subscribeTerminal} />
             )}
             {active && live && (
               <Composer

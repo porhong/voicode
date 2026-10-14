@@ -8,6 +8,32 @@ import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
 import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
 import { ClaudeSession, type SessionEventRecord } from '../claude/claude-session.js';
+import { HookServer, type HookDecision, type PreToolUseEvent } from '../claude/hook-server.js';
+import { hookCommandLine, VoiceSession, type PtySpawn } from '../claude/pty-session.js';
+
+/** A phone session, driven through the SDK or hosted in a terminal for dictation. */
+export type ManagedSession = ClaudeSession | VoiceSession;
+
+/**
+ * Tools Claude Code runs without asking anyway (reads, bookkeeping); a hook that asked
+ * the phone for each of these would interrupt far more than the SDK path does.
+ */
+const PASSTHROUGH_TOOLS = new Set([
+  'Read',
+  'Glob',
+  'Grep',
+  'LS',
+  'TodoRead',
+  'TodoWrite',
+  'Task',
+  'NotebookRead',
+  'BashOutput',
+  'KillShell',
+  'TaskOutput',
+  'ListMcpResourcesTool',
+  'ReadMcpResourceTool',
+]);
+const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 
 export class SessionError extends Error {
   constructor(
@@ -28,14 +54,21 @@ export class SessionManager extends EventEmitter<{
   delta: [sessionId: string, record: SessionEventRecord];
   permissionRequest: [request: PermissionRequest];
   permissionResolved: [event: ResolvedEvent];
+  /** Raw terminal output of a voice session. */
+  terminal: [sessionId: string, data: string];
+  terminalExit: [sessionId: string, code: number];
 }> {
   readonly broker: ApprovalBroker;
-  private readonly sessions = new Map<string, ClaudeSession>();
+  private readonly sessions = new Map<string, ManagedSession>();
+  private hooks: HookServer | undefined;
+  private hooksStarting: Promise<HookServer> | undefined;
 
   constructor(
     private readonly config: AgentConfig,
     private readonly logger: Logger,
     private readonly queryFn?: typeof query,
+    /** Injection points for tests of voice sessions. */
+    private readonly voiceDeps: { spawn?: PtySpawn; claudePath?: string; claudeDir?: string } = {},
   ) {
     super();
     this.broker = new ApprovalBroker({ timeoutMs: config.claude.approvalTimeoutMs });
@@ -64,23 +97,103 @@ export class SessionManager extends EventEmitter<{
     return [...this.sessions.values()].map((s) => s.summary());
   }
 
-  get(id: string): ClaudeSession {
+  get(id: string): ManagedSession {
     const session = this.sessions.get(id);
     if (!session) throw new SessionError('not_found', `Unknown session ${id}`);
     return session;
   }
 
-  start(projectId: string, resume?: string, opts: { fork?: boolean } = {}): ClaudeSession {
-    const project = this.config.projects.find((p) => p.id === projectId);
-    if (!project) throw new SessionError('not_found', 'Project is not in the allowed list');
+  /** A voice session, for the operations only a terminal-hosted session has. */
+  getVoice(id: string): VoiceSession {
+    const session = this.get(id);
+    if (!(session instanceof VoiceSession)) {
+      throw new SessionError('bad_request', 'That session is not a Claude Code voice session');
+    }
+    return session;
+  }
 
+  private checkCapacity(resume?: string, fork?: boolean): void {
     const live = [...this.sessions.values()].filter((s) => !s.isClosed);
     if (live.length >= this.config.claude.maxConcurrentSessions) {
       throw new SessionError('session_busy', 'Too many concurrent sessions; close one first');
     }
-    if (resume && !opts.fork && live.some((s) => s.summary().claudeSessionId === resume)) {
+    if (resume && !fork && live.some((s) => s.summary().claudeSessionId === resume)) {
       throw new SessionError('session_busy', 'That Claude session is already open');
     }
+  }
+
+  private project(projectId: string): ProjectConfig {
+    const project = this.config.projects.find((p) => p.id === projectId);
+    if (!project) throw new SessionError('not_found', 'Project is not in the allowed list');
+    return project;
+  }
+
+  private track(session: ManagedSession): void {
+    session.on('state', (summary) => this.emit('session', summary));
+    session.on('event', (record) => this.emit('event', session.id, record));
+    session.on('delta', (record) => this.emit('delta', session.id, record));
+    this.sessions.set(session.id, session);
+  }
+
+  /**
+   * An interactive Claude Code in a pseudo-terminal, for dictation through Claude Code's
+   * own `/voice`. Its tool calls come back through the hook server for phone approval.
+   */
+  async startVoice(projectId: string, resume?: string): Promise<VoiceSession> {
+    const project = this.project(projectId);
+    this.checkCapacity(resume);
+    const hooks = await this.ensureHooks();
+    const session = new VoiceSession({
+      id: randomUUID(),
+      project,
+      resume,
+      config: this.config.claude,
+      broker: this.broker,
+      logger: this.logger.child({ session: project.name, kind: 'voice' }),
+      hook: { url: hooks.url, token: hooks.token, command: hookCommandLine() },
+      ...this.voiceDeps,
+    });
+    this.track(session);
+    session.on('terminal', (data) => this.emit('terminal', session.id, data));
+    session.on('exit', (code) => this.emit('terminalExit', session.id, code));
+    session.start();
+    this.logger.info({ project: project.path, resume }, 'claude voice session started');
+    return session;
+  }
+
+  private ensureHooks(): Promise<HookServer> {
+    if (this.hooks) return Promise.resolve(this.hooks);
+    this.hooksStarting ??= (async () => {
+      const server = new HookServer((event) => this.decideHook(event), this.logger);
+      await server.start();
+      this.hooks = server;
+      return server;
+    })().finally(() => (this.hooksStarting = undefined));
+    return this.hooksStarting;
+  }
+
+  /** A tool call from a hosted Claude Code; `undefined` leaves it to the CLI's own prompt. */
+  async decideHook(event: PreToolUseEvent): Promise<HookDecision | undefined> {
+    const session = [...this.sessions.values()].find(
+      (s): s is VoiceSession =>
+        s instanceof VoiceSession && s.summary().claudeSessionId === event.session_id,
+    );
+    if (!session || session.isClosed) return undefined;
+    if (PASSTHROUGH_TOOLS.has(event.tool_name)) return undefined;
+    if (this.config.claude.permissionMode === 'acceptEdits' && EDIT_TOOLS.has(event.tool_name)) {
+      return undefined;
+    }
+    return this.broker.ask(session.id, event.tool_name, event.tool_input);
+  }
+
+  /** Push-to-talk for a voice session. */
+  ptt(sessionId: string, pressed: boolean, deviceName: string): void {
+    void this.getVoice(sessionId).pressPtt(pressed, deviceName);
+  }
+
+  start(projectId: string, resume?: string, opts: { fork?: boolean } = {}): ClaudeSession {
+    const project = this.project(projectId);
+    this.checkCapacity(resume, opts.fork);
 
     const session = new ClaudeSession({
       id: randomUUID(),
@@ -92,10 +205,7 @@ export class SessionManager extends EventEmitter<{
       logger: this.logger.child({ session: project.name }),
       queryFn: this.queryFn,
     });
-    session.on('state', (summary) => this.emit('session', summary));
-    session.on('event', (record) => this.emit('event', session.id, record));
-    session.on('delta', (record) => this.emit('delta', session.id, record));
-    this.sessions.set(session.id, session);
+    this.track(session);
     session.start();
     this.logger.info({ project: project.path, resume, fork: opts.fork }, 'claude session started');
     return session;
@@ -178,5 +288,7 @@ export class SessionManager extends EventEmitter<{
     this.broker.cancelAll('shutdown');
     for (const session of this.sessions.values()) session.close();
     this.sessions.clear();
+    void this.hooks?.stop();
+    this.hooks = undefined;
   }
 }

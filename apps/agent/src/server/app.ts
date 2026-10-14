@@ -75,6 +75,8 @@ export async function buildServer(deps: ServerDeps) {
         scriptSrc: ["'self'"],
         styleSrc: ["'self'"],
         styleSrcAttr: ["'unsafe-inline'"],
+        // xterm.js (the terminal view) injects its theme as a <style> element.
+        styleSrcElem: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
         connectSrc: ["'self'"],
         manifestSrc: ["'self'"],

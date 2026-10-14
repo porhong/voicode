@@ -21,7 +21,10 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/cli/commands  init start (default) status pair devices sessions projects roots tunnel autostart firewall doctor stop
   src/config        config schema, project allow-list, workspace roots (folders a device may open)
   src/server        Fastify app, origin/host guard, cookie auth, WebSocket gateway
-  src/claude        ClaudeSession (SDK query), ApprovalBroker (canUseTool), claude-executable (SEA download)
+  src/claude        ClaudeSession (SDK query), ApprovalBroker (canUseTool + hook asks),
+                    claude-executable (SEA download), pty-session (VoiceSession: interactive
+                    claude in node-pty for /voice dictation), hook-server (loopback endpoint
+                    the `hook pre-tool-use` subcommand reports tool calls to), voice-screen
   src/tunnel        cloudflared config + process supervisor (optional Cloudflare Tunnel)
   src/sessions      SessionManager (phone sessions), PcSessionWatcher (read-only view of all
                     Claude sessions on the PC via ~/.claude/sessions + transcripts)
@@ -120,16 +123,27 @@ Done and verified:
   CLI from a temp folder and the UI demo; the interactive prompt itself was not driven
   in a test.
 
-- Claude Code dictation bridge, phase 1 (2026-10-14): the phone streams raw 16 kHz PCM
-  (binary WebSocket frames under a `voice.mic` lease, PROTOCOL_VERSION 4) and the agent
-  plays it into a virtual microphone so Claude Code's `/voice` on the PC can record it.
-  Windows helper `voicecode-audio-out.exe` (waveOut → "CABLE Input") was built and played
-  a test tone here; `doctor` reports the cable, the default input and the claude.ai
-  sign-in. Not verified: VB-CABLE itself (not installed on the dev PC), the PipeWire
-  driver (no Linux audio in CI), the phone capture on a real phone. Phase 2 (agent-owned
-  `claude` in a PTY, push-to-talk keys, terminal view, hook-based approvals) and phase 3
-  (SEA packaging of node-pty, default-device switching) are in the plan file
-  `~/.claude/plans/the-voice-prompt-on-streamed-sunrise.md`.
+- Claude Code dictation bridge (2026-10-14), Settings → Voice → Dictation → Claude Code:
+  - Phase 1: the phone streams raw 16 kHz PCM (binary WebSocket frames under a
+    `voice.mic` lease, PROTOCOL_VERSION 4) and the agent plays it into a virtual
+    microphone so Claude Code's `/voice` on the PC can record it. Windows helper
+    `voicecode-audio-out.exe` (waveOut → "CABLE Input") was built and played a test tone
+    here; `doctor` reports the cable, the default input and the claude.ai sign-in.
+  - Phase 2: `voice.session.start` runs `claude --session-id … --settings {voice tap,
+PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSession`
+    (`kind: 'voice'` in SessionSummary). `voice.ptt` taps Space on press, waits for
+    `● REC` on an `@xterm/headless` screen, and taps again 600 ms after release; the
+    transcript is tailed from Claude Code's JSONL; tool calls reach the phone through
+    `hook-server.ts` + the hidden `hook pre-tool-use` subcommand (reads pass through).
+    `terminal.subscribe/data/input` stream the raw CLI to an xterm.js view on the phone
+    (CSP allows inline `<style>` elements for it).
+  - Verified: unit + integration tests with a fake pty; headless Chrome with a fake
+    microphone against `ui-demo.ts` (which fakes the Claude Code pty): session start,
+    REC on press, send on release, terminal keys. Not verified: a real `claude` in the
+    pty (needs VB-CABLE here), a real phone, the PipeWire driver, Claude Code TUI strings
+    on other versions (`voice-screen.ts` is lenient). Phase 3 (SEA packaging of node-pty
+    and the xterm packages, Windows default-device switching) is still open; the plan is
+    in `~/.claude/plans/the-voice-prompt-on-streamed-sunrise.md`.
 
 Not verified yet:
 
