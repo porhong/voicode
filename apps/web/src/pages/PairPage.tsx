@@ -42,10 +42,12 @@ export function PairPage({ hostname, onPaired }: { hostname?: string; onPaired: 
     }
   };
 
-  // A code from the QR link is submitted only after the user confirms the device name.
+  // Initial focus only. A code from the QR link is submitted after the user confirms the
+  // device name, so that field gets focus; otherwise the code field does. Running this on
+  // every change of `code` moved the cursor away after each digit typed.
   useEffect(() => {
-    document.getElementById(code ? 'device-name' : 'pair-code')?.focus();
-  }, [code]);
+    document.getElementById(codeFromLink ? 'device-name' : 'pair-code')?.focus();
+  }, []);
 
   return (
     <main className="pair">
