@@ -1,29 +1,36 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { promisify } from 'node:util';
 import { AUDIO } from '@voicecode/protocol';
 import type { Logger } from '../util/logger.js';
 import type { VirtualMicDriver, VirtualMicInfo } from './driver.js';
 
 const READY_TIMEOUT_MS = 10_000;
+const run = promisify(execFile);
 /** Audio queued in the pipe beyond this is dropped: it would only play late. */
 const MAX_PENDING_BYTES = AUDIO.sampleRate * AUDIO.bytesPerSample; // one second
 
 /**
  * Plays PCM through a small native helper (Windows: `voicecode-audio-out.exe`, waveOut).
  * The helper prints `ready key=value…` once its device is open, then reads raw s16le
- * audio from stdin until EOF; problems come back as `err …` lines on stdout.
+ * audio from stdin until EOF; problems come back as `err …` lines on stdout. While a
+ * phone streams, the helper can also make the cable's recording side the default input
+ * (what Claude Code records from) and put the previous device back afterwards.
  */
 export class HelperAudioDriver implements VirtualMicDriver {
   private child: ChildProcessWithoutNullStreams | undefined;
   private exitListeners: Array<(error: Error) => void> = [];
   private stopping = false;
   private warnedBacklog = false;
+  private previousCapture: string | undefined;
 
   constructor(
     readonly name: string,
     private readonly command: string,
     private readonly args: string[],
     private readonly logger: Logger,
+    /** Recording device to make the default while streaming; unset leaves it alone. */
+    private readonly captureDevice?: string,
   ) {}
 
   start(): Promise<VirtualMicInfo> {
@@ -77,10 +84,42 @@ export class HelperAudioDriver implements VirtualMicDriver {
   }
 
   async activate(): Promise<void> {
-    // Windows: nothing to switch; the user makes the cable the default recording device.
+    if (!this.captureDevice) return;
+    const result = await this.switchCapture(this.captureDevice);
+    // Only remember a device that is not the cable itself, so a restore never "restores"
+    // the cable after the agent was interrupted mid-session.
+    if (
+      result.previous &&
+      !result.previous.toLowerCase().includes(this.captureDevice.toLowerCase())
+    ) {
+      this.previousCapture = result.previous;
+    }
+    this.logger.info({ from: result.previous, to: result.capture }, 'default input switched');
   }
 
-  async deactivate(): Promise<void> {}
+  async deactivate(): Promise<void> {
+    const previous = this.previousCapture;
+    this.previousCapture = undefined;
+    if (!previous) return;
+    await this.switchCapture(previous);
+    this.logger.info({ to: previous }, 'default input restored');
+  }
+
+  private async switchCapture(device: string): Promise<{ previous?: string; capture?: string }> {
+    const { stdout } = await run(this.command, ['--set-default-capture', device], {
+      timeout: 10_000,
+      windowsHide: true,
+    }).catch((err: Error & { stdout?: string }) => ({ stdout: err.stdout ?? '' }));
+    const out: { previous?: string; capture?: string } = {};
+    for (const line of stdout.split('\n')) {
+      const [kind, ...rest] = line.trim().split(' ');
+      if (kind === 'previous') out.previous = rest.join(' ');
+      else if (kind === 'capture') out.capture = rest.join(' ');
+      else if (kind === 'err') throw new Error(rest.join(' '));
+    }
+    if (!out.capture) throw new Error('the audio helper did not switch the recording device');
+    return out;
+  }
 
   write(pcm: Buffer): void {
     const child = this.child;

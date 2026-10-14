@@ -141,9 +141,14 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
     microphone against `ui-demo.ts` (which fakes the Claude Code pty): session start,
     REC on press, send on release, terminal keys. Not verified: a real `claude` in the
     pty (needs VB-CABLE here), a real phone, the PipeWire driver, Claude Code TUI strings
-    on other versions (`voice-screen.ts` is lenient). Phase 3 (SEA packaging of node-pty
-    and the xterm packages, Windows default-device switching) is still open; the plan is
-    in `~/.claude/plans/the-voice-prompt-on-streamed-sunrise.md`.
+    on other versions (`voice-screen.ts` is lenient).
+  - Phase 3: the standalone build embeds the `@lydell/node-pty-<target>` package under
+    `node-pty/` and `loadPtySpawn()` loads it from the extracted runtime (`doctor` row
+    "Claude Code terminal", asserted by `smoke-sea.mjs`); the xterm packages are imported
+    from their `.mjs` builds (`src/types/xterm-esm.d.ts`). On Windows the audio helper's
+    `--set-default-capture` (undocumented `IPolicyConfig`) makes "CABLE Output" the
+    default input while a phone streams and restores the previous device; verified on this
+    Windows 11 PC by switching the built-in microphone to itself.
 
 Not verified yet:
 

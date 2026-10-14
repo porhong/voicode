@@ -291,10 +291,12 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
   device at a time) and plays it into a virtual microphone on the PC, so Claude Code's own
   dictation (`/voice`, transcribed by Anthropic and tuned for code) can record it. Nothing
   is stored and no speech engine runs in the agent. Setup:
-  - **Windows:** install [VB-CABLE](https://vb-audio.com/Cable/) (admin, reboot) and make
-    **CABLE Output** the default input in Settings → System → Sound → Input. The agent
-    plays into **CABLE Input** through `voicecode-audio-out.exe`; `config.json` →
-    `voice.outputDevice` picks another device.
+  - **Windows:** install [VB-CABLE](https://vb-audio.com/Cable/) (admin, reboot). The
+    agent plays into **CABLE Input** through `voicecode-audio-out.exe` and, while the
+    phone streams, makes **CABLE Output** the default input (Claude Code records from
+    the default), putting your microphone back afterwards. `config.json` → `voice`
+    (`outputDevice`, `captureDevice`, `switchDefaultInput: false` to manage the default
+    input yourself).
   - **Linux:** PipeWire with `pipewire-pulse` (`pactl`, `pw-cat`). The agent creates a
     null sink `voicecode_mic` and makes its monitor the default source while the phone
     streams, restoring your microphone afterwards.

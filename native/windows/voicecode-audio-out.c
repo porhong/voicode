@@ -10,9 +10,16 @@
  *       in the name shown as underscores) and then plays signed 16-bit little-endian
  *       mono audio read from stdin until EOF. Problems are "err <message>" lines.
  *   voicecode-audio-out --list
- *       Prints "out <name>" for every playback device.
+ *       Prints "out <name>" for every playback device and "in <name>" for every
+ *       recording device.
  *   voicecode-audio-out --default-capture
  *       Prints "capture <name>" for the default recording device (what Claude Code records).
+ *   voicecode-audio-out --set-default-capture <name substring>
+ *       Makes the first recording device whose name contains the substring the default
+ *       for all roles, printing "previous <name>" (the old default) then "capture <name>".
+ *       Uses the undocumented IPolicyConfig interface that every "set default audio
+ *       device" tool relies on; if Windows changes it this prints "err …" and the user
+ *       picks the device in Settings instead.
  *
  * waveOut is used on purpose: it is simple, available everywhere, and the Windows audio
  * engine resamples to the device's format, so the cable may run at any rate.
@@ -37,6 +44,32 @@
 
 #define BUFFERS 16
 #define CHUNK_MS 100
+
+/* IPolicyConfig (undocumented; layout shared by Sunshine, nircmd, AudioDeviceCmdlets). */
+DEFINE_GUID(CLSID_CPolicyConfigClient, 0x870af99c, 0x171d, 0x4f9e, 0xaf, 0x0d, 0xe6, 0x3d, 0xf4, 0x0c, 0x2b, 0xc9);
+DEFINE_GUID(IID_IPolicyConfig, 0xf8679f50, 0x850a, 0x41cf, 0x9c, 0x72, 0x43, 0x0f, 0x29, 0x02, 0x90, 0xc8);
+
+typedef struct IPolicyConfig IPolicyConfig;
+typedef struct IPolicyConfigVtbl {
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(IPolicyConfig *, REFIID, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(IPolicyConfig *);
+    ULONG(STDMETHODCALLTYPE *Release)(IPolicyConfig *);
+    HRESULT(STDMETHODCALLTYPE *GetMixFormat)(IPolicyConfig *, PCWSTR, WAVEFORMATEX **);
+    HRESULT(STDMETHODCALLTYPE *GetDeviceFormat)(IPolicyConfig *, PCWSTR, INT, WAVEFORMATEX **);
+    HRESULT(STDMETHODCALLTYPE *ResetDeviceFormat)(IPolicyConfig *, PCWSTR);
+    HRESULT(STDMETHODCALLTYPE *SetDeviceFormat)(IPolicyConfig *, PCWSTR, WAVEFORMATEX *, WAVEFORMATEX *);
+    HRESULT(STDMETHODCALLTYPE *GetProcessingPeriod)(IPolicyConfig *, PCWSTR, INT, PINT64, PINT64);
+    HRESULT(STDMETHODCALLTYPE *SetProcessingPeriod)(IPolicyConfig *, PCWSTR, PINT64);
+    HRESULT(STDMETHODCALLTYPE *GetShareMode)(IPolicyConfig *, PCWSTR, void *);
+    HRESULT(STDMETHODCALLTYPE *SetShareMode)(IPolicyConfig *, PCWSTR, void *);
+    HRESULT(STDMETHODCALLTYPE *GetPropertyValue)(IPolicyConfig *, PCWSTR, const PROPERTYKEY *, PROPVARIANT *);
+    HRESULT(STDMETHODCALLTYPE *SetPropertyValue)(IPolicyConfig *, PCWSTR, const PROPERTYKEY *, PROPVARIANT *);
+    HRESULT(STDMETHODCALLTYPE *SetDefaultEndpoint)(IPolicyConfig *, PCWSTR, ERole);
+    HRESULT(STDMETHODCALLTYPE *SetEndpointVisibility)(IPolicyConfig *, PCWSTR, INT);
+} IPolicyConfigVtbl;
+struct IPolicyConfig {
+    const IPolicyConfigVtbl *lpVtbl;
+};
 
 static void reply(const char *fmt, ...) {
     va_list args;
@@ -68,6 +101,84 @@ static int contains_nocase(const wchar_t *haystack, const wchar_t *needle) {
     return 0;
 }
 
+/* --- MMDevice helpers (recording devices) -------------------------------------------- */
+
+static wchar_t *device_name(IMMDevice *device) {
+    IPropertyStore *store = NULL;
+    wchar_t *name = NULL;
+    if (FAILED(IMMDevice_OpenPropertyStore(device, STGM_READ, &store))) return NULL;
+    PROPVARIANT value;
+    PropVariantInit(&value);
+    if (SUCCEEDED(IPropertyStore_GetValue(store, &PKEY_Device_FriendlyName, &value)) && value.vt == VT_LPWSTR) {
+        name = _wcsdup(value.pwszVal);
+    }
+    PropVariantClear(&value);
+    IPropertyStore_Release(store);
+    return name;
+}
+
+static IMMDeviceEnumerator *enumerator_create(void) {
+    IMMDeviceEnumerator *enumerator = NULL;
+    HRESULT hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator,
+                                  (void **)&enumerator);
+    if (FAILED(hr)) reply("err MMDeviceEnumerator unavailable (0x%08lx)", (unsigned long)hr);
+    return enumerator;
+}
+
+/* Prints the default recording device as "capture <name>" (or "previous <name>"). */
+static int print_default_capture(IMMDeviceEnumerator *enumerator, const char *prefix) {
+    IMMDevice *device = NULL;
+    HRESULT hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(enumerator, eCapture, eConsole, &device);
+    if (FAILED(hr)) {
+        reply("err no default recording device (0x%08lx)", (unsigned long)hr);
+        return 1;
+    }
+    wchar_t *name = device_name(device);
+    IMMDevice_Release(device);
+    if (!name) {
+        reply("err device has no name");
+        return 1;
+    }
+    print_wide(prefix, name, 0);
+    free(name);
+    return 0;
+}
+
+/* Lists active recording devices ("in <name>"), or finds the one matching `needle`. */
+static int for_each_capture(IMMDeviceEnumerator *enumerator, const wchar_t *needle, wchar_t **found_id) {
+    IMMDeviceCollection *devices = NULL;
+    HRESULT hr = IMMDeviceEnumerator_EnumAudioEndpoints(enumerator, eCapture, DEVICE_STATE_ACTIVE, &devices);
+    if (FAILED(hr)) {
+        reply("err cannot list recording devices (0x%08lx)", (unsigned long)hr);
+        return 1;
+    }
+    UINT count = 0;
+    IMMDeviceCollection_GetCount(devices, &count);
+    int result = needle ? 2 : 0;
+    for (UINT i = 0; i < count; i++) {
+        IMMDevice *device = NULL;
+        if (FAILED(IMMDeviceCollection_Item(devices, i, &device))) continue;
+        wchar_t *name = device_name(device);
+        if (name) {
+            if (!needle) {
+                print_wide("in ", name, 0);
+            } else if (result == 2 && contains_nocase(name, needle)) {
+                LPWSTR id = NULL;
+                if (SUCCEEDED(IMMDevice_GetId(device, &id))) {
+                    *found_id = _wcsdup(id);
+                    CoTaskMemFree(id);
+                    print_wide("capture ", name, 0);
+                    result = 0;
+                }
+            }
+            free(name);
+        }
+        IMMDevice_Release(device);
+    }
+    IMMDeviceCollection_Release(devices);
+    return result;
+}
+
 static int list_devices(void) {
     UINT count = waveOutGetNumDevs();
     for (UINT i = 0; i < count; i++) {
@@ -76,6 +187,13 @@ static int list_devices(void) {
             print_wide("out ", caps.szPname, 0);
         }
     }
+    if (FAILED(CoInitializeEx(NULL, COINIT_MULTITHREADED))) return 0;
+    IMMDeviceEnumerator *enumerator = enumerator_create();
+    if (enumerator) {
+        for_each_capture(enumerator, NULL, NULL);
+        IMMDeviceEnumerator_Release(enumerator);
+    }
+    CoUninitialize();
     return 0;
 }
 
@@ -86,43 +204,57 @@ static int default_capture(void) {
         reply("err CoInitializeEx failed (0x%08lx)", (unsigned long)hr);
         return 1;
     }
-    IMMDeviceEnumerator *enumerator = NULL;
-    IMMDevice *device = NULL;
-    IPropertyStore *store = NULL;
     int result = 1;
-    hr = CoCreateInstance(&CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL, &IID_IMMDeviceEnumerator,
-                          (void **)&enumerator);
-    if (FAILED(hr)) {
-        reply("err MMDeviceEnumerator unavailable (0x%08lx)", (unsigned long)hr);
-        goto done;
+    IMMDeviceEnumerator *enumerator = enumerator_create();
+    if (enumerator) {
+        result = print_default_capture(enumerator, "capture ");
+        IMMDeviceEnumerator_Release(enumerator);
     }
-    hr = IMMDeviceEnumerator_GetDefaultAudioEndpoint(enumerator, eCapture, eConsole, &device);
-    if (FAILED(hr)) {
-        reply("err no default recording device (0x%08lx)", (unsigned long)hr);
-        goto done;
-    }
-    hr = IMMDevice_OpenPropertyStore(device, STGM_READ, &store);
-    if (FAILED(hr)) {
-        reply("err cannot read device properties (0x%08lx)", (unsigned long)hr);
-        goto done;
-    }
-    PROPVARIANT name;
-    PropVariantInit(&name);
-    hr = IPropertyStore_GetValue(store, &PKEY_Device_FriendlyName, &name);
-    if (SUCCEEDED(hr) && name.vt == VT_LPWSTR) {
-        print_wide("capture ", name.pwszVal, 0);
-        result = 0;
-    } else {
-        reply("err device has no name (0x%08lx)", (unsigned long)hr);
-    }
-    PropVariantClear(&name);
-done:
-    if (store) IPropertyStore_Release(store);
-    if (device) IMMDevice_Release(device);
-    if (enumerator) IMMDeviceEnumerator_Release(enumerator);
     CoUninitialize();
     return result;
 }
+
+static int set_default_capture(const wchar_t *needle) {
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hr)) {
+        reply("err CoInitializeEx failed (0x%08lx)", (unsigned long)hr);
+        return 1;
+    }
+    int result = 1;
+    wchar_t *id = NULL;
+    IPolicyConfig *policy = NULL;
+    IMMDeviceEnumerator *enumerator = enumerator_create();
+    if (!enumerator) goto done;
+    if (print_default_capture(enumerator, "previous ") != 0) goto done;
+    if (for_each_capture(enumerator, needle, &id) != 0 || !id) {
+        char utf8[256];
+        WideCharToMultiByte(CP_UTF8, 0, needle, -1, utf8, sizeof(utf8), NULL, NULL);
+        reply("err no recording device matching \"%s\"", utf8);
+        goto done;
+    }
+    hr = CoCreateInstance(&CLSID_CPolicyConfigClient, NULL, CLSCTX_ALL, &IID_IPolicyConfig, (void **)&policy);
+    if (FAILED(hr)) {
+        reply("err IPolicyConfig unavailable on this Windows (0x%08lx)", (unsigned long)hr);
+        goto done;
+    }
+    const ERole roles[3] = {eConsole, eMultimedia, eCommunications};
+    for (int i = 0; i < 3; i++) {
+        hr = policy->lpVtbl->SetDefaultEndpoint(policy, id, roles[i]);
+        if (FAILED(hr)) {
+            reply("err SetDefaultEndpoint failed (0x%08lx)", (unsigned long)hr);
+            goto done;
+        }
+    }
+    result = 0;
+done:
+    if (policy) policy->lpVtbl->Release(policy);
+    if (enumerator) IMMDeviceEnumerator_Release(enumerator);
+    free(id);
+    CoUninitialize();
+    return result;
+}
+
+/* --- Playback -------------------------------------------------------------------------- */
 
 static int find_device(const wchar_t *needle, WAVEOUTCAPSW *found) {
     UINT count = waveOutGetNumDevs();
@@ -238,6 +370,7 @@ int wmain(int argc, wchar_t **argv) {
     for (int i = 1; i < argc; i++) {
         if (wcscmp(argv[i], L"--list") == 0) return list_devices();
         if (wcscmp(argv[i], L"--default-capture") == 0) return default_capture();
+        if (wcscmp(argv[i], L"--set-default-capture") == 0 && i + 1 < argc) return set_default_capture(argv[i + 1]);
         if (wcscmp(argv[i], L"--device") == 0 && i + 1 < argc) {
             device = argv[++i];
         } else if (wcscmp(argv[i], L"--rate") == 0 && i + 1 < argc) {

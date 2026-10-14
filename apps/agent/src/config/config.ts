@@ -65,6 +65,13 @@ export const ConfigSchema = z.object({
       mode: z.enum(['auto', 'off']).default('auto'),
       /** Windows: part of the name of the playback device to play into. */
       outputDevice: z.string().min(1).max(100).default('CABLE Input'),
+      /** Windows: part of the name of the cable's recording side (what Claude Code records). */
+      captureDevice: z.string().min(1).max(100).default('CABLE Output'),
+      /**
+       * Windows: make `captureDevice` the default input while a phone streams and put
+       * the previous device back afterwards. Off: set the default input yourself.
+       */
+      switchDefaultInput: z.boolean().default(true),
       /** Linux: name of the null sink created for the phone's audio. */
       sink: z
         .string()

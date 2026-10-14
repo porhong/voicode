@@ -114,6 +114,26 @@ try {
   if (!existsSync(path.join(runtime, build, '.complete'))) throw new Error('runtime incomplete');
   const helpers = path.join(runtime, build, 'native-bin', `${process.platform}-${process.arch}`);
   log(`extracted helpers: ${existsSync(helpers) ? readdirSync(helpers).join(', ') : 'none'}`);
+  if (!existsSync(path.join(runtime, build, 'node-pty', 'lib', 'index.js'))) {
+    throw new Error('node-pty was not extracted with the runtime');
+  }
+  log('node-pty extracted');
+
+  // The hook subcommand (Claude Code PreToolUse hook) must stay silent without its env.
+  const hook = execFileSync(exe, ['hook', 'pre-tool-use'], {
+    env,
+    encoding: 'utf8',
+    input: '{"session_id":"x","tool_name":"Bash","tool_input":{}}',
+  });
+  if (hook.trim() !== '') throw new Error(`hook printed something:\n${hook}`);
+  log('hook subcommand ok');
+
+  const doctor = execFileSync(exe, ['doctor'], { env, encoding: 'utf8' });
+  if (!doctor.includes('Phone microphone')) throw new Error(`doctor is missing checks:\n${doctor}`);
+  if (!/Claude Code terminal\s+node-pty loaded/.test(doctor)) {
+    throw new Error(`node-pty did not load from the extracted runtime:\n${doctor}`);
+  }
+  log('doctor ran the microphone checks; node-pty loads from the runtime');
 
   run('stop');
   await new Promise((resolve, reject) => {

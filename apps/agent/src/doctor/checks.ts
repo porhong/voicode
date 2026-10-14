@@ -34,6 +34,7 @@ import {
   INSTALL_HINT,
   tunnelSetupProblem,
 } from '../tunnel/cloudflared.js';
+import { loadPtySpawn } from '../claude/pty-session.js';
 import { virtualMicSetupHint, windowsAudioHelper } from '../voice/resolve-driver.js';
 
 const run = promisify(execFile);
@@ -156,6 +157,7 @@ export async function runChecks(
     add(await checkVirtualMic(config));
     const voice = await checkClaudeVoice();
     if (voice) add(voice);
+    add(checkPty());
   }
 
   // TLS ------------------------------------------------------------------------
@@ -367,6 +369,24 @@ async function checkVirtualMic(config: AgentConfig): Promise<CheckResult> {
           fix: virtualMicSetupHint(),
         };
       }
+      const inputs = list.split('\n').flatMap((l) => (l.startsWith('in ') ? [l.slice(3)] : []));
+      const wantedIn = config.voice.captureDevice.toLowerCase();
+      const cableIn = inputs.find((i) => i.toLowerCase().includes(wantedIn));
+      if (!cableIn) {
+        return {
+          name,
+          status: 'warn',
+          detail: `plays into "${cable}", but no recording device is named like "${config.voice.captureDevice}"`,
+          fix: 'Enable the cable in Settings → System → Sound → Input (VB-CABLE adds "CABLE Output")',
+        };
+      }
+      if (config.voice.switchDefaultInput) {
+        return {
+          name,
+          status: 'ok',
+          detail: `"${cable}" → "${cableIn}" (made the default input while the phone streams)`,
+        };
+      }
       const { stdout: cap } = await run(exe, ['--default-capture'], {
         timeout: 5_000,
         windowsHide: true,
@@ -376,12 +396,12 @@ async function checkVirtualMic(config: AgentConfig): Promise<CheckResult> {
         .find((l) => l.startsWith('capture '))
         ?.slice(8)
         .trim();
-      if (!capture?.toLowerCase().includes('cable output')) {
+      if (!capture?.toLowerCase().includes(wantedIn)) {
         return {
           name,
           status: 'warn',
           detail: `plays into "${cable}", but Claude Code records from "${capture ?? 'unknown'}"`,
-          fix: 'Make "CABLE Output" the default input in Settings → System → Sound → Input',
+          fix: `Make "${cableIn}" the default input in Settings → System → Sound → Input`,
         };
       }
       return { name, status: 'ok', detail: `"${cable}" → "${capture}"` };
@@ -405,6 +425,22 @@ async function checkVirtualMic(config: AgentConfig): Promise<CheckResult> {
     }
   }
   return { name, status: 'warn', detail: `not supported on ${process.platform}` };
+}
+
+/** Voice sessions run Claude Code in a pseudo-terminal: node-pty's native addon must load. */
+function checkPty(): CheckResult {
+  const name = 'Claude Code terminal';
+  try {
+    loadPtySpawn();
+    return { name, status: 'ok', detail: 'node-pty loaded' };
+  } catch (err) {
+    return {
+      name,
+      status: 'warn',
+      detail: `node-pty is not usable: ${(err as Error).message.split('\n')[0]}`,
+      fix: 'Reinstall the package (voice sessions need it; the SDK sessions still work)',
+    };
+  }
 }
 
 /**

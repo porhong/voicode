@@ -17,7 +17,7 @@ export function windowsAudioHelper(): string | undefined {
 /** The install hint shown when no virtual microphone is available. */
 export function virtualMicSetupHint(): string {
   return process.platform === 'win32'
-    ? 'Install VB-CABLE (vb-audio.com/Cable) and make "CABLE Output" the default recording device'
+    ? 'Install VB-CABLE (vb-audio.com/Cable); the agent uses "CABLE Input"/"CABLE Output"'
     : 'Install PipeWire with pipewire-pulse (pactl and pw-cat must be on PATH)';
 }
 
@@ -44,6 +44,7 @@ export function micDriverCandidates(
             exe,
             ['--device', config.voice.outputDevice, '--rate', String(AUDIO.sampleRate)],
             logger,
+            config.voice.switchDefaultInput ? config.voice.captureDevice : undefined,
           ),
       });
     }

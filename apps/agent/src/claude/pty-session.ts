@@ -3,14 +3,15 @@ import { EventEmitter } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import type { SerializeAddon } from '@xterm/addon-serialize';
-import type { Terminal } from '@xterm/headless';
+import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.mjs';
+import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.mjs';
 import type { ClaudeEvent, SessionState, SessionSummary, VoiceState } from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import { claudeConfigDir, mapStatus } from '../sessions/pc-sessions.js';
 import { findTranscript, TranscriptTail } from '../sessions/transcript-tail.js';
 import type { Logger } from '../util/logger.js';
 import { isStandalone } from '../util/standalone.js';
+import { packageRoot } from '../util/version.js';
 import type { ApprovalBroker } from './approval-broker.js';
 import { interactiveClaudePath } from './claude-binary.js';
 import type { SessionEventRecord } from './claude-session.js';
@@ -44,15 +45,18 @@ export type PtySpawn = (
   options: { cwd: string; env: NodeJS.ProcessEnv; cols: number; rows: number; name: string },
 ) => PtyHandle;
 
-// The xterm packages ship CommonJS bundles without ESM named exports; load them the
-// CommonJS way (also what the standalone build does).
-const require = createRequire(import.meta.url);
-const xterm = require('@xterm/headless') as { Terminal: typeof Terminal };
-const serialize = require('@xterm/addon-serialize') as { SerializeAddon: typeof SerializeAddon };
-
-/** Loads `@lydell/node-pty` on first use, so a missing binary only breaks voice sessions. */
+/**
+ * Loads node-pty on first use, so a missing binary only breaks voice sessions. The npm
+ * package has it as a dependency; the standalone executable carries the platform
+ * package in its embedded assets (`node-pty/`, see build-sea.mjs) and loads it from the
+ * extracted runtime directory.
+ */
 export function loadPtySpawn(): PtySpawn {
-  const pty = require('@lydell/node-pty') as {
+  const require = createRequire(import.meta.url);
+  const entry = isStandalone()
+    ? path.join(packageRoot(), 'node-pty', 'lib', 'index.js')
+    : '@lydell/node-pty';
+  const pty = require(entry) as {
     spawn: (
       file: string,
       args: string[],
@@ -135,7 +139,7 @@ export class VoiceSession extends EventEmitter<{
   private seq = 0;
   private pty: PtyHandle | undefined;
   private readonly term: Terminal;
-  private readonly serializer = new serialize.SerializeAddon();
+  private readonly serializer = new SerializeAddon();
   private voice: VoiceState = 'off';
   private voiceDetail: string | undefined;
   private errorTimer: NodeJS.Timeout | undefined;
@@ -159,7 +163,7 @@ export class VoiceSession extends EventEmitter<{
     this.id = opts.id;
     this.project = opts.project;
     this.claudeSessionId = opts.resume ?? randomUUID();
-    this.term = new xterm.Terminal({
+    this.term = new Terminal({
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       allowProposedApi: true,

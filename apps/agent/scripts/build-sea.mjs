@@ -144,6 +144,15 @@ if (process.platform === 'win32') {
   const ps1 = path.join(agentDir, 'native-bin', 'win32', 'voicecode-input.ps1');
   assets.push({ key: 'native-bin/win32/voicecode-input.ps1', file: ps1 });
 }
+// node-pty (Claude Code voice sessions) is a native addon the bundle cannot contain;
+// its platform package is embedded as files and loaded from the extracted runtime.
+const ptyDir = path.join(repoDir, 'node_modules', `@lydell/node-pty-${target}`);
+if (!existsSync(ptyDir)) fail(`node_modules has no @lydell/node-pty-${target} (run npm ci)`);
+for (const entry of walk(ptyDir, 'node-pty')) {
+  if (/\.(pdb|map|md)$/i.test(entry.key)) continue; // debug symbols and docs
+  const executable = entry.key.startsWith('node-pty/prebuilds/');
+  assets.push({ ...entry, ...(executable ? { executable: true } : {}) });
+}
 
 const hash = createHash('sha256').update(pkg.version);
 for (const a of assets) hash.update(a.key).update(readFileSync(a.file));
