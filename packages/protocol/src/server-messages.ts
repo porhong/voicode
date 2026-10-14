@@ -80,6 +80,20 @@ export interface MouseStatus {
   holder?: { deviceId: string; deviceName: string };
 }
 
+/**
+ * The virtual microphone the agent plays phone audio into, for Claude Code's own
+ * dictation (`/voice`) on the PC. One device streams at a time.
+ */
+export interface VoiceMicStatus {
+  available: boolean;
+  driver: string;
+  /** Explanation when unavailable (e.g. VB-CABLE not installed). */
+  reason?: string;
+  /** The output device or sink the audio is played into. */
+  device?: string;
+  holder?: { deviceId: string; deviceName: string };
+}
+
 export type ClaudeEvent =
   | { kind: 'user_prompt'; text: string; deviceName: string }
   | { kind: 'assistant_text'; text: string }
@@ -132,6 +146,7 @@ export type ServerMessage =
       sessions: SessionSummary[];
       pcSessions: PcSession[];
       mouse: MouseStatus;
+      voiceMic: VoiceMicStatus;
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'projects'; projects: ProjectInfo[]; roots: string[] }
@@ -141,6 +156,9 @@ export type ServerMessage =
   // --- Mouse ---------------------------------------------------------------
   | { type: 'mouse.status'; status: MouseStatus; youHoldLease: boolean }
   | { type: 'mouse.position'; x: number; y: number }
+
+  // --- Microphone ----------------------------------------------------------
+  | { type: 'voice.mic.status'; status: VoiceMicStatus; youHoldLease: boolean }
 
   // --- Claude Code ---------------------------------------------------------
   | { type: 'claude.session'; session: SessionSummary }
@@ -191,6 +209,9 @@ export type ErrorCode =
   | 'mouse_unavailable'
   | 'mouse_lease_held'
   | 'mouse_not_leased'
+  | 'mic_unavailable'
+  | 'mic_lease_held'
+  | 'mic_not_leased'
   | 'session_busy'
   | 'folder_not_allowed'
   | 'internal';

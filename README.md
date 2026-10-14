@@ -280,10 +280,28 @@ or is idle for two minutes, and any held buttons are released automatically.
 The agent must run inside your logged-in graphical session. A Windows service (Session 0)
 or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
 
-**Voice** uses the browser's Web Speech API (Chrome/Edge on Android and desktop, Safari on
-iOS). Audio is processed by the browser/OS speech service and never reaches the agent;
-only the final transcript is sent. On browsers without it, use the keyboard's dictation
-key in the text box.
+**Voice** has two modes (Settings → Voice → Dictation):
+
+- **Phone** (default) uses the browser's Web Speech API (Chrome/Edge on Android and
+  desktop, Safari on iOS). Audio is processed by the browser/OS speech service and never
+  reaches the agent; only the final transcript is sent. On browsers without it, use the
+  keyboard's dictation key in the text box.
+- **Claude Code** streams the phone's microphone to the agent as raw 16 kHz PCM over the
+  same WebSocket (binary frames, only while the phone holds the microphone lease; one
+  device at a time) and plays it into a virtual microphone on the PC, so Claude Code's own
+  dictation (`/voice`, transcribed by Anthropic and tuned for code) can record it. Nothing
+  is stored and no speech engine runs in the agent. Setup:
+  - **Windows:** install [VB-CABLE](https://vb-audio.com/Cable/) (admin, reboot) and make
+    **CABLE Output** the default input in Settings → System → Sound → Input. The agent
+    plays into **CABLE Input** through `voicecode-audio-out.exe`; `config.json` →
+    `voice.outputDevice` picks another device.
+  - **Linux:** PipeWire with `pipewire-pulse` (`pactl`, `pw-cat`). The agent creates a
+    null sink `voicecode_mic` and makes its monitor the default source while the phone
+    streams, restoring your microphone afterwards.
+  - In a terminal on the PC, sign in to Claude Code with a claude.ai account (an API key
+    disables `/voice`) and run `/voice tap`. Hold the mic on the phone and speak; tap
+    Space in the terminal to start and stop recording. `voicecode-agent doctor` checks
+    all of this ("Phone microphone", "Claude Code voice").
 
 ## Development
 

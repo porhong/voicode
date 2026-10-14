@@ -30,11 +30,14 @@ import {
 import type { Logger } from './util/logger.js';
 import { formatUrl, rankedLanAddresses } from './util/network.js';
 import { packageRoot, VERSION } from './util/version.js';
+import { MicRouter } from './voice/mic-router.js';
+import { micDriverCandidates } from './voice/resolve-driver.js';
 
 export interface AgentRuntimeInfo {
   urls: string[];
   caFingerprint: string;
   mouse: ReturnType<InputRouter['status']> & { details?: Record<string, string> };
+  voiceMic: ReturnType<MicRouter['status']>;
   projects: ProjectConfig[];
   pairingCode: PairingCode;
   tunnel: AgentTunnelInfo;
@@ -64,6 +67,7 @@ export class Agent extends EventEmitter<{
   private registry!: DeviceRegistry;
   private pairing!: PairingService;
   private router!: InputRouter;
+  private mic!: MicRouter;
   private sessions!: SessionManager;
   private pcSessions: PcSessionWatcher | undefined;
   private gateway!: WsGateway;
@@ -121,6 +125,12 @@ export class Agent extends EventEmitter<{
     });
     await this.router.start(candidates, unavailableReason);
 
+    this.mic = new MicRouter(logger.child({ component: 'mic' }), {
+      leaseIdleMs: config.voice.leaseIdleMs,
+    });
+    const mic = micDriverCandidates(config, logger.child({ component: 'mic' }));
+    await this.mic.start(mic.candidates, mic.unavailableReason);
+
     this.sessions = new SessionManager(config, logger.child({ component: 'claude' }));
     const sessions = this.sessions;
     this.pcSessions = new PcSessionWatcher({
@@ -143,6 +153,7 @@ export class Agent extends EventEmitter<{
         },
       },
       router: this.router,
+      mic: this.mic,
       sessions: this.sessions,
       registry: this.registry,
       logger: logger.child({ component: 'ws' }),
@@ -175,6 +186,7 @@ export class Agent extends EventEmitter<{
       urls: this.urls,
       caFingerprint: this.tls.caFingerprint,
       mouse: { ...this.router.status(), details: this.router.info?.details },
+      voiceMic: this.mic.status(),
       projects: config.projects,
       pairingCode: this.pairing.issueCode(),
       tunnel: this.tunnelInfo,
@@ -245,6 +257,7 @@ export class Agent extends EventEmitter<{
       await this.tunnel?.stop();
       await this.pcSessions?.stop();
       await this.router?.stop();
+      await this.mic?.stop();
       await this.app?.close();
       await new Promise<void>((resolve) =>
         this.control ? this.control.close(() => resolve()) : resolve(),
@@ -265,6 +278,7 @@ export class Agent extends EventEmitter<{
         tunnel: this.tunnelInfo,
         connections: this.gateway.devicesOnline(),
         mouse: this.router.status(),
+        voiceMic: this.mic.status(),
         sessions: this.sessions.list(),
         projects: this.config.projects,
       }),

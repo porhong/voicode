@@ -26,10 +26,11 @@ import { buildServer } from '../src/server/app.js';
 import { WsGateway } from '../src/server/ws-gateway.js';
 import { encodeProjectDir, PcSessionWatcher } from '../src/sessions/pc-sessions.js';
 import { SessionManager } from '../src/sessions/session-manager.js';
-import { FakeMouseDriver } from '../src/test-utils/fakes.js';
+import { FakeMicDriver, FakeMouseDriver } from '../src/test-utils/fakes.js';
 import { ensureTls } from '../src/tls/certificates.js';
 import { silentLogger } from '../src/util/logger.js';
 import { packageRoot } from '../src/util/version.js';
+import { MicRouter } from '../src/voice/mic-router.js';
 
 const port = Number(process.argv[2] ?? 8450);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -112,6 +113,8 @@ const registry = await DeviceRegistry.open(paths.devices);
 const pairing = new PairingService(registry, { ttlMs: 60 * 60_000, maxAttempts: 20 });
 const router = new InputRouter(logger, { leaseIdleMs: 60_000 });
 router.attach(new FakeMouseDriver(), { details: {} });
+const mic = new MicRouter(logger, { leaseIdleMs: 60_000 });
+mic.attach(new FakeMicDriver(), { device: 'Demo Cable' });
 const config = ConfigSchema.parse({
   version: 1,
   projects: [
@@ -192,6 +195,7 @@ const pcSessions = new PcSessionWatcher({
 pcSessions.start();
 const gateway = new WsGateway({
   router,
+  mic,
   sessions,
   registry,
   logger,

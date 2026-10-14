@@ -16,6 +16,7 @@ import type { PcSessionWatcher } from '../sessions/pc-sessions.js';
 import { SessionError, type SessionManager } from '../sessions/session-manager.js';
 import type { Logger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
+import type { MicRouter } from '../voice/mic-router.js';
 import { TokenBucket } from './token-bucket.js';
 
 const HEARTBEAT_MS = 15_000;
@@ -39,8 +40,10 @@ interface Connection {
 
 /**
  * Authenticated WebSocket connections from paired devices. Validates every inbound
- * message, applies per-connection rate limits, dispatches to the mouse router and the
- * session manager, and broadcasts their state changes to all devices.
+ * message, applies per-connection rate limits, dispatches to the mouse router, the
+ * microphone router and the session manager, and broadcasts their state changes to all
+ * devices. Binary frames carry microphone audio and are only accepted from the
+ * connection that holds the microphone lease.
  */
 export class WsGateway {
   private readonly connections = new Map<string, Connection>();
@@ -49,6 +52,7 @@ export class WsGateway {
   constructor(
     private readonly deps: {
       router: InputRouter;
+      mic: MicRouter;
       sessions: SessionManager;
       registry: DeviceRegistry;
       logger: Logger;
@@ -66,12 +70,18 @@ export class WsGateway {
       };
     },
   ) {
-    const { router, sessions, registry, pcSessions } = deps;
+    const { router, mic, sessions, registry, pcSessions } = deps;
 
     router.on('status', () => {
       const status = router.status();
       for (const c of this.connections.values()) {
         this.send(c, { type: 'mouse.status', status, youHoldLease: router.holds(c.identity) });
+      }
+    });
+    mic.on('status', () => {
+      const status = mic.status();
+      for (const c of this.connections.values()) {
+        this.send(c, { type: 'voice.mic.status', status, youHoldLease: mic.holds(c.identity) });
       }
     });
 
@@ -130,6 +140,7 @@ export class WsGateway {
         if (c.device.id !== deviceId) continue;
         c.revoked = true;
         this.deps.router.disconnect(c.identity);
+        this.deps.mic.disconnect(c.identity);
         c.socket.close(CLOSE_REVOKED, 'device revoked');
         // A client that ignores the close frame is cut off instead of lingering.
         setTimeout(() => c.socket.terminate(), 1_000).unref();
@@ -162,7 +173,7 @@ export class WsGateway {
   }
 
   handle(socket: WebSocket, device: PublicDevice): void {
-    const { router, sessions, logger } = this.deps;
+    const { router, mic, sessions, logger } = this.deps;
     const identity: ClientIdentity = {
       connectionId: randomUUID(),
       deviceId: device.id,
@@ -187,7 +198,10 @@ export class WsGateway {
       if (conn.revoked) return;
       conn.alive = true;
       if (!conn.bucket.take()) return this.error(conn, 'rate_limited', 'Too many messages');
-      if (isBinary) return this.error(conn, 'bad_request', 'Binary frames are not supported');
+      if (isBinary) {
+        // Microphone audio; the router checks that this connection holds the lease.
+        return this.check(conn, mic.write(identity, Buffer.isBuffer(data) ? data : toBuffer(data)));
+      }
       let parsed: unknown;
       try {
         parsed = JSON.parse(data.toString());
@@ -211,6 +225,7 @@ export class WsGateway {
     socket.on('close', () => {
       this.connections.delete(identity.connectionId);
       router.disconnect(identity);
+      mic.disconnect(identity);
       this.deps.onConnectionsChanged?.(this.count);
       logger.info({ device: device.name }, 'device disconnected');
     });
@@ -226,6 +241,7 @@ export class WsGateway {
       sessions: sessions.list(),
       pcSessions: this.deps.pcSessions?.list() ?? [],
       mouse: router.status(),
+      voiceMic: mic.status(),
     });
     for (const request of sessions.broker.pendingFor()) {
       this.send(conn, { type: 'claude.permission.request', request });
@@ -247,7 +263,7 @@ export class WsGateway {
   }
 
   private async dispatch(conn: Connection, msg: ClientMessage): Promise<void> {
-    const { router, sessions } = this.deps;
+    const { router, mic, sessions } = this.deps;
     const id = conn.identity;
 
     switch (msg.type) {
@@ -279,6 +295,16 @@ export class WsGateway {
         const { x, y } = await router.position();
         return this.send(conn, { type: 'mouse.position', x, y });
       }
+
+      case 'voice.mic.start':
+        this.check(conn, mic.acquire(id));
+        return this.send(conn, {
+          type: 'voice.mic.status',
+          status: mic.status(),
+          youHoldLease: mic.holds(id),
+        });
+      case 'voice.mic.stop':
+        return this.check(conn, mic.release(id));
 
       case 'claude.session.start': {
         const session = sessions.start(msg.projectId, msg.resume);
@@ -400,4 +426,9 @@ export class WsGateway {
       if (c.socket.readyState === c.socket.OPEN) c.socket.send(data);
     }
   }
+}
+
+/** `ws` delivers a Buffer by default; cover the other RawData shapes anyway. */
+function toBuffer(data: ArrayBuffer | Buffer[]): Buffer {
+  return Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
 }

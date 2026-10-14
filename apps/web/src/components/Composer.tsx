@@ -1,5 +1,6 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { LIMITS } from '@voicecode/protocol';
+import type { MicStream } from '../hooks/useMicStream';
 import { stopSpeaking } from '../hooks/useSpeakReplies';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import type { Settings } from '../hooks/useSettings';
@@ -24,6 +25,11 @@ interface Props {
   settings: Settings;
   /** Deck layout: the input row stays out of the way until there is something in it. */
   compact?: boolean;
+  /**
+   * Set when dictation goes to Claude Code on the PC: speech is streamed there instead
+   * of being recognised here, so nothing lands in the box and nothing is auto-sent.
+   */
+  remoteMic?: MicStream;
   /** Reports dictation starting and stopping (the deck lights its mic key). */
   onListeningChange?: (listening: boolean) => void;
   onSend: (text: string) => void;
@@ -45,6 +51,7 @@ export function Composer({
   approvalShown,
   settings,
   compact = false,
+  remoteMic,
   onListeningChange,
   onSend,
   onInterrupt,
@@ -82,10 +89,23 @@ export function Composer({
     },
   });
 
+  // Either the browser's recognizer or the stream to the PC, with one shape for the UI.
+  const dictation = remoteMic
+    ? {
+        remote: true,
+        supported: remoteMic.supported,
+        listening: remoteMic.active,
+        interim: '',
+        error: remoteMic.error,
+        start: remoteMic.start,
+        stop: remoteMic.stop,
+      }
+    : { remote: false, ...speech };
+
   // The input row (and its stop button) is hidden while an approval is shown, so a
   // running dictation is stopped rather than left listening with no way to end it.
   // Its text stays in the box for review instead of being auto-sent.
-  const { listening, stop } = speech;
+  const { listening, stop } = dictation;
   useEffect(() => {
     if (approvalShown && listening) {
       suppressAutoSendRef.current = true;
@@ -95,7 +115,7 @@ export function Composer({
 
   useEffect(() => onListeningChange?.(listening), [listening, onListeningChange]);
 
-  const preview = speech.interim ? `${text}${text ? ' ' : ''}${speech.interim}` : text;
+  const preview = dictation.interim ? `${text}${text ? ' ' : ''}${dictation.interim}` : text;
 
   // Grow with the content up to the CSS max-height, then scroll inside. Skipped while
   // the row is hidden (it would measure 0) and redone when it is shown again.
@@ -107,10 +127,10 @@ export function Composer({
   }, [preview, approvalShown, typing]);
 
   const hasText = text.trim().length > 0;
-  const rowHidden = approvalShown || (compact && !typing && !hasText && !speech.listening);
-  const action: 'stop-dictation' | 'send' | 'dictate' = speech.listening
+  const rowHidden = approvalShown || (compact && !typing && !hasText && !dictation.listening);
+  const action: 'stop-dictation' | 'send' | 'dictate' = dictation.listening
     ? 'stop-dictation'
-    : hasText || !speech.supported
+    : hasText || !dictation.supported
       ? 'send'
       : 'dictate';
 
@@ -118,7 +138,7 @@ export function Composer({
     // Don't let a reply being read aloud leak into the microphone.
     stopSpeaking();
     navigator.vibrate?.(10);
-    speech.start();
+    dictation.start();
   };
 
   useImperativeHandle(ref, () => ({
@@ -129,13 +149,13 @@ export function Composer({
       requestAnimationFrame(() => inputRef.current?.focus());
     },
     pushToTalk: (pressed: boolean) => {
-      if (!speech.supported || disabled) return;
+      if (!dictation.supported || disabled) return;
       if (pressed) {
-        if (speech.listening) return;
-        pushToTalkRef.current = true;
+        if (dictation.listening) return;
+        pushToTalkRef.current = !dictation.remote;
         dictate();
       } else {
-        speech.stop();
+        dictation.stop();
       }
     },
     focus: () => {
@@ -144,7 +164,7 @@ export function Composer({
     },
   }));
   const onAction = () => {
-    if (action === 'stop-dictation') return speech.stop();
+    if (action === 'stop-dictation') return dictation.stop();
     if (action === 'send') return submit();
     dictate();
   };
@@ -152,7 +172,7 @@ export function Composer({
   return (
     <div
       className={
-        rowHidden && (!activity || compact) && !speech.error
+        rowHidden && (!activity || compact) && !dictation.error
           ? 'composer composer-empty'
           : 'composer'
       }
@@ -174,14 +194,14 @@ export function Composer({
           </button>
         </div>
       )}
-      {speech.error && <p className="small error-text composer-error">{speech.error}</p>}
+      {dictation.error && <p className="small error-text composer-error">{dictation.error}</p>}
       <span className="visually-hidden" role="status">
-        {speech.listening ? 'Listening' : ''}
+        {dictation.listening ? 'Listening' : ''}
       </span>
       {/* While an approval is pending the card needs the room (landscape especially),
           and a new prompt could not be acted on until it is answered anyway. */}
       <div className="composer-row" hidden={rowHidden}>
-        {speech.supported && hasText && !speech.listening && (
+        {dictation.supported && hasText && !dictation.listening && (
           // Keep dictating after typing or a first phrase; the main button sends.
           <button
             className="composer-mini"
@@ -199,10 +219,14 @@ export function Composer({
           value={preview}
           aria-label="Instruction for Claude"
           placeholder={
-            speech.listening
-              ? 'Listening…'
-              : speech.supported
-                ? 'Ask Claude, or tap the mic'
+            dictation.listening
+              ? dictation.remote
+                ? 'Speaking to Claude Code on the PC…'
+                : 'Listening…'
+              : dictation.supported
+                ? dictation.remote
+                  ? 'Type here, or hold the mic to dictate on the PC'
+                  : 'Ask Claude, or tap the mic'
                 : 'Ask Claude (use your keyboard’s mic to dictate)'
           }
           onChange={(e) => updateText(e.target.value)}
@@ -213,7 +237,7 @@ export function Composer({
               submit();
             }
           }}
-          readOnly={speech.listening}
+          readOnly={dictation.listening && !dictation.remote}
           disabled={disabled}
           maxLength={LIMITS.maxPromptLength}
         />

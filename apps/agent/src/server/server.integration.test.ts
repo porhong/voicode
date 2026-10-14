@@ -13,9 +13,10 @@ import { DeviceRegistry } from '../pairing/device-registry.js';
 import { PairingService } from '../pairing/pairing-service.js';
 import { encodeProjectDir, PcSessionWatcher } from '../sessions/pc-sessions.js';
 import { SessionManager } from '../sessions/session-manager.js';
-import { createFakeQuery, FakeMouseDriver } from '../test-utils/fakes.js';
+import { createFakeQuery, FakeMicDriver, FakeMouseDriver } from '../test-utils/fakes.js';
 import { ensureTls, type TlsMaterial } from '../tls/certificates.js';
 import { silentLogger } from '../util/logger.js';
+import { MicRouter } from '../voice/mic-router.js';
 import { buildServer } from './app.js';
 import { CLOSE_REVOKED, WsGateway } from './ws-gateway.js';
 
@@ -26,6 +27,7 @@ let base: string;
 let pairing: PairingService;
 let registry: DeviceRegistry;
 let router: InputRouter;
+let mic: MicRouter;
 let sessions: SessionManager;
 const tunnelHosts = new Set<string>();
 // A Claude session running in a terminal, in a folder that is not allow-listed.
@@ -37,6 +39,7 @@ let registerPc: (status: string) => Promise<void>;
 /** A device paired by the tunnel test, reused where a separate device isn't needed. */
 let tunnelCookie: string;
 const driver = new FakeMouseDriver();
+const micDriver = new FakeMicDriver();
 const fake = createFakeQuery({ permissionMode: 'bypassPermissions' });
 
 function request(
@@ -107,6 +110,10 @@ class Client {
     this.ws.send(JSON.stringify(msg));
   }
 
+  sendBinary(data: Buffer): void {
+    this.ws.send(data, { binary: true });
+  }
+
   waitFor<T extends ServerMessage['type']>(
     type: T,
     pred: (m: Extract<ServerMessage, { type: T }>) => boolean = () => true,
@@ -140,6 +147,8 @@ beforeAll(async () => {
   pairing = new PairingService(registry, { ttlMs: 60_000, maxAttempts: 5 });
   router = new InputRouter(logger, { leaseIdleMs: 60_000, flushIntervalMs: 0 });
   router.attach(driver, { details: {} });
+  mic = new MicRouter(logger, { leaseIdleMs: 60_000 });
+  mic.attach(micDriver, { device: 'Fake Cable' });
   const config = ConfigSchema.parse({
     version: 1,
     projects: [{ id: 'p1', name: 'proj', path: home }],
@@ -182,6 +191,7 @@ beforeAll(async () => {
 
   const gateway = new WsGateway({
     router,
+    mic,
     sessions,
     registry,
     logger,
@@ -509,6 +519,39 @@ describe('WebSocket gateway', () => {
     );
     expect(errors).toEqual([]);
 
+    client.ws.close();
+  });
+
+  it('streams microphone audio to the virtual mic through an exclusive lease', async () => {
+    // The lease is per connection, so one paired device can play both roles.
+    const client = new Client(tunnelCookie);
+    const welcome = await client.waitFor('welcome');
+    expect(welcome.voiceMic).toMatchObject({ available: true, device: 'Fake Cable' });
+
+    const frame = Buffer.alloc(3200, 7);
+    client.sendBinary(frame);
+    await client.waitFor('error', (m) => m.code === 'mic_not_leased');
+
+    client.send({ type: 'voice.mic.start', sampleRate: 16000 });
+    await client.waitFor('voice.mic.status', (m) => m.youHoldLease);
+    micDriver.frames.length = 0;
+    client.sendBinary(frame);
+    client.sendBinary(Buffer.alloc(1600, 8));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(micDriver.frames.map((f) => f.length)).toEqual([3200, 1600]);
+    expect(micDriver.frames[0]![0]).toBe(7);
+
+    // Another device cannot take over while the phone is streaming.
+    const other = new Client(tunnelCookie);
+    await other.waitFor('welcome');
+    other.send({ type: 'voice.mic.start', sampleRate: 16000 });
+    expect((await other.waitFor('error')).code).toBe('mic_lease_held');
+    other.send({ type: 'voice.mic.start', sampleRate: 44100 });
+    await other.waitFor('error', (m) => m.code === 'bad_request');
+    other.ws.close();
+
+    client.send({ type: 'voice.mic.stop' });
+    await client.waitFor('voice.mic.status', (m) => !m.youHoldLease && !m.status.holder);
     client.ws.close();
   });
 

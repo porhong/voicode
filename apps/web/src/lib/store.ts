@@ -9,6 +9,7 @@ import {
   type ProjectInfo,
   type ServerMessage,
   type SessionSummary,
+  type VoiceMicStatus,
 } from '@voicecode/protocol';
 
 export interface EventItem {
@@ -45,6 +46,8 @@ export interface AppState {
   streaming: Record<string, string>;
   permissions: Record<string, PermissionRequest>;
   mouse: { status: MouseStatus; youHoldLease: boolean };
+  /** The PC's virtual microphone for Claude Code dictation, and whether we stream to it. */
+  voiceMic: { status: VoiceMicStatus; youHoldLease: boolean };
   history: Record<string, HistoricSession[]>;
   /** Claude sessions running elsewhere on the PC (terminals), read-only. */
   pcSessions: PcSession[];
@@ -65,6 +68,7 @@ export const initialState: AppState = {
   streaming: {},
   permissions: {},
   mouse: { status: { available: false, driver: 'none' }, youHoldLease: false },
+  voiceMic: { status: { available: false, driver: 'none' }, youHoldLease: false },
   history: {},
   pcSessions: [],
   pcEvents: {},
@@ -120,6 +124,10 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
         activeSessionId: active,
         pcSessions: msg.pcSessions ?? [],
         mouse: { status: msg.mouse, youHoldLease: false },
+        voiceMic: {
+          status: msg.voiceMic ?? { available: false, driver: 'none', reason: 'older agent' },
+          youHoldLease: false,
+        },
         // Permissions are re-sent right after welcome.
         permissions: {},
         protocolMismatch: msg.protocolVersion !== PROTOCOL_VERSION,
@@ -140,6 +148,8 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
       return { ...state, mouse: { status: msg.status, youHoldLease: msg.youHoldLease } };
     case 'mouse.position':
       return state;
+    case 'voice.mic.status':
+      return { ...state, voiceMic: { status: msg.status, youHoldLease: msg.youHoldLease } };
 
     case 'claude.session': {
       const sessions = { ...state.sessions, [msg.session.id]: msg.session };

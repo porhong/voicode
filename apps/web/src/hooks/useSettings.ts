@@ -20,6 +20,11 @@ export interface Settings {
   notifyApprovals: boolean;
   /** BCP 47 language tag for speech recognition. */
   voiceLang: string;
+  /**
+   * Where speech is turned into text: this browser's speech service, or Claude Code's
+   * own dictation on the PC (the phone streams audio into a virtual microphone there).
+   */
+  dictation: 'browser' | 'claude-code';
 }
 
 const KEY = 'voicecode.settings.v1';
@@ -35,6 +40,7 @@ const defaults: Settings = {
   notifyApprovals: false,
   speakReplies: false,
   voiceLang: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
+  dictation: 'browser',
 };
 
 function load(): Settings {

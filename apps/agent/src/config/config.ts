@@ -55,6 +55,25 @@ export const ConfigSchema = z.object({
       maxConcurrentSessions: z.number().int().min(1).max(16).default(4),
     })
     .prefault({}),
+  /**
+   * The phone's microphone, played into a virtual audio device on the PC so Claude
+   * Code's own dictation (`/voice`) can record it. Windows needs VB-CABLE; Linux uses a
+   * PipeWire null sink.
+   */
+  voice: z
+    .object({
+      mode: z.enum(['auto', 'off']).default('auto'),
+      /** Windows: part of the name of the playback device to play into. */
+      outputDevice: z.string().min(1).max(100).default('CABLE Input'),
+      /** Linux: name of the null sink created for the phone's audio. */
+      sink: z
+        .string()
+        .regex(/^[A-Za-z0-9_.-]{1,64}$/, 'letters, digits, _ . - only')
+        .default('voicecode_mic'),
+      /** A microphone lease with no audio for this long is released. */
+      leaseIdleMs: z.number().int().min(5_000).default(60_000),
+    })
+    .prefault({}),
   pairing: z
     .object({
       codeTtlMs: z

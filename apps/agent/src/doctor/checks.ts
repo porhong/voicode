@@ -1,12 +1,15 @@
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import net from 'node:net';
+import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { inspectCertificate, serverSubjectAltNames } from '@voicecode/security';
 import {
   bundledClaudePackage,
   claudeCodeVersion,
+  findClaudeOnPath,
   resolveClaudeExecutable,
 } from '../claude/claude-executable.js';
 import type { AgentConfig } from '../config/config.js';
@@ -31,6 +34,9 @@ import {
   INSTALL_HINT,
   tunnelSetupProblem,
 } from '../tunnel/cloudflared.js';
+import { virtualMicSetupHint, windowsAudioHelper } from '../voice/resolve-driver.js';
+
+const run = promisify(execFile);
 
 export type CheckStatus = 'ok' | 'warn' | 'fail';
 export interface CheckResult {
@@ -43,7 +49,7 @@ export interface CheckResult {
 export async function runChecks(
   config: AgentConfig | undefined,
   paths: AgentPaths,
-  options: { probeMouse?: boolean } = {},
+  options: { probeMouse?: boolean; probeVoice?: boolean } = {},
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   const add = (r: CheckResult) => results.push(r);
@@ -144,6 +150,13 @@ export async function runChecks(
           : undefined,
   });
   if (options.probeMouse !== false && config) add(await checkMouse(config));
+
+  // Phone microphone → Claude Code dictation ------------------------------------
+  if (options.probeVoice !== false && config && config.voice.mode !== 'off') {
+    add(await checkVirtualMic(config));
+    const voice = await checkClaudeVoice();
+    if (voice) add(voice);
+  }
 
   // TLS ------------------------------------------------------------------------
   add(await checkTls(paths));
@@ -322,6 +335,105 @@ function mouseFix(): string {
       return 'Ensure powershell.exe is on PATH, or build the native helper';
     default:
       return 'Run the agent inside a graphical desktop session';
+  }
+}
+
+/**
+ * Whether phone audio can reach a virtual microphone that Claude Code records from.
+ * Windows: the helper, a VB-CABLE playback device, and the cable as default input.
+ */
+async function checkVirtualMic(config: AgentConfig): Promise<CheckResult> {
+  const name = 'Phone microphone';
+  if (process.platform === 'win32') {
+    const exe = windowsAudioHelper();
+    if (!exe) {
+      return {
+        name,
+        status: 'warn',
+        detail: 'audio helper (voicecode-audio-out.exe) not found',
+        fix: 'Reinstall the package, or build it with `npm run build:native`',
+      };
+    }
+    try {
+      const { stdout: list } = await run(exe, ['--list'], { timeout: 5_000, windowsHide: true });
+      const outputs = list.split('\n').flatMap((l) => (l.startsWith('out ') ? [l.slice(4)] : []));
+      const wanted = config.voice.outputDevice.toLowerCase();
+      const cable = outputs.find((o) => o.toLowerCase().includes(wanted));
+      if (!cable) {
+        return {
+          name,
+          status: 'warn',
+          detail: `no playback device named like "${config.voice.outputDevice}"`,
+          fix: virtualMicSetupHint(),
+        };
+      }
+      const { stdout: cap } = await run(exe, ['--default-capture'], {
+        timeout: 5_000,
+        windowsHide: true,
+      });
+      const capture = cap
+        .split('\n')
+        .find((l) => l.startsWith('capture '))
+        ?.slice(8)
+        .trim();
+      if (!capture?.toLowerCase().includes('cable output')) {
+        return {
+          name,
+          status: 'warn',
+          detail: `plays into "${cable}", but Claude Code records from "${capture ?? 'unknown'}"`,
+          fix: 'Make "CABLE Output" the default input in Settings → System → Sound → Input',
+        };
+      }
+      return { name, status: 'ok', detail: `"${cable}" → "${capture}"` };
+    } catch (err) {
+      return { name, status: 'warn', detail: `audio helper failed: ${(err as Error).message}` };
+    }
+  }
+  if (process.platform === 'linux') {
+    try {
+      const { stdout } = await run('pactl', ['info'], { timeout: 5_000 });
+      const server = /Server Name:\s*(.*)/.exec(stdout)?.[1]?.trim() ?? 'unknown';
+      await run('pw-cat', ['--version'], { timeout: 5_000 });
+      return { name, status: 'ok', detail: `${server}; sink "${config.voice.sink}"` };
+    } catch (err) {
+      return {
+        name,
+        status: 'warn',
+        detail: `PipeWire tools not usable: ${(err as Error).message.split('\n')[0]}`,
+        fix: virtualMicSetupHint(),
+      };
+    }
+  }
+  return { name, status: 'warn', detail: `not supported on ${process.platform}` };
+}
+
+/**
+ * Claude Code's dictation needs a claude.ai sign-in; an API key or a third-party
+ * provider disables `/voice` entirely. `claude auth status --json` is the source of truth.
+ */
+async function checkClaudeVoice(): Promise<CheckResult | undefined> {
+  const name = 'Claude Code voice';
+  const exe = resolveClaudeExecutable();
+  const bin = exe.path ?? (exe.source === 'sdk' ? findClaudeOnPath() : undefined);
+  if (!bin) return undefined;
+  try {
+    const { stdout } = await run(bin, ['auth', 'status', '--json'], {
+      timeout: 15_000,
+      windowsHide: true,
+    }).catch((err: Error & { stdout?: string }) => ({ stdout: err.stdout ?? '' }));
+    const parsed = JSON.parse(stdout) as { authMethod?: string; loggedIn?: boolean };
+    const method = parsed.authMethod ?? 'none';
+    if (method === 'claude.ai') {
+      return { name, status: 'ok', detail: 'claude.ai sign-in (dictation available)' };
+    }
+    return {
+      name,
+      status: 'warn',
+      detail: `dictation needs a claude.ai sign-in (current: ${method})`,
+      fix: 'Run `claude` and `/login` with your Claude.ai account; unset ANTHROPIC_API_KEY',
+    };
+  } catch {
+    return { name, status: 'warn', detail: `could not run \`${bin} auth status\`` };
   }
 }
 

@@ -2,7 +2,7 @@
  * Bump when a change to the wire format is not backwards compatible.
  * The agent rejects clients that speak a different major version.
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** WebSocket endpoint path served by the agent. */
 export const WS_PATH = '/ws';
@@ -24,6 +24,23 @@ export const LIMITS = {
   maxDeviceNameLength: 64,
   /** Max length of a folder path sent by a device. */
   maxPathLength: 4096,
+  /** Max audio a device may stream per second, in bytes (2× real time for 16 kHz s16). */
+  maxAudioBytesPerSecond: 64_000,
+} as const;
+
+/**
+ * Microphone audio from a device is streamed as binary WebSocket frames while the
+ * device holds the microphone lease (`voice.mic.start`). Every frame is raw PCM in
+ * this format, so the agent can play it straight into a virtual microphone without a
+ * codec: signed 16-bit little-endian, mono, 16 kHz. A frame holds whole samples; 100 ms
+ * (3 200 bytes) is the intended size.
+ */
+export const AUDIO = {
+  sampleRate: 16_000,
+  channels: 1,
+  bytesPerSample: 2,
+  /** Longest single frame accepted. */
+  maxFrameMs: 1_000,
 } as const;
 
 export const MOUSE_BUTTONS = ['left', 'right', 'middle'] as const;

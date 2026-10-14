@@ -14,6 +14,7 @@ import { Transcript, type TranscriptHandle } from '../components/Transcript';
 import { useAgentSocket } from '../hooks/useAgentSocket';
 import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
 import { useDeck, type Macro } from '../hooks/useDeck';
+import { useMicStream } from '../hooks/useMicStream';
 import { speechRecognitionSupported } from '../hooks/useSpeechRecognition';
 import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
@@ -56,7 +57,10 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     (message: ServerMessage) => dispatch({ type: 'server', message }),
     [],
   );
-  const { state: connection, send } = useAgentSocket(onMessage);
+  const { state: connection, send, sendBinary } = useAgentSocket(onMessage);
+  // Claude Code dictation: the phone's audio goes to a virtual microphone on the PC.
+  const micStream = useMicStream({ send, sendBinary, mic: state.voiceMic });
+  const remoteMic = settings.dictation === 'claude-code' ? micStream : undefined;
 
   useEffect(() => {
     if (connection === 'unpaired') onUnpaired();
@@ -414,6 +418,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 approvalShown={activePermissions.length > 0}
                 settings={settings}
                 compact={deckMode}
+                remoteMic={remoteMic}
                 onListeningChange={setListening}
                 onSend={(text) => send({ type: 'claude.prompt', sessionId: active.id, text })}
                 onInterrupt={() => send({ type: 'claude.interrupt', sessionId: active.id })}
@@ -444,7 +449,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               connected={connection === 'open'}
               running={active?.state === 'running' || active?.state === 'awaiting_permission'}
               approval={approval}
-              micSupported={speechRecognitionSupported()}
+              micSupported={remoteMic ? remoteMic.supported : speechRecognitionSupported()}
               listening={canPrompt && listening}
               full={deckFull}
               replies={replies}
@@ -500,6 +505,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
           update={updateSettings}
           device={state.device}
           agentVersion={state.agent?.version}
+          voiceMic={state.voiceMic.status}
           onClose={() => setSettingsOpen(false)}
           onUnpaired={onUnpaired}
         />

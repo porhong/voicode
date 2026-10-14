@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
+import type { VoiceMicStatus } from '@voicecode/protocol';
 import { notificationsSupported, requestNotificationPermission } from '../hooks/useApprovalAlerts';
+import { micCaptureSupported } from '../hooks/useMicStream';
 import type { Settings } from '../hooks/useSettings';
 import { speechSynthesisSupported } from '../hooks/useSpeakReplies';
 import { api } from '../lib/api';
@@ -10,6 +12,8 @@ interface Props {
   update: (patch: Partial<Settings>) => void;
   device?: { id: string; name: string };
   agentVersion?: string;
+  /** The PC's virtual microphone, for the Claude Code dictation option. */
+  voiceMic?: VoiceMicStatus;
   onClose: () => void;
   onUnpaired: () => void;
 }
@@ -114,6 +118,7 @@ export function SettingsSheet({
   update,
   device,
   agentVersion,
+  voiceMic,
   onClose,
   onUnpaired,
 }: Props) {
@@ -150,6 +155,34 @@ export function SettingsSheet({
       </div>
 
       <h3>Voice</h3>
+      <div className="segmented" role="radiogroup" aria-label="Dictation">
+        {(
+          [
+            ['browser', 'Phone', 'This browser’s speech service'],
+            ['claude-code', 'Claude Code', 'Dictation on the PC, tuned for code'],
+          ] as const
+        ).map(([value, label, hint]) => (
+          <button
+            key={value}
+            role="radio"
+            aria-checked={settings.dictation === value}
+            className={settings.dictation === value ? 'segment active' : 'segment'}
+            onClick={() => update({ dictation: value })}
+          >
+            <strong>{label}</strong>
+            <span className="small muted">{hint}</span>
+          </button>
+        ))}
+      </div>
+      {settings.dictation === 'claude-code' && (
+        <p className="small muted">
+          {!micCaptureSupported()
+            ? 'This browser cannot capture microphone audio.'
+            : voiceMic?.available
+              ? `Your voice is played into “${voiceMic.device}” on the PC; Claude Code’s /voice transcribes it (needs a claude.ai sign-in).`
+              : `Not ready on the PC: ${voiceMic?.reason ?? 'not connected'}. Run “voicecode-agent doctor” there.`}
+        </p>
+      )}
       <label className="field">
         <span>Dictation language</span>
         <select
@@ -183,12 +216,14 @@ export function SettingsSheet({
           />
         </label>
       )}
-      <Toggle
-        label="Send when I stop talking"
-        hint="Skips reviewing the dictated text first"
-        checked={settings.autoSendVoice}
-        onChange={(autoSendVoice) => update({ autoSendVoice })}
-      />
+      {settings.dictation === 'browser' && (
+        <Toggle
+          label="Send when I stop talking"
+          hint="Skips reviewing the dictated text first"
+          checked={settings.autoSendVoice}
+          onChange={(autoSendVoice) => update({ autoSendVoice })}
+        />
+      )}
       <Toggle
         label="Read Claude’s replies aloud"
         checked={settings.speakReplies}

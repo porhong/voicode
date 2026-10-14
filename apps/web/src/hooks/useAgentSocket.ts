@@ -89,7 +89,13 @@ export function useAgentSocket(onMessage: (message: ServerMessage) => void) {
     if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
   }, []);
 
-  return { state, send };
+  /** Microphone audio (see `AUDIO` in the protocol); only meaningful while holding the mic lease. */
+  const sendBinary = useCallback((data: ArrayBuffer) => {
+    const ws = socketRef.current;
+    if (ws?.readyState === WebSocket.OPEN) ws.send(data);
+  }, []);
+
+  return { state, send, sendBinary };
 }
 
 export type Send = (message: ClientMessage) => void;

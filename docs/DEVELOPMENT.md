@@ -116,3 +116,4 @@ and the header of `apps/agent/scripts/build-sea.mjs`.
 | Tunnel URL shows 502 / "Unavailable"                | `voicecode-agent tunnel` and `doctor`; cloudflared's own log lines are in `agent.log` (`"component":"tunnel"`)                |
 | `Port … is already in use`                          | Another agent is running (`voicecode-agent status` / `stop`) or pick `--port`                                                 |
 | Mouse unavailable                                   | `voicecode-agent doctor`; build the native helper or install `xdotool` / `ydotool`; the agent must run in the desktop session |
+| Phone microphone unavailable                        | `voicecode-agent doctor`; Windows needs VB-CABLE and `voicecode-audio-out.exe` (`npm run build:native`), Linux needs PipeWire |

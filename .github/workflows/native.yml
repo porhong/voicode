@@ -18,6 +18,9 @@ jobs:
           - os: windows-latest
             target: win32-x64
             helper: windows
+          - os: windows-latest
+            target: win32-x64
+            helper: audio
           # X11 helpers build on the oldest supported Ubuntu so the binaries link
           # against an old glibc and run on older distributions too.
           - os: ubuntu-22.04

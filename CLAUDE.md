@@ -26,10 +26,13 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/sessions      SessionManager (phone sessions), PcSessionWatcher (read-only view of all
                     Claude sessions on the PC via ~/.claude/sessions + transcripts)
   src/mouse         InputRouter (lease, coalescing), helper-process / command drivers
+  src/voice         MicRouter (phone mic lease, PCM frames) → virtual microphone drivers
+                    (Windows waveOut helper into VB-CABLE, Linux PipeWire null sink)
   src/util          standalone.ts (SEA assets), tar.ts, logger, network
   scripts           copy-web, prepack, build-sea, smoke-sea, ui-demo (fake Claude for UI work)
 apps/web            React PWA (Vite): Pair page, Claude tab, Trackpad tab, settings
-native/             C helpers: windows (SendInput), linux-x11 (XTest), linux-wayland (portal + libei)
+native/             C helpers: windows (SendInput; audio-out: waveOut), linux-x11 (XTest),
+                    linux-wayland (portal + libei)
 scripts/            build-native, verify-package, release, e2e-browser, ui-screenshots
 ```
 
@@ -116,6 +119,17 @@ Done and verified:
   paths are realpath'd and checked against the roots on the agent. Verified with the
   CLI from a temp folder and the UI demo; the interactive prompt itself was not driven
   in a test.
+
+- Claude Code dictation bridge, phase 1 (2026-10-14): the phone streams raw 16 kHz PCM
+  (binary WebSocket frames under a `voice.mic` lease, PROTOCOL_VERSION 4) and the agent
+  plays it into a virtual microphone so Claude Code's `/voice` on the PC can record it.
+  Windows helper `voicecode-audio-out.exe` (waveOut → "CABLE Input") was built and played
+  a test tone here; `doctor` reports the cable, the default input and the claude.ai
+  sign-in. Not verified: VB-CABLE itself (not installed on the dev PC), the PipeWire
+  driver (no Linux audio in CI), the phone capture on a real phone. Phase 2 (agent-owned
+  `claude` in a PTY, push-to-talk keys, terminal view, hook-based approvals) and phase 3
+  (SEA packaging of node-pty, default-device switching) are in the plan file
+  `~/.claude/plans/the-voice-prompt-on-streamed-sunrise.md`.
 
 Not verified yet:
 

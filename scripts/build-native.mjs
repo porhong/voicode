@@ -1,7 +1,7 @@
-// Builds native mouse helpers and copies them into
+// Builds the native helpers (mouse input, Windows audio output) and copies them into
 // apps/agent/native-bin/<platform>-<arch>/ where the agent looks for them at runtime.
 //
-//   node scripts/build-native.mjs [--helper windows|x11|wayland]
+//   node scripts/build-native.mjs [--helper windows|audio|x11|wayland]
 //
 // Without --helper, builds every helper the current platform supports and skips the
 // Wayland helper when its libraries (libei, gio) are not installed.
@@ -94,6 +94,25 @@ const helpers = {
         (src, out) => ['/nologo', '/O2', '/W3', `/Fe:${out}`, src, 'user32.lib', 'advapi32.lib'],
       ],
     ]),
+  // Plays phone audio into a virtual cable for Claude Code's dictation (waveOut + MMDevice).
+  audio: () =>
+    build('windows', 'voicecode-audio-out.c', 'voicecode-audio-out.exe', [
+      [
+        'gcc',
+        (src, out) => [
+          '-O2',
+          '-Wall',
+          '-municode',
+          '-static',
+          '-o',
+          out,
+          src,
+          '-lwinmm',
+          '-lole32',
+        ],
+      ],
+      ['cl', (src, out) => ['/nologo', '/O2', '/W3', `/Fe:${out}`, src, 'winmm.lib', 'ole32.lib']],
+    ]),
   x11: () =>
     build('linux-x11', 'voicecode-input-x11.c', 'voicecode-input-x11', [
       ['gcc', (src, out) => ['-O2', '-Wall', '-Wextra', '-o', out, src, '-lX11', '-lXtst']],
@@ -121,6 +140,7 @@ if (requested) {
   helpers[requested]();
 } else if (process.platform === 'win32') {
   helpers.windows();
+  helpers.audio();
 } else if (process.platform === 'linux') {
   helpers.x11();
   if (pkgConfig(['--exists', 'libei-1.0', 'gio-unix-2.0'])) helpers.wayland();

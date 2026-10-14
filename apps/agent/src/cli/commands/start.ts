@@ -100,7 +100,7 @@ async function start(opts: StartOptions): Promise<void> {
   const tunnelUrl = 'url' in info.tunnel ? info.tunnel.url : undefined;
   const url = tunnelUrl ?? lanUrl;
 
-  const auth = (await runChecks(config, paths, { probeMouse: false })).find(
+  const auth = (await runChecks(config, paths, { probeMouse: false, probeVoice: false })).find(
     (c) => c.name === 'Claude Code auth',
   );
   heading('VoiceCode Agent', VERSION);
@@ -113,6 +113,12 @@ async function start(opts: StartOptions): Promise<void> {
     info.mouse.available
       ? ok(`Ready (${info.mouse.driver})`)
       : warn(`Unavailable — ${info.mouse.reason}`),
+  );
+  row(
+    'Phone mic',
+    info.voiceMic.available
+      ? ok(`Ready (${info.voiceMic.driver} → ${info.voiceMic.device})`)
+      : pc.dim(`Off — ${info.voiceMic.reason} (see \`voicecode-agent doctor\`)`),
   );
   row(
     'Projects',

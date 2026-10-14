@@ -7,6 +7,37 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { MouseButton } from '@voicecode/protocol';
 import type { DriverInfo, MouseDriver } from '../mouse/driver.js';
+import type { VirtualMicDriver, VirtualMicInfo } from '../voice/driver.js';
+
+/** Collects the PCM written to it so tests can check what would reach the sound device. */
+export class FakeMicDriver implements VirtualMicDriver {
+  readonly name = 'fake-mic';
+  readonly frames: Buffer[] = [];
+  readonly calls: string[] = [];
+  private exitListener: ((e: Error) => void) | undefined;
+
+  async start(): Promise<VirtualMicInfo> {
+    return { device: 'Fake Cable' };
+  }
+  async activate(): Promise<void> {
+    this.calls.push('activate');
+  }
+  async deactivate(): Promise<void> {
+    this.calls.push('deactivate');
+  }
+  write(pcm: Buffer): void {
+    this.frames.push(Buffer.from(pcm));
+  }
+  async stop(): Promise<void> {
+    this.calls.push('stop');
+  }
+  onExit(listener: (error: Error) => void): void {
+    this.exitListener = listener;
+  }
+  crash(): void {
+    this.exitListener?.(new Error('crashed'));
+  }
+}
 
 /** Records every call so tests can assert on what reached the OS layer. */
 export class FakeMouseDriver implements MouseDriver {

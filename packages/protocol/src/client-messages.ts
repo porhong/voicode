@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LIMITS, MOUSE_BUTTONS } from './constants.js';
+import { AUDIO, LIMITS, MOUSE_BUTTONS } from './constants.js';
 
 const delta = (max: number) => z.number().int().min(-max).max(max);
 const id = z.string().min(1).max(128);
@@ -35,6 +35,15 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     dy: delta(LIMITS.maxScrollDelta),
   }),
   z.object({ type: z.literal('mouse.position') }),
+
+  // --- Microphone (phone mic → virtual microphone on the PC) ---------------
+  /**
+   * Take the microphone lease; audio then follows as binary frames (see `AUDIO`). The
+   * sample rate is fixed so the agent never has to resample; it is sent so a client
+   * built against another format is refused rather than played back garbled.
+   */
+  z.object({ type: z.literal('voice.mic.start'), sampleRate: z.literal(AUDIO.sampleRate) }),
+  z.object({ type: z.literal('voice.mic.stop') }),
 
   // --- Claude Code ---------------------------------------------------------
   z.object({
