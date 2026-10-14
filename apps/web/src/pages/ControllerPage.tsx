@@ -32,10 +32,16 @@ const CONNECTION_LABEL = {
 } as const;
 
 /** What the voice bar says about Claude Code's dictation. */
-function voiceText(voice: SessionSummary['voice']): string {
+function voiceText(session: SessionSummary): string {
+  const voice = session.voice;
+  if (session.attached && session.state === 'awaiting_permission') {
+    return 'It is asking something in the terminal; answer with the keys below.';
+  }
   switch (voice?.state) {
     case 'idle':
-      return 'Hold the mic to dictate through Claude Code.';
+      return session.attached
+        ? 'Hold the mic to dictate into your terminal.'
+        : 'Hold the mic to dictate through Claude Code.';
     case 'starting':
       return 'Starting to record…';
     case 'recording':
@@ -132,6 +138,10 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     [pcId, state.pcEvents],
   );
 
+  // A controlled terminal session that waits for an answer shows its screen on its own.
+  const attachedWaiting = active?.attached === true && active.state === 'awaiting_permission';
+  const showTerminal = terminalOpen || attachedWaiting;
+
   // In a voice session the agent also presses Claude Code's dictation key for us, so a
   // press is "start recording there + stream the mic" and a release the reverse.
   const voiceSession = active?.kind === 'voice' ? active : undefined;
@@ -184,6 +194,21 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     }
     send({ type: 'pc.session.continue', sessionId: pc.sessionId, allowFolder: !pc.projectId });
   };
+  // Taking control keeps the session in the terminal: keys and dictation go to it.
+  const controlPc = (target = pc) => {
+    if (!target) return;
+    if (!target.projectId) {
+      const ok = confirm(
+        `Allow Claude to work in this folder from your phone?\n\n${target.cwd}\n\nTool calls it asks about in the terminal can be answered from the terminal view.`,
+      );
+      if (!ok) return;
+    }
+    send({
+      type: 'pc.session.control',
+      sessionId: target.sessionId,
+      allowFolder: !target.projectId,
+    });
+  };
 
   // A light tap when a task finishes somewhere else.
   const lastToast = useRef(state.toasts[0]?.id ?? 0);
@@ -234,6 +259,20 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       <p className="muted">
         Start a session in one of your projects, then speak or type what you want done.
       </p>
+      {state.pcControl.available && state.pcSessions.length > 0 && (
+        <div className="pc-offer">
+          {state.pcSessions.slice(0, 3).map((p) => (
+            <button
+              key={p.sessionId}
+              className="btn btn-block"
+              disabled={connection !== 'open'}
+              onClick={() => controlPc(p)}
+            >
+              Take control of the terminal in {p.folder}
+            </button>
+          ))}
+        </div>
+      )}
       <StartSession
         projects={state.projects}
         projectId={startProjectId}
@@ -452,20 +491,35 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                     <p className="pc-bar-text">
                       <strong>Running in a terminal on the PC.</strong>{' '}
                       <span className="muted">
-                        {pc.status === 'working' || pc.status === 'waiting'
-                          ? 'You can continue it here once it finishes.'
-                          : 'Continue it here as a copy; the terminal keeps its own.'}
+                        {state.pcControl.available
+                          ? 'Take control to dictate and type into it, or continue a copy here.'
+                          : pc.status === 'working' || pc.status === 'waiting'
+                            ? 'You can continue it here once it finishes.'
+                            : 'Continue it here as a copy; the terminal keeps its own.'}
                       </span>
                     </p>
-                    <button
-                      className="btn btn-primary"
-                      disabled={
-                        connection !== 'open' || pc.status === 'working' || pc.status === 'waiting'
-                      }
-                      onClick={continuePc}
-                    >
-                      Continue on phone
-                    </button>
+                    <div className="pc-bar-actions">
+                      {state.pcControl.available && (
+                        <button
+                          className="btn btn-primary"
+                          disabled={connection !== 'open'}
+                          onClick={() => controlPc()}
+                        >
+                          Take control
+                        </button>
+                      )}
+                      <button
+                        className={state.pcControl.available ? 'btn' : 'btn btn-primary'}
+                        disabled={
+                          connection !== 'open' ||
+                          pc.status === 'working' ||
+                          pc.status === 'waiting'
+                        }
+                        onClick={continuePc}
+                      >
+                        {state.pcControl.available ? 'Continue as copy' : 'Continue on phone'}
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <p className="pc-bar-text muted">This session has ended on the PC.</p>
@@ -475,21 +529,23 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
             {voiceSession && live && (
               <div className="pc-bar voice-bar">
                 <p className="pc-bar-text">
-                  <strong>Claude Code on the PC.</strong>{' '}
+                  <strong>
+                    {voiceSession.attached ? 'Your terminal session.' : 'Claude Code on the PC.'}
+                  </strong>{' '}
                   <span className={voiceSession.voice?.state === 'error' ? 'error-text' : 'muted'}>
-                    {voiceText(voiceSession.voice)}
+                    {voiceText(voiceSession)}
                   </span>
                 </p>
                 <button
                   className="btn btn-small"
-                  aria-expanded={terminalOpen}
-                  onClick={() => setTerminalOpen((open) => !open)}
+                  aria-expanded={showTerminal}
+                  onClick={() => setTerminalOpen(!showTerminal)}
                 >
-                  {terminalOpen ? 'Hide terminal' : 'Terminal'}
+                  {showTerminal ? 'Hide terminal' : 'Terminal'}
                 </button>
               </div>
             )}
-            {voiceSession && live && terminalOpen && (
+            {voiceSession && live && showTerminal && (
               <TerminalView sessionId={voiceSession.id} send={send} subscribe={subscribeTerminal} />
             )}
             {active && live && (

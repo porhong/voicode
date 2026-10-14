@@ -46,7 +46,7 @@ export function mapStatus(status: string | undefined): PcSessionStatus {
   return 'unknown';
 }
 
-function isAlive(pid: number): boolean {
+export function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

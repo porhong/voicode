@@ -28,7 +28,7 @@ import { inject } from 'postject';
 
 const SUPPORTED = ['win32-x64', 'linux-x64', 'linux-arm64'];
 const HELPERS = {
-  'win32-x64': ['voicecode-input.exe', 'voicecode-audio-out.exe'],
+  'win32-x64': ['voicecode-input.exe', 'voicecode-audio-out.exe', 'voicecode-console.exe'],
   'linux-x64': ['voicecode-input-x11', 'voicecode-input-wayland'],
   'linux-arm64': ['voicecode-input-x11', 'voicecode-input-wayland'],
 };

@@ -257,7 +257,7 @@ function SessionSheet({
                   <span className="list-title">{s.title ?? 'New session'}</span>
                   <span className="small muted">
                     {projectName(state.projects, s.projectId)} · {STATE_LABEL[s.state]}
-                    {s.kind === 'voice' ? ' · Claude Code' : ''}
+                    {s.attached ? ' · your terminal' : s.kind === 'voice' ? ' · Claude Code' : ''}
                   </span>
                 </button>
                 <button

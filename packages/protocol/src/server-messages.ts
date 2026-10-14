@@ -45,6 +45,8 @@ export interface SessionSummary {
   totalCostUsd?: number;
   /** Absent for a session driven through the Agent SDK. */
   kind?: 'voice';
+  /** Voice sessions: the Claude Code was started by the user in a terminal; we attached. */
+  attached?: boolean;
   /** Voice sessions: what Claude Code's dictation is doing. */
   voice?: { state: VoiceState; detail?: string };
 }
@@ -151,6 +153,8 @@ export type ServerMessage =
       pcSessions: PcSession[];
       mouse: MouseStatus;
       voiceMic: VoiceMicStatus;
+      /** Whether a terminal session can be taken over (keys and screen through its console). */
+      pcControl: { available: boolean; reason?: string };
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'projects'; projects: ProjectInfo[]; roots: string[] }

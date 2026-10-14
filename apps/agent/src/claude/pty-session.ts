@@ -7,7 +7,7 @@ import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.mjs';
 import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.mjs';
 import type { ClaudeEvent, SessionState, SessionSummary, VoiceState } from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
-import { claudeConfigDir, mapStatus } from '../sessions/pc-sessions.js';
+import { claudeConfigDir, isAlive, mapStatus } from '../sessions/pc-sessions.js';
 import { findTranscript, TranscriptTail } from '../sessions/transcript-tail.js';
 import type { Logger } from '../util/logger.js';
 import { isStandalone } from '../util/standalone.js';
@@ -37,6 +37,8 @@ export interface PtyHandle {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
+  /** Attached consoles report their own size; a pty takes ours. */
+  onSize?(listener: (cols: number, rows: number) => void): void;
 }
 
 export type PtySpawn = (
@@ -73,7 +75,10 @@ export function loadPtySpawn(): PtySpawn {
   return (file, args, options) => {
     const handle = pty.spawn(file, args, options);
     return {
-      pid: handle.pid,
+      // On Windows the pid arrives once the ConPTY connection is up; read it live.
+      get pid() {
+        return handle.pid;
+      },
       onData: (cb) => void handle.onData(cb),
       onExit: (cb) => void handle.onExit(cb),
       write: (data) => handle.write(data),
@@ -104,8 +109,13 @@ export interface VoiceSessionOptions {
   config: AgentConfig['claude'];
   broker: ApprovalBroker;
   logger: Logger;
-  /** Where the hook subcommand reports tool calls. */
-  hook: { url: string; token: string; command: string };
+  /** Where the hook subcommand reports tool calls (hosted sessions only). */
+  hook?: { url: string; token: string; command: string };
+  /**
+   * Take over a Claude Code the user started in a terminal instead of spawning one:
+   * keys and screen go through `handle` (the console helper on Windows).
+   */
+  attach?: { pid: number; claudeSessionId: string; handle: PtyHandle };
   /** Injection points for tests. */
   spawn?: PtySpawn;
   claudePath?: string;
@@ -153,16 +163,19 @@ export class VoiceSession extends EventEmitter<{
   }> = [];
   private lastScreen: VoiceScreen = { recording: false, enabled: false };
   private lastSpeaker: string | undefined;
+  /** The registry (not the broker) put the session into `awaiting_permission`. */
+  private registryAwaiting = false;
   private lastTyped: { text: string; deviceName: string } | undefined;
   private pendingRelease = false;
   private exitCode: number | undefined;
   private closing = false;
+  private dictationTimer: NodeJS.Timeout | undefined;
 
   constructor(private readonly opts: VoiceSessionOptions) {
     super();
     this.id = opts.id;
     this.project = opts.project;
-    this.claudeSessionId = opts.resume ?? randomUUID();
+    this.claudeSessionId = opts.attach?.claudeSessionId ?? opts.resume ?? randomUUID();
     this.term = new Terminal({
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
@@ -174,6 +187,17 @@ export class VoiceSession extends EventEmitter<{
 
   start(): void {
     const { config, opts } = this;
+    if (opts.attach) {
+      this.pty = opts.attach.handle;
+      this.wire();
+      opts.logger.info({ session: this.id, pid: opts.attach.pid }, 'attached to a terminal claude');
+      // The terminal's Claude Code may not have dictation on; turn it on if the prompt is free.
+      this.dictationTimer = setTimeout(() => this.ensureDictation(), 2_500);
+      this.dictationTimer.unref();
+      return;
+    }
+    if (!opts.hook) return this.fail('No hook endpoint for a hosted Claude Code session.');
+    const hook = opts.hook;
     const claude = opts.claudePath ?? interactiveClaudePath();
     if (!claude) {
       this.fail('Claude Code is not installed on the PC (no `claude` executable found).');
@@ -187,7 +211,7 @@ export class VoiceSession extends EventEmitter<{
             hooks: [
               {
                 type: 'command',
-                command: opts.hook.command,
+                command: hook.command,
                 timeout: Math.ceil(config.approvalTimeoutMs / 1000) + 30,
               },
             ],
@@ -209,8 +233,8 @@ export class VoiceSession extends EventEmitter<{
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       TERM: 'xterm-256color',
-      VOICECODE_HOOK_URL: opts.hook.url,
-      VOICECODE_HOOK_TOKEN: opts.hook.token,
+      VOICECODE_HOOK_URL: hook.url,
+      VOICECODE_HOOK_TOKEN: hook.token,
     };
     try {
       const spawn = opts.spawn ?? loadPtySpawn();
@@ -229,15 +253,44 @@ export class VoiceSession extends EventEmitter<{
       { session: this.id, pid: this.pty.pid, claude, resume: opts.resume },
       'claude code started in a pty',
     );
-    this.pty.onData((data) => {
+    this.wire();
+  }
+
+  private wire(): void {
+    const pty = this.pty!;
+    pty.onSize?.((cols, rows) => {
+      if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows);
+    });
+    pty.onData((data) => {
       this.term.write(data);
       this.emit('terminal', data);
       this.scheduleScan();
     });
-    this.pty.onExit(({ exitCode }) => this.handleExit(exitCode));
+    pty.onExit(({ exitCode }) => this.handleExit(exitCode));
     this.pollTimer = setInterval(() => void this.poll(), POLL_MS);
     this.pollTimer.unref();
     void this.poll();
+  }
+
+  get attached(): boolean {
+    return this.opts.attach !== undefined;
+  }
+
+  /** `/voice tap` in the terminal's Claude Code, when the footer shows dictation is off. */
+  private ensureDictation(): void {
+    if (this.isClosed || !this.pty) return;
+    this.scan();
+    if (this.lastScreen.enabled || this.lastScreen.dialog) return;
+    if (!promptIsEmpty(this.screenLines())) {
+      this.record({
+        kind: 'status',
+        message:
+          'Dictation looks off in the terminal and its prompt is not empty; run /voice tap there (or clear the prompt from the terminal view).',
+      });
+      return;
+    }
+    this.pty.write('/voice tap\r');
+    this.record({ kind: 'status', message: 'Turned on dictation in the terminal (/voice tap).' });
   }
 
   private get config(): AgentConfig['claude'] {
@@ -253,6 +306,7 @@ export class VoiceSession extends EventEmitter<{
       createdAt: this.createdAt,
       title: this.title,
       kind: 'voice',
+      attached: this.attached || undefined,
       voice: { state: this.voice, detail: this.voiceDetail },
     };
   }
@@ -271,6 +325,8 @@ export class VoiceSession extends EventEmitter<{
   }
 
   resize(cols: number, rows: number): void {
+    // An attached console keeps the user's terminal size; the phone view fits to it.
+    if (this.attached) return;
     if (cols === this.term.cols && rows === this.term.rows) return;
     this.term.resize(cols, rows);
     this.pty?.resize(cols, rows);
@@ -363,9 +419,16 @@ export class VoiceSession extends EventEmitter<{
   close(): void {
     if (this.isClosed || this.closing) return;
     this.closing = true;
+    clearTimeout(this.dictationTimer);
     this.opts.broker.cancelSession(this.id, 'cancelled');
     const pty = this.pty;
     if (!pty) return this.setState('closed');
+    if (this.attached) {
+      // Only let go of the console; the user's Claude Code keeps running in its terminal.
+      pty.kill();
+      this.handleExit(0);
+      return;
+    }
     pty.write('/exit\r');
     const timer = setTimeout(() => {
       if (this.exitCode === undefined) pty.kill();
@@ -381,6 +444,9 @@ export class VoiceSession extends EventEmitter<{
     this.emit('exit', exitCode);
     this.opts.broker.cancelSession(this.id, 'cancelled');
     if (this.closing) {
+      this.setState('closed');
+    } else if (this.attached) {
+      this.record({ kind: 'status', message: 'The terminal session ended.' });
       this.setState('closed');
     } else {
       this.opts.logger.warn({ session: this.id, exitCode }, 'claude code exited');
@@ -460,10 +526,20 @@ export class VoiceSession extends EventEmitter<{
     if (registry) {
       if (this.state === 'starting') this.setState('idle');
       const status = mapStatus(registry.status);
-      if (this.state !== 'awaiting_permission') {
+      if (status === 'waiting') {
+        // A prompt only the terminal shows (hosted: one the hook did not cover).
+        this.setState('awaiting_permission');
+      } else if (this.state === 'awaiting_permission' && this.registryAwaiting) {
+        this.setState(status === 'working' ? 'running' : 'idle');
+      } else if (this.state !== 'awaiting_permission') {
         if (status === 'working') this.setState('running');
         else if (status === 'idle' && this.state === 'running') this.setState('idle');
       }
+      this.registryAwaiting = status === 'waiting';
+    } else if (this.attached && !isAlive(pid)) {
+      this.pty?.kill();
+      this.handleExit(0);
+      return;
     }
     this.tail ??= await findTranscript(dir, this.project.path, this.claudeSessionId).then((f) =>
       f ? new TranscriptTail(f) : undefined,
@@ -517,3 +593,10 @@ export class VoiceSession extends EventEmitter<{
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Whether Claude Code's input line shows nothing typed (so a tap starts dictation). */
+export function promptIsEmpty(lines: string[]): boolean {
+  const prompt = lines.find((l) => /^[\s│|]*>\s/.test(l) || /^[\s│|]*>$/.test(l));
+  if (!prompt) return false;
+  return /^[\s│|]*>[\s│|]*$/.test(prompt);
+}

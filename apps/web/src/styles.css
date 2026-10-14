@@ -2111,3 +2111,15 @@ a {
   color: #e6e8ec;
   border-color: #3a3f48;
 }
+
+.pc-bar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pc-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}

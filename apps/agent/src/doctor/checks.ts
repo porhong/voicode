@@ -34,6 +34,7 @@ import {
   INSTALL_HINT,
   tunnelSetupProblem,
 } from '../tunnel/cloudflared.js';
+import { consoleAttachStatus } from '../claude/console-attach.js';
 import { loadPtySpawn } from '../claude/pty-session.js';
 import { virtualMicSetupHint, windowsAudioHelper } from '../voice/resolve-driver.js';
 
@@ -158,6 +159,15 @@ export async function runChecks(
     const voice = await checkClaudeVoice();
     if (voice) add(voice);
     add(checkPty());
+    const control = consoleAttachStatus();
+    add({
+      name: 'Terminal control',
+      status: control.available ? 'ok' : 'warn',
+      detail: control.available
+        ? 'can take over a Claude Code running in a terminal'
+        : (control.reason ?? 'unavailable'),
+      fix: control.available ? undefined : 'Use "Continue as copy" on the phone instead',
+    });
   }
 
   // TLS ------------------------------------------------------------------------

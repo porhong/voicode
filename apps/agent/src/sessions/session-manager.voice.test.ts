@@ -25,8 +25,9 @@ class FakePty implements PtyHandle {
     this.written += data;
   }
   resize(): void {}
+  killed = false;
   kill(): void {
-    this.exitListener?.({ exitCode: 137 });
+    this.killed = true;
   }
   /** Claude Code output; `\x1b[2J\x1b[H` first clears the screen. */
   show(screen: string): void {
@@ -41,6 +42,8 @@ let home: string;
 let claudeDir: string;
 let manager: SessionManager;
 let pty: FakePty;
+let attached: FakePty;
+let attachedPid: number | undefined;
 let spawned: { file: string; args: string[]; env: NodeJS.ProcessEnv } | undefined;
 const summaries: SessionSummary[] = [];
 const requests: PermissionRequest[] = [];
@@ -61,12 +64,18 @@ beforeAll(async () => {
   await addProject(config, home, 'proj');
   config.projects[0]!.id = 'p1';
   pty = new FakePty();
+  attached = new FakePty();
+  attached.pid = 5151;
   manager = new SessionManager(config, silentLogger(), undefined, {
     claudeDir,
     claudePath: 'C:/fake/claude.exe',
     spawn: (file, args, options) => {
       spawned = { file, args, env: options.env };
       return pty;
+    },
+    attach: async (pid) => {
+      attachedPid = pid;
+      return attached;
     },
   });
   manager.on('session', (s) => summaries.push(s));
@@ -207,6 +216,48 @@ describe('voice sessions', () => {
         JSON.stringify({ session_id: 'someone-else', tool_name: 'Bash', tool_input: {} }),
       ),
     ).toBeUndefined();
+  });
+
+  it('takes control of a terminal session: dictation on, waits shown, detach on close', async () => {
+    expect(manager.pcControlStatus()).toEqual({ available: true });
+    const pc = {
+      sessionId: 'term-1',
+      pid: 5151,
+      cwd: home,
+      folder: 'proj',
+      status: 'idle' as const,
+      projectId: 'p1',
+    };
+    const session = await manager.controlPc(pc);
+    expect(attachedPid).toBe(5151);
+    expect(session.summary()).toMatchObject({
+      kind: 'voice',
+      attached: true,
+      claudeSessionId: 'term-1',
+    });
+    await expect(manager.controlPc(pc)).rejects.toThrow(/already controlled/);
+
+    // Dictation is off and the prompt is empty: the agent turns it on.
+    attached.show('│ > │\n  ? for shortcuts');
+    await until(() => attached.written.includes('/voice tap\r'), 4_000);
+    attached.show('│ > │\n  hold space to speak');
+    await until(() => session.summary().voice?.state === 'idle');
+
+    await writeFile(
+      path.join(claudeDir, 'sessions', '5151.json'),
+      JSON.stringify({ pid: 5151, sessionId: 'term-1', cwd: home, status: 'waiting_for_input' }),
+    );
+    await until(() => session.summary().state === 'awaiting_permission');
+    await writeFile(
+      path.join(claudeDir, 'sessions', '5151.json'),
+      JSON.stringify({ pid: 5151, sessionId: 'term-1', cwd: home, status: 'idle' }),
+    );
+    await until(() => session.summary().state === 'idle');
+
+    attached.written = '';
+    manager.close(session.id);
+    expect(attached.written).not.toContain('/exit');
+    expect(session.summary().state).toBe('closed');
   });
 
   it('types prompts as a paste and closes with /exit', async () => {

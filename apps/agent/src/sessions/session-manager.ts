@@ -3,13 +3,24 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { listSessions, type query } from '@anthropic-ai/claude-agent-sdk';
-import type { HistoricSession, PermissionRequest, SessionSummary } from '@voicecode/protocol';
+import type {
+  HistoricSession,
+  PcSession,
+  PermissionRequest,
+  SessionSummary,
+} from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
 import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
 import { ClaudeSession, type SessionEventRecord } from '../claude/claude-session.js';
 import { HookServer, type HookDecision, type PreToolUseEvent } from '../claude/hook-server.js';
-import { hookCommandLine, VoiceSession, type PtySpawn } from '../claude/pty-session.js';
+import { attachConsole, consoleAttachStatus } from '../claude/console-attach.js';
+import {
+  hookCommandLine,
+  VoiceSession,
+  type PtyHandle,
+  type PtySpawn,
+} from '../claude/pty-session.js';
 
 /** A phone session, driven through the SDK or hosted in a terminal for dictation. */
 export type ManagedSession = ClaudeSession | VoiceSession;
@@ -68,7 +79,12 @@ export class SessionManager extends EventEmitter<{
     private readonly logger: Logger,
     private readonly queryFn?: typeof query,
     /** Injection points for tests of voice sessions. */
-    private readonly voiceDeps: { spawn?: PtySpawn; claudePath?: string; claudeDir?: string } = {},
+    private readonly voiceDeps: {
+      spawn?: PtySpawn;
+      claudePath?: string;
+      claudeDir?: string;
+      attach?: (pid: number) => Promise<PtyHandle>;
+    } = {},
   ) {
     super();
     this.broker = new ApprovalBroker({ timeoutMs: config.claude.approvalTimeoutMs });
@@ -151,13 +167,64 @@ export class SessionManager extends EventEmitter<{
       broker: this.broker,
       logger: this.logger.child({ session: project.name, kind: 'voice' }),
       hook: { url: hooks.url, token: hooks.token, command: hookCommandLine() },
-      ...this.voiceDeps,
+      spawn: this.voiceDeps.spawn,
+      claudePath: this.voiceDeps.claudePath,
+      claudeDir: this.voiceDeps.claudeDir,
     });
     this.track(session);
     session.on('terminal', (data) => this.emit('terminal', session.id, data));
     session.on('exit', (code) => this.emit('terminalExit', session.id, code));
     session.start();
     this.logger.info({ project: project.path, resume }, 'claude voice session started');
+    return session;
+  }
+
+  /** Whether `controlPc` can work on this PC. */
+  pcControlStatus(): { available: boolean; reason?: string } {
+    return this.voiceDeps.attach ? { available: true } : consoleAttachStatus();
+  }
+
+  /**
+   * Takes control of a Claude Code running in the user's terminal: the phone's dictation,
+   * prompts and keys go to that process through its console, and its transcript is
+   * followed like a hosted session's. Nothing is forked; closing only detaches.
+   */
+  async controlPc(pc: PcSession): Promise<VoiceSession> {
+    const status = this.pcControlStatus();
+    if (!status.available) throw new SessionError('bad_request', status.reason ?? 'unavailable');
+    const project = this.projectForFolder(pc.cwd);
+    if (!project)
+      throw new SessionError('folder_not_allowed', `${pc.cwd} is not an allowed folder`);
+    const taken = [...this.sessions.values()].some(
+      (s) => !s.isClosed && s.summary().claudeSessionId === pc.sessionId,
+    );
+    if (taken)
+      throw new SessionError('session_busy', 'That terminal session is already controlled');
+    this.checkCapacity();
+    const attach = this.voiceDeps.attach ?? ((pid) => attachConsole(pid, this.logger));
+    let handle: PtyHandle;
+    try {
+      handle = await attach(pc.pid);
+    } catch (err) {
+      throw new SessionError(
+        'bad_request',
+        `Could not attach to the terminal: ${(err as Error).message}`,
+      );
+    }
+    const session = new VoiceSession({
+      id: randomUUID(),
+      project,
+      config: this.config.claude,
+      broker: this.broker,
+      logger: this.logger.child({ session: project.name, kind: 'voice', pid: pc.pid }),
+      attach: { pid: pc.pid, claudeSessionId: pc.sessionId, handle },
+      claudeDir: this.voiceDeps.claudeDir,
+    });
+    this.track(session);
+    session.on('terminal', (data) => this.emit('terminal', session.id, data));
+    session.on('exit', (code) => this.emit('terminalExit', session.id, code));
+    session.start();
+    this.logger.info({ project: project.path, pid: pc.pid }, 'took control of a terminal session');
     return session;
   }
 

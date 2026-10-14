@@ -48,6 +48,8 @@ export interface AppState {
   mouse: { status: MouseStatus; youHoldLease: boolean };
   /** The PC's virtual microphone for Claude Code dictation, and whether we stream to it. */
   voiceMic: { status: VoiceMicStatus; youHoldLease: boolean };
+  /** Whether the agent can take over a Claude Code running in a terminal on the PC. */
+  pcControl: { available: boolean; reason?: string };
   history: Record<string, HistoricSession[]>;
   /** Claude sessions running elsewhere on the PC (terminals), read-only. */
   pcSessions: PcSession[];
@@ -69,6 +71,7 @@ export const initialState: AppState = {
   permissions: {},
   mouse: { status: { available: false, driver: 'none' }, youHoldLease: false },
   voiceMic: { status: { available: false, driver: 'none' }, youHoldLease: false },
+  pcControl: { available: false },
   history: {},
   pcSessions: [],
   pcEvents: {},
@@ -128,6 +131,7 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
           status: msg.voiceMic ?? { available: false, driver: 'none', reason: 'older agent' },
           youHoldLease: false,
         },
+        pcControl: msg.pcControl ?? { available: false, reason: 'older agent' },
         // Permissions are re-sent right after welcome.
         permissions: {},
         protocolMismatch: msg.protocolVersion !== PROTOCOL_VERSION,

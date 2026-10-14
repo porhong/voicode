@@ -256,6 +256,7 @@ export class WsGateway {
       pcSessions: this.deps.pcSessions?.list() ?? [],
       mouse: router.status(),
       voiceMic: mic.status(),
+      pcControl: sessions.pcControlStatus(),
     });
     for (const request of sessions.broker.pendingFor()) {
       this.send(conn, { type: 'claude.permission.request', request });
@@ -405,6 +406,20 @@ export class WsGateway {
         }
         conn.pcSubscription = undefined;
         const session = sessions.start(project.id, pc.sessionId, { fork: true });
+        return this.sendSnapshot(conn, session.id);
+      }
+
+      case 'pc.session.control': {
+        const pc = this.deps.pcSessions?.get(msg.sessionId);
+        if (!pc) throw new SessionError('not_found', 'That session is no longer running on the PC');
+        if (!sessions.projectForFolder(pc.cwd)) {
+          if (!msg.allowFolder || !this.deps.allowFolder) {
+            throw new SessionError('folder_not_allowed', `${pc.cwd} is not an allowed folder`);
+          }
+          await this.deps.allowFolder(pc.cwd, conn.device.name);
+        }
+        conn.pcSubscription = undefined;
+        const session = await sessions.controlPc(pc);
         return this.sendSnapshot(conn, session.id);
       }
 

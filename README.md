@@ -312,6 +312,14 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
     agent; reads such as `Read`/`Grep` pass without asking, as in the CLI). The
     **Terminal** button shows the raw CLI for what only it can do: the folder-trust
     question on a new project, `/login`, or a prompt the hook did not cover.
+  - Already have Claude Code open in a terminal? Pick it under **On this PC** and tap
+    **Take control** (Windows): the agent attaches to that process's console through
+    `voicecode-console.exe`, turns on `/voice tap` there if needed, and from then on your
+    dictation, typed prompts and the terminal keys go to the Claude Code in your
+    terminal, whose screen is mirrored on the phone. Approvals it asks for show up in
+    the terminal view (it opens by itself) and are answered with the keys. Closing the
+    session on the phone only detaches. **Continue as copy** is the old behaviour: a
+    fork of the conversation in a new phone session.
 
 ## Development
 

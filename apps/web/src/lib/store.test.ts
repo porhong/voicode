@@ -16,6 +16,7 @@ const welcome = (protocolVersion = PROTOCOL_VERSION): ServerMessage => ({
   pcSessions: [{ sessionId: 'pc1', pid: 10, cwd: '/term', folder: 'term', status: 'working' }],
   mouse: { available: true, driver: 'fake' },
   voiceMic: { available: true, driver: 'fake-mic', device: 'Fake Cable' },
+  pcControl: { available: true },
 });
 
 const request: PermissionRequest = {

@@ -112,6 +112,15 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     sessionId: id,
     allowFolder: z.boolean().optional(),
   }),
+  /**
+   * Take control of a PC session: the agent attaches to its console, so the phone's
+   * dictation, prompts and keys go to the Claude Code already running in the terminal.
+   */
+  z.object({
+    type: z.literal('pc.session.control'),
+    sessionId: id,
+    allowFolder: z.boolean().optional(),
+  }),
   z.object({
     type: z.literal('claude.permission.respond'),
     sessionId: id,
