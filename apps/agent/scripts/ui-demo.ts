@@ -6,7 +6,7 @@
 // Every prompt gets a short Markdown reply after one Bash approval. A pairing code is
 // printed at start, and GET /demo/pair-code (from this machine) issues a fresh one for
 // scripted runs. State lives in a temporary directory that is removed on exit.
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type {
@@ -18,6 +18,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import { addProject, ConfigSchema } from '../src/config/config.js';
 import { resolvePaths } from '../src/config/paths.js';
+import { listRootFolder, resolveRootFolder } from '../src/config/workspace-roots.js';
 import { InputRouter } from '../src/mouse/input-router.js';
 import { DeviceRegistry } from '../src/pairing/device-registry.js';
 import { PairingService } from '../src/pairing/pairing-service.js';
@@ -118,6 +119,12 @@ const config = ConfigSchema.parse({
     { id: 'demo2', name: 'website', path: home },
   ],
 });
+// A workspace folder with a few projects for the "Open a folder" browser.
+const workspace = path.join(home, 'code');
+for (const dir of ['api-server/.git', 'mobile-app/.git', 'scratch', 'website/.git']) {
+  await mkdir(path.join(workspace, dir), { recursive: true });
+}
+config.roots = [await realpath(workspace)];
 const sessions = new SessionManager(config, logger, demoQuery);
 
 // A pretend Claude session in a terminal, in a folder that is not allow-listed. It
@@ -193,6 +200,15 @@ const gateway = new WsGateway({
     const project = await addProject(config, dir);
     gateway.broadcastProjects(config.projects);
     return project;
+  },
+  folders: {
+    roots: () => config.roots,
+    list: (dir) => listRootFolder(config, dir),
+    open: async (dir) => {
+      const project = await addProject(config, await resolveRootFolder(dir, config.roots));
+      gateway.broadcastProjects(config.projects);
+      return project;
+    },
   },
 });
 const app = await buildServer({

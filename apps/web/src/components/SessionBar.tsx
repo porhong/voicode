@@ -37,6 +37,8 @@ interface Props {
   onSelect: (sessionId: string) => void;
   /** Opens a Claude session running elsewhere on the PC (read-only view). */
   onSelectPc: (sessionId: string) => void;
+  /** Opens the workspace folder browser; absent when the PC has no workspace folders. */
+  onOpenFolder?: () => void;
   sheetOpen: boolean;
   onSheetOpenChange: (open: boolean) => void;
 }
@@ -50,6 +52,7 @@ export function SessionBar({
   send,
   onSelect,
   onSelectPc,
+  onOpenFolder,
   disabled = false,
   sheetOpen,
   onSheetOpenChange,
@@ -156,6 +159,13 @@ export function SessionBar({
             onSelectPc(id);
             onSheetOpenChange(false);
           }}
+          onOpenFolder={
+            onOpenFolder &&
+            (() => {
+              onSheetOpenChange(false);
+              onOpenFolder();
+            })
+          }
           onClose={() => onSheetOpenChange(false)}
         />
       )}
@@ -169,6 +179,7 @@ function SessionSheet({
   disabled,
   onSelect,
   onSelectPc,
+  onOpenFolder,
   onClose,
 }: {
   state: AppState;
@@ -176,6 +187,7 @@ function SessionSheet({
   disabled: boolean;
   onSelect: (sessionId: string) => void;
   onSelectPc: (sessionId: string) => void;
+  onOpenFolder?: () => void;
   onClose: () => void;
 }) {
   const active =
@@ -203,11 +215,22 @@ function SessionSheet({
             send({ type: 'claude.session.start', projectId });
             onClose();
           }}
+          onOpenFolder={onOpenFolder}
+        />
+      ) : onOpenFolder ? (
+        <StartSession
+          projects={[]}
+          projectId=""
+          onProjectChange={() => undefined}
+          disabled={disabled}
+          onStart={() => undefined}
+          onOpenFolder={onOpenFolder}
         />
       ) : (
         <p className="small muted">
           No project folders are allowed yet. Continue a PC session below to allow its folder, or
-          run <code>voicecode-agent projects add &lt;dir&gt;</code> on the PC.
+          run <code>voicecode-agent roots add &lt;dir&gt;</code> on the PC to pick projects from
+          here.
         </p>
       )}
 
@@ -309,12 +332,15 @@ export function StartSession({
   projectId,
   onProjectChange,
   onStart,
+  onOpenFolder,
   disabled,
 }: {
   projects: ProjectInfo[];
   projectId: string;
   onProjectChange: (id: string) => void;
   onStart: () => void;
+  /** Offers the workspace folder browser as well (or instead, with no projects yet). */
+  onOpenFolder?: () => void;
   disabled: boolean;
 }) {
   return (
@@ -335,10 +361,21 @@ export function StartSession({
           </select>
         </label>
       )}
-      <button className="btn btn-primary btn-block" disabled={disabled} onClick={onStart}>
-        <PlusIcon size={20} /> New session
-        {projects.length === 1 ? ` in ${projects[0]!.name}` : ''}
-      </button>
+      {projects.length > 0 && (
+        <button className="btn btn-primary btn-block" disabled={disabled} onClick={onStart}>
+          <PlusIcon size={20} /> New session
+          {projects.length === 1 ? ` in ${projects[0]!.name}` : ''}
+        </button>
+      )}
+      {onOpenFolder && (
+        <button
+          className={projects.length ? 'btn btn-block' : 'btn btn-primary btn-block'}
+          disabled={disabled}
+          onClick={onOpenFolder}
+        >
+          Open a folder on the PC…
+        </button>
+      )}
     </div>
   );
 }

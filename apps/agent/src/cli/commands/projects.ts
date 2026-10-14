@@ -3,7 +3,8 @@ import pc from 'picocolors';
 import { addProject, loadConfig, saveConfig } from '../../config/config.js';
 import { resolvePaths, type AgentPaths } from '../../config/paths.js';
 import { AgentNotRunningError, controlRequest } from '../../ipc/control.js';
-import { loadOrInit, warnAboutAutoApprovals } from '../shared.js';
+import { removeRoot } from '../../config/workspace-roots.js';
+import { allowRoot, expandHome, loadOrInit, warnAboutAutoApprovals } from '../shared.js';
 import { ok, out } from '../ui.js';
 
 /** Tells a running agent to re-read the allow-list; a no-op when none is running. */
@@ -57,6 +58,46 @@ export function registerProjects(program: Command): void {
       if (config.projects.length === before) throw new Error(`No project named ${key}`);
       await saveConfig(paths.config, config);
       out(ok(`Removed ${key}`));
+      await applyToRunningAgent(paths);
+    });
+}
+
+export function registerRoots(program: Command): void {
+  const roots = program
+    .command('roots')
+    .description('Manage workspace folders: any folder inside one can be opened from a device');
+
+  roots
+    .command('list', { isDefault: true })
+    .description('List workspace folders')
+    .action(async () => {
+      const config = await loadConfig(resolvePaths().config);
+      if (!config?.roots.length) {
+        return out('No workspace folders. Add one with `voicecode-agent roots add <dir>`.');
+      }
+      for (const root of config.roots) out(root);
+    });
+
+  roots
+    .command('add <dir>')
+    .description('Let devices open any folder inside <dir> as a project')
+    .action(async (dir: string) => {
+      const paths = resolvePaths();
+      const { config } = await loadOrInit(paths);
+      await allowRoot(config, dir);
+      await saveConfig(paths.config, config);
+      await applyToRunningAgent(paths);
+    });
+
+  roots
+    .command('remove <dir>')
+    .description('Stop offering a workspace folder (projects already opened stay allowed)')
+    .action(async (dir: string) => {
+      const paths = resolvePaths();
+      const { config } = await loadOrInit(paths);
+      if (!removeRoot(config, expandHome(dir))) throw new Error(`${dir} is not a workspace folder`);
+      await saveConfig(paths.config, config);
+      out(ok(`Removed ${dir}`));
       await applyToRunningAgent(paths);
     });
 }

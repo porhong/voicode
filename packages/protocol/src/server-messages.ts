@@ -12,6 +12,27 @@ export interface ProjectInfo {
   path: string;
 }
 
+/** A folder in the workspace-root browser. */
+export interface FolderEntry {
+  name: string;
+  /** Absolute, canonical path on the agent machine. */
+  path: string;
+  /** Already on the allow-list. */
+  isProject: boolean;
+  /** Has a `.git` folder: most likely a project. */
+  isRepo: boolean;
+}
+
+export interface FolderListing {
+  /** The folder listed; absent for the list of workspace roots themselves. */
+  path?: string;
+  /** One level up, when that is still inside a root. */
+  parent?: string;
+  entries: FolderEntry[];
+  /** Some subfolders were left out (very large folder). */
+  truncated: boolean;
+}
+
 export interface SessionSummary {
   id: string;
   projectId: string;
@@ -106,12 +127,15 @@ export type ServerMessage =
       device: { id: string; name: string };
       agent: { version: string; hostname: string; platform: string };
       projects: ProjectInfo[];
+      /** Workspace roots; when not empty the device can browse them for a folder. */
+      roots: string[];
       sessions: SessionSummary[];
       pcSessions: PcSession[];
       mouse: MouseStatus;
     }
   | { type: 'pong'; t: number; serverTime: number }
-  | { type: 'projects'; projects: ProjectInfo[] }
+  | { type: 'projects'; projects: ProjectInfo[]; roots: string[] }
+  | ({ type: 'folders.list' } & FolderListing)
   | { type: 'error'; code: ErrorCode; message: string; ref?: string }
 
   // --- Mouse ---------------------------------------------------------------

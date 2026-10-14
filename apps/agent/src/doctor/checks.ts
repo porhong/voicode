@@ -76,12 +76,26 @@ export async function runChecks(
     });
   } else {
     add({ name: 'Config', status: 'ok', detail: paths.config });
-    if (config.projects.length === 0) {
+    if (config.projects.length === 0 && config.roots.length === 0) {
       add({
         name: 'Projects',
         status: 'warn',
-        detail: 'no allowed project directories',
-        fix: 'Run `voicecode-agent projects add <dir>` or start with --project',
+        detail: 'no project or workspace folders',
+        fix: 'Run `voicecode-agent roots add <dir>` (a folder of projects) or `projects add <dir>`',
+      });
+    }
+    for (const root of config.roots) {
+      const ok = await stat(root).then(
+        (s) => s.isDirectory(),
+        () => false,
+      );
+      add({
+        name: 'Workspace',
+        status: ok ? 'ok' : 'warn',
+        detail: root,
+        fix: ok
+          ? undefined
+          : 'Folder no longer exists; remove it with `voicecode-agent roots remove`',
       });
     }
     for (const project of config.projects) {

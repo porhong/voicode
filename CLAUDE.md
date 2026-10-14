@@ -17,7 +17,8 @@ through native input helpers. Shipped on npm and as standalone executables (Node
 packages/protocol   zod wire schemas + types shared by agent and web (PROTOCOL_VERSION)
 packages/security   pairing codes, secret hashing, local CA (@peculiar/x509)
 apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
-  src/cli/commands  init start status pair devices sessions projects tunnel autostart firewall doctor stop
+  src/cli/commands  init start (default) status pair devices sessions projects roots tunnel autostart firewall doctor stop
+  src/config        config schema, project allow-list, workspace roots (folders a device may open)
   src/server        Fastify app, origin/host guard, cookie auth, WebSocket gateway
   src/claude        ClaudeSession (SDK query), ApprovalBroker (canUseTool), claude-executable (SEA download)
   src/tunnel        cloudflared config + process supervisor (optional Cloudflare Tunnel)
@@ -99,6 +100,12 @@ Done and verified:
 - Deck layout for the Claude tab (Codex Micro style: programmable keys, dial, joystick,
   push-to-talk; `components/Deck*.tsx`, `hooks/useDeck.ts`) checked the same way;
   real-phone touch feel (dial, joystick, hold-to-talk) is not verified yet.
+- Global use: bare `voicecode-agent` starts from any folder and sets up on first run
+  (asks for a workspace folder on a TTY). Workspace roots let the phone browse and open
+  any non-hidden folder inside them (`config/workspace-roots.ts`, `FolderSheet.tsx`);
+  paths are realpath'd and checked against the roots on the agent. Verified with the
+  CLI from a temp folder and the UI demo; the interactive prompt itself was not driven
+  in a test.
 
 Not verified yet:
 

@@ -11,6 +11,7 @@ const welcome = (protocolVersion = PROTOCOL_VERSION): ServerMessage => ({
   device: { id: 'd1', name: 'Phone' },
   agent: { version: '0.1.0', hostname: 'pc', platform: 'win32' },
   projects: [{ id: 'p1', name: 'app', path: '/app' }],
+  roots: ['/code'],
   sessions: [{ id: 's1', projectId: 'p1', state: 'idle', createdAt: 1 }],
   pcSessions: [{ sessionId: 'pc1', pid: 10, cwd: '/term', folder: 'term', status: 'working' }],
   mouse: { available: true, driver: 'fake' },
@@ -39,8 +40,10 @@ describe('app state', () => {
     const s = apply(apply(initialState, welcome()), {
       type: 'projects',
       projects: [{ id: 'p2', name: 'other', path: '/other' }],
+      roots: ['/code', '/work'],
     });
     expect(s.projects.map((p) => p.id)).toEqual(['p2']);
+    expect(s.roots).toEqual(['/code', '/work']);
   });
 
   it('accumulates streamed text and clears it when the final message arrives', () => {

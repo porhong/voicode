@@ -2,7 +2,7 @@
  * Bump when a change to the wire format is not backwards compatible.
  * The agent rejects clients that speak a different major version.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** WebSocket endpoint path served by the agent. */
 export const WS_PATH = '/ws';
@@ -22,6 +22,8 @@ export const LIMITS = {
   maxFrameBytes: 64 * 1024,
   /** Max length of a device name. */
   maxDeviceNameLength: 64,
+  /** Max length of a folder path sent by a device. */
+  maxPathLength: 4096,
 } as const;
 
 export const MOUSE_BUTTONS = ['left', 'right', 'middle'] as const;

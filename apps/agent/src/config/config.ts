@@ -26,6 +26,12 @@ export const ConfigSchema = z.object({
     })
     .prefault({}),
   projects: z.array(ProjectSchema).default([]),
+  /**
+   * Workspace roots: parent folders (canonical paths) whose subfolders a paired device
+   * may open as projects without adding each one here first. Every tool call still
+   * needs approval on the phone.
+   */
+  roots: z.array(z.string().min(1)).default([]),
   mouse: z
     .object({
       driver: z

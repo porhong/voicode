@@ -3,6 +3,7 @@ import type { ServerMessage } from '@voicecode/protocol';
 import { Composer, type ComposerHandle } from '../components/Composer';
 import { Deck, type DeckStatus } from '../components/Deck';
 import { DeckEditor } from '../components/DeckEditor';
+import { FolderSheet } from '../components/FolderSheet';
 import { ChatIcon, DeckPadIcon, GearIcon } from '../components/Icons';
 import { PermissionCard } from '../components/PermissionCard';
 import { SessionBar, StartSession, useProjectChoice } from '../components/SessionBar';
@@ -45,6 +46,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const transcriptRef = useRef<TranscriptHandle>(null);
   const [deck, saveDeck] = useDeck();
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
+  const [foldersOpen, setFoldersOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const deckMode = settings.claudeLayout === 'deck';
 
@@ -142,6 +144,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const otherPermissions = permissions.length - activePermissions.length;
   const live = active && active.state !== 'closed' && active.state !== 'error';
   const [startProjectId, setStartProjectId] = useProjectChoice(state.projects, active?.projectId);
+  const openFolder = state.roots.length ? () => setFoldersOpen(true) : undefined;
   const startSession = (projectId: string) => send({ type: 'claude.session.start', projectId });
 
   // A short buzz when a new approval arrives, so a phone in hand notices it.
@@ -166,6 +169,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
         onProjectChange={setStartProjectId}
         disabled={connection !== 'open'}
         onStart={() => startSession(startProjectId)}
+        onOpenFolder={openFolder}
       />
       <button className="link" onClick={() => setSessionsOpen(true)}>
         Resume an earlier session
@@ -227,6 +231,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const newSession = () => {
     const projectId = active?.projectId ?? startProjectId;
     if (projectId) startSession(projectId);
+    else if (openFolder) openFolder();
     else setSessionsOpen(true);
   };
 
@@ -311,6 +316,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               onSheetOpenChange={setSessionsOpen}
               onSelect={openSession}
               onSelectPc={openPcSession}
+              onOpenFolder={openFolder}
             />
             {pcId ? (
               <Transcript
@@ -454,6 +460,15 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       )}
 
       <Toasts toasts={state.toasts} onOpen={openToast} onDismiss={dismissToast} />
+
+      {foldersOpen && (
+        <FolderSheet
+          state={state}
+          send={send}
+          disabled={connection !== 'open'}
+          onClose={() => setFoldersOpen(false)}
+        />
+      )}
 
       {deckEditorOpen && (
         <DeckEditor deck={deck} onChange={saveDeck} onClose={() => setDeckEditorOpen(false)} />

@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import { VERSION } from '../util/version.js';
 import { registerDevices, registerPair } from './commands/devices.js';
 import { registerInit } from './commands/init.js';
-import { registerProjects } from './commands/projects.js';
+import { registerProjects, registerRoots } from './commands/projects.js';
 import { registerStart } from './commands/start.js';
 import { registerStatus } from './commands/status.js';
 import { registerSystem } from './commands/system.js';
@@ -23,6 +23,7 @@ registerStatus(program);
 registerPair(program);
 registerDevices(program);
 registerProjects(program);
+registerRoots(program);
 registerTunnel(program);
 registerSystem(program);
 

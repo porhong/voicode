@@ -1,6 +1,7 @@
 import {
   PROTOCOL_VERSION,
   type ClaudeEvent,
+  type FolderListing,
   type HistoricSession,
   type MouseStatus,
   type PcSession,
@@ -33,6 +34,10 @@ export interface AppState {
   device?: { id: string; name: string };
   agent?: { version: string; hostname: string; platform: string };
   projects: ProjectInfo[];
+  /** Workspace folders on the PC whose subfolders can be opened from here. */
+  roots: string[];
+  /** The latest folder-browser listing (one level). */
+  folders?: FolderListing;
   sessions: Record<string, SessionSummary>;
   activeSessionId?: string;
   events: Record<string, EventItem[]>;
@@ -54,6 +59,7 @@ export interface AppState {
 
 export const initialState: AppState = {
   projects: [],
+  roots: [],
   sessions: {},
   events: {},
   streaming: {},
@@ -109,6 +115,7 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
         device: msg.device,
         agent: msg.agent,
         projects: msg.projects,
+        roots: msg.roots ?? [],
         sessions,
         activeSessionId: active,
         pcSessions: msg.pcSessions ?? [],
@@ -121,7 +128,11 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
     case 'pong':
       return state;
     case 'projects':
-      return { ...state, projects: msg.projects };
+      return { ...state, projects: msg.projects, roots: msg.roots ?? state.roots };
+    case 'folders.list': {
+      const { type: _type, ...listing } = msg;
+      return { ...state, folders: listing };
+    }
     case 'error':
       return { ...state, error: { message: msg.message, at: Date.now() } };
 

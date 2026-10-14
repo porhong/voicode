@@ -7,6 +7,7 @@ import WebSocket from 'ws';
 import type { ServerMessage } from '@voicecode/protocol';
 import { addProject, ConfigSchema } from '../config/config.js';
 import { resolvePaths } from '../config/paths.js';
+import { listRootFolder, resolveRootFolder } from '../config/workspace-roots.js';
 import { InputRouter } from '../mouse/input-router.js';
 import { DeviceRegistry } from '../pairing/device-registry.js';
 import { PairingService } from '../pairing/pairing-service.js';
@@ -30,6 +31,7 @@ const tunnelHosts = new Set<string>();
 // A Claude session running in a terminal, in a folder that is not allow-listed.
 let pcWatcher: PcSessionWatcher;
 let pcCwd: string;
+let workspace: string;
 let pcTranscript: string;
 let registerPc: (status: string) => Promise<void>;
 /** A device paired by the tunnel test, reused where a separate device isn't needed. */
@@ -162,6 +164,13 @@ beforeAll(async () => {
       JSON.stringify({ pid: process.pid, sessionId: 'term-1', cwd: pcCwd, status }),
     );
   await registerPc('busy');
+
+  // A workspace root with one repo, a plain folder and a hidden one.
+  workspace = path.join(home, 'workspace');
+  await mkdir(path.join(workspace, 'app-a', '.git'), { recursive: true });
+  await mkdir(path.join(workspace, 'notes'));
+  await mkdir(path.join(workspace, '.secrets'));
+  config.roots = [await realpath(workspace)];
   const sessionsRef = sessions;
   pcWatcher = new PcSessionWatcher({
     logger,
@@ -178,6 +187,11 @@ beforeAll(async () => {
     logger,
     pcSessions: pcWatcher,
     allowFolder: (dir) => addProject(config, dir),
+    folders: {
+      roots: () => config.roots,
+      list: (dir) => listRootFolder(config, dir),
+      open: async (dir) => addProject(config, await resolveRootFolder(dir, config.roots)),
+    },
   });
   app = await buildServer({ tls, logger, registry, pairing, gateway, tunnelHosts });
   await app.listen({ host: '127.0.0.1', port: 0 });
@@ -389,6 +403,39 @@ describe('WebSocket gateway', () => {
       forkSession: true,
     });
     expect(sessions.projectForFolder(pcCwd)?.id).toBe(started.session.projectId);
+    sessions.close(started.session.id);
+  });
+
+  it('browses workspace folders and starts Claude in one of them', async () => {
+    // The fake query is shared; later tests count its calls from zero.
+    onTestFinished(() => {
+      fake.control.permissionModeSets.length = 0;
+    });
+    const client = new Client(tunnelCookie);
+    const welcome = await client.waitFor('welcome');
+    const root = await realpath(workspace);
+    expect(welcome.roots).toEqual([root]);
+
+    client.send({ type: 'folders.list' });
+    const roots = await client.waitFor('folders.list');
+    expect(roots.entries.map((e) => e.path)).toEqual([root]);
+
+    client.send({ type: 'folders.list', path: root });
+    const listing = await client.waitFor('folders.list', (m) => m.path === root);
+    expect(listing.parent).toBeUndefined();
+    expect(listing.entries).toEqual([
+      expect.objectContaining({ name: 'app-a', isRepo: true, isProject: false }),
+      expect.objectContaining({ name: 'notes', isRepo: false }),
+    ]);
+
+    // Outside the roots is refused (hidden folders too: see workspace-roots.test.ts).
+    client.send({ type: 'folders.list', path: home });
+    await client.waitFor('error', (m) => m.code === 'folder_not_allowed');
+
+    client.send({ type: 'claude.folder.start', path: path.join(root, 'app-a') });
+    const started = await client.waitFor('claude.session.snapshot');
+    expect(fake.control.options).toMatchObject({ cwd: path.join(root, 'app-a') });
+    expect(sessions.projectForFolder(path.join(root, 'app-a'))?.id).toBe(started.session.projectId);
     sessions.close(started.session.id);
   });
 

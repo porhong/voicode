@@ -7,7 +7,13 @@ import { runChecks } from '../../doctor/checks.js';
 import { isAgentRunning } from '../../ipc/control.js';
 import { createLogger } from '../../util/logger.js';
 import { VERSION } from '../../util/version.js';
-import { loadOrInit, parsePort, prepareClaudeCode, warnAboutAutoApprovals } from '../shared.js';
+import {
+  loadOrInit,
+  parsePort,
+  prepareClaudeCode,
+  setUpWorkspace,
+  warnAboutAutoApprovals,
+} from '../shared.js';
 import {
   clean,
   fail,
@@ -24,6 +30,7 @@ import {
 
 interface StartOptions {
   project?: string;
+  root?: string;
   port?: number;
   host?: string;
   qr: boolean;
@@ -33,9 +40,12 @@ interface StartOptions {
 
 export function registerStart(program: Command): void {
   program
-    .command('start')
-    .description('Start the local HTTPS/WebSocket server')
+    // Also what a bare `voicecode-agent` runs, from any directory: everything it needs
+    // lives in the per-user config folder, created on first use.
+    .command('start', { isDefault: true })
+    .description('Start the local HTTPS/WebSocket server (the default command)')
     .option('-p, --project <dir>', 'allow (and remember) this project directory')
+    .option('-r, --root <dir>', 'allow (and remember) a workspace folder of projects')
     .option('--port <port>', 'HTTPS port for this run', parsePort)
     .option('--host <address>', 'bind address for this run')
     .option('--no-qr', 'do not print the pairing QR code')
@@ -47,22 +57,23 @@ export function registerStart(program: Command): void {
 
 async function start(opts: StartOptions): Promise<void> {
   const paths = resolvePaths();
-  const { config } = await loadOrInit(paths);
-  if (opts.project) {
-    const project = await addProject(config, opts.project);
-    await warnAboutAutoApprovals(project.path);
-    await saveConfig(paths.config, config);
-  }
-  if (opts.port) config.server.port = opts.port;
-  if (opts.host) config.server.host = opts.host;
-  if (opts.tunnel === false) config.tunnel.mode = 'off';
-  if (opts.tunnel === true && config.tunnel.mode === 'off') config.tunnel.mode = 'quick';
-
   if (await isAgentRunning(paths)) {
     out(fail('The agent is already running. Use `voicecode-agent status` or `stop`.'));
     process.exitCode = 1;
     return;
   }
+  const { config, created } = await loadOrInit(paths);
+  if (created) out(ok(`  First run: settings are kept in ${paths.home}`));
+  if (opts.project) {
+    const project = await addProject(config, opts.project);
+    await warnAboutAutoApprovals(project.path);
+    await saveConfig(paths.config, config);
+  }
+  if (await setUpWorkspace(config, opts.root)) await saveConfig(paths.config, config);
+  if (opts.port) config.server.port = opts.port;
+  if (opts.host) config.server.host = opts.host;
+  if (opts.tunnel === false) config.tunnel.mode = 'off';
+  if (opts.tunnel === true && config.tunnel.mode === 'off') config.tunnel.mode = 'quick';
 
   await prepareClaudeCode();
   const logger = createLogger({ file: paths.log, verbose: opts.verbose });
@@ -105,8 +116,10 @@ async function start(opts: StartOptions): Promise<void> {
   );
   row(
     'Projects',
-    info.projects.map((p) => p.name).join(', ') || warn('none — add one with --project'),
+    info.projects.map((p) => p.name).join(', ') ||
+      (config.roots.length ? pc.dim('none yet') : warn('none — add a folder with --root <dir>')),
   );
+  if (config.roots.length) row('Workspace', config.roots.join(', '));
   row('LAN URL', tunnelUrl ? lanUrl : pc.bold(lanUrl));
   for (const extra of info.urls.slice(1)) row('', extra);
   if (info.tunnel.mode !== 'off') row('Tunnel URL', describeTunnel(info.tunnel));

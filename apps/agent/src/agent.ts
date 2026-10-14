@@ -10,6 +10,7 @@ import {
   type ProjectConfig,
 } from './config/config.js';
 import type { AgentPaths } from './config/paths.js';
+import { listRootFolder, resolveRootFolder } from './config/workspace-roots.js';
 import { startControlServer } from './ipc/control.js';
 import { InputRouter } from './mouse/input-router.js';
 import { driverCandidates } from './mouse/resolve-driver.js';
@@ -131,6 +132,16 @@ export class Agent extends EventEmitter<{
     this.gateway = new WsGateway({
       pcSessions: this.pcSessions,
       allowFolder: (dir, deviceName) => this.allowFolder(dir, deviceName),
+      folders: {
+        roots: () => this.config.roots,
+        list: (dir) => listRootFolder(this.config, dir),
+        open: async (dir, deviceName) => {
+          const folder = await resolveRootFolder(dir, this.config.roots);
+          return (
+            this.sessions.projectForFolder(folder) ?? (await this.allowFolder(folder, deviceName))
+          );
+        },
+      },
       router: this.router,
       sessions: this.sessions,
       registry: this.registry,
@@ -286,8 +297,12 @@ export class Agent extends EventEmitter<{
         const fresh = await loadConfig(this.paths.config);
         if (!fresh) throw new Error('config file is missing');
         this.config.projects = fresh.projects;
+        this.config.roots = fresh.roots;
         this.gateway.broadcastProjects(fresh.projects);
-        this.logger.info({ projects: fresh.projects.map((p) => p.path) }, 'projects reloaded');
+        this.logger.info(
+          { projects: fresh.projects.map((p) => p.path), roots: fresh.roots },
+          'projects reloaded',
+        );
         return { projects: fresh.projects };
       },
       'POST /stop': () => {

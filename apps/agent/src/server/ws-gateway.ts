@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   type ClientMessage,
   type ErrorCode,
+  type FolderListing,
   type ServerMessage,
 } from '@voicecode/protocol';
 import type { InputRouter, ClientIdentity, RouterResult } from '../mouse/input-router.js';
@@ -56,6 +57,13 @@ export class WsGateway {
       pcSessions?: PcSessionWatcher;
       /** Adds a folder to the allow-list (after the user confirmed it on the phone). */
       allowFolder?: (dir: string, deviceName: string) => Promise<ProjectConfig>;
+      /** Workspace roots a device may browse and open folders in; omitted in tests. */
+      folders?: {
+        roots: () => string[];
+        list: (dir?: string) => Promise<FolderListing>;
+        /** Resolves a folder inside a root and allows it as a project. */
+        open: (dir: string, deviceName: string) => Promise<ProjectConfig>;
+      };
     },
   ) {
     const { router, sessions, registry, pcSessions } = deps;
@@ -214,6 +222,7 @@ export class WsGateway {
       device: { id: device.id, name: device.name },
       agent: { version: VERSION, hostname: os.hostname(), platform: process.platform },
       projects: sessions.projects.map(({ id, name, path }) => ({ id, name, path })),
+      roots: this.deps.folders?.roots() ?? [],
       sessions: sessions.list(),
       pcSessions: this.deps.pcSessions?.list() ?? [],
       mouse: router.status(),
@@ -227,6 +236,7 @@ export class WsGateway {
     this.broadcast({
       type: 'projects',
       projects: projects.map(({ id, name, path }) => ({ id, name, path })),
+      roots: this.deps.folders?.roots() ?? [],
     });
   }
 
@@ -322,6 +332,31 @@ export class WsGateway {
         }
         conn.pcSubscription = undefined;
         const session = sessions.start(project.id, pc.sessionId, { fork: true });
+        return this.sendSnapshot(conn, session.id);
+      }
+
+      case 'folders.list': {
+        const folders = this.deps.folders;
+        if (!folders)
+          throw new SessionError('folder_not_allowed', 'No workspace folders are set up');
+        try {
+          return this.send(conn, { type: 'folders.list', ...(await folders.list(msg.path)) });
+        } catch (err) {
+          throw new SessionError('folder_not_allowed', (err as Error).message);
+        }
+      }
+      case 'claude.folder.start': {
+        const folders = this.deps.folders;
+        if (!folders)
+          throw new SessionError('folder_not_allowed', 'No workspace folders are set up');
+        let project: ProjectConfig;
+        try {
+          project = await folders.open(msg.path, conn.device.name);
+        } catch (err) {
+          throw new SessionError('folder_not_allowed', (err as Error).message);
+        }
+        conn.pcSubscription = undefined;
+        const session = sessions.start(project.id);
         return this.sendSnapshot(conn, session.id);
       }
 
