@@ -8,6 +8,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import https from 'node:https';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,16 @@ const exe = path.resolve(
     ),
 );
 const withClaude = process.argv.includes('--with-claude');
-const port = String(40_000 + Math.floor(Math.random() * 20_000));
+// A port the OS hands out is free and outside Windows' excluded (Hyper-V) ranges, which
+// a random pick in the dynamic range can land in ("Not allowed to listen on …").
+const port = await new Promise((resolve, reject) => {
+  const probe = net.createServer();
+  probe.once('error', reject);
+  probe.listen(0, '127.0.0.1', () => {
+    const { port } = probe.address();
+    probe.close(() => resolve(String(port)));
+  });
+});
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'vc-smoke-'));
 const env = {
   ...process.env,
