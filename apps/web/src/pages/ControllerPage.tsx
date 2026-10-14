@@ -49,6 +49,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [foldersOpen, setFoldersOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const deckMode = settings.claudeLayout === 'deck';
+  /** The deck has the screen: the conversation is hidden, approvals still show. */
+  const deckFull = deckMode && !settings.deckHistory;
 
   const onMessage = useCallback(
     (message: ServerMessage) => dispatch({ type: 'server', message }),
@@ -203,6 +205,13 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   );
 
   const approval = activePermissions[0];
+  const replies = useMemo(
+    () =>
+      (pcId ? pcEvents : activeEvents).flatMap(({ event }) =>
+        event.kind === 'assistant_text' && event.text.trim() ? [event.text] : [],
+      ),
+    [pcId, pcEvents, activeEvents],
+  );
   const lastEvent = activeEvents[activeEvents.length - 1]?.event;
   const deckStatus: DeckStatus = pcId
     ? 'pc'
@@ -234,6 +243,14 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     else if (openFolder) openFolder();
     else setSessionsOpen(true);
   };
+  const claudeClass = [
+    'claude',
+    deckMode && 'claude-deck',
+    deckFull && 'claude-deck-full',
+    deckMode && activePermissions.length > 0 && 'claude-deck-approval',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div className="app">
@@ -306,7 +323,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       )}
 
       {tab === 'claude' ? (
-        <main className={deckMode ? 'claude claude-deck' : 'claude'}>
+        <main className={claudeClass}>
           <div className="claude-column">
             <SessionBar
               disabled={connection !== 'open'}
@@ -429,6 +446,9 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               approval={approval}
               micSupported={speechRecognitionSupported()}
               listening={canPrompt && listening}
+              full={deckFull}
+              replies={replies}
+              onToggleFull={() => updateSettings({ deckHistory: !settings.deckHistory })}
               onMacro={runMacro}
               onAccept={() => respond('allow')}
               onReject={() => respond('deny')}

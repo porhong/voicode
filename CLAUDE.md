@@ -104,7 +104,12 @@ Done and verified:
   `ui-demo.ts` screenshots at 390/360 px and landscape, dark and light.
 - Deck layout for the Claude tab (Codex Micro style: programmable keys, dial, joystick,
   push-to-talk; `components/Deck*.tsx`, `hooks/useDeck.ts`) checked the same way;
-  real-phone touch feel (dial, joystick, hold-to-talk) is not verified yet.
+  real-phone touch feel (dial, joystick, hold-to-talk) is not verified yet. Redrawn flat
+  on glass with a state-coloured light, a full-screen mode (conversation hidden, dial
+  pages replies on the display) and an orientation lock (`hooks/useOrientationLock.ts`);
+  all four portrait/landscape × full/normal layouts screenshotted dark and light. The
+  lock itself only works on Android (installed or fullscreen) and was not tried on a
+  phone.
 - Global use: bare `voicecode-agent` starts from any folder and sets up on first run
   (asks for a workspace folder on a TTY). Workspace roots let the phone browse and open
   any non-hidden folder inside them (`config/workspace-roots.ts`, `FolderSheet.tsx`);

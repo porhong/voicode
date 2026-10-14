@@ -78,6 +78,34 @@ export function ChatIcon({ size = 22 }: { size?: number }) {
   );
 }
 
+/** Expand the deck to the whole screen (hide the conversation). */
+export function ExpandIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" {...stroke} />
+    </svg>
+  );
+}
+
+/** Shrink the deck back under the conversation. */
+export function CollapseIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" {...stroke} />
+    </svg>
+  );
+}
+
+/** A phone turning on its side: screen orientation. */
+export function RotateIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <rect x="8" y="3" width="8" height="13" rx="1.6" {...stroke} />
+      <path d="M4 14a8 8 0 0 0 7 7M4 14l-1 3M4 14l3 1" {...stroke} />
+    </svg>
+  );
+}
+
 /** A small macro pad: the deck layout. */
 export function DeckPadIcon({ size = 22 }: { size?: number }) {
   return (

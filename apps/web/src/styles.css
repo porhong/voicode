@@ -1266,7 +1266,7 @@ a {
   cursor: pointer;
 }
 
-/* --- Deck layout (a macro pad after the Codex Micro) ------------------------------- */
+/* --- Deck layout: a flat macro pad on glass, lit by the session's state ------------ */
 
 .claude-column {
   flex: 1;
@@ -1280,331 +1280,591 @@ a {
   border-top: none;
 }
 
-.deck {
-  /* The frame's light follows the session; see [data-status] below. */
-  --glow: #5fd4e6;
-  --plate: color-mix(in srgb, var(--surface) 90%, #7aa7ff);
-  --cap: linear-gradient(180deg, #2c3039, #22262e);
-  --cap-edge: #111318;
-  --clear: color-mix(in srgb, #9fb4ff 14%, var(--surface-2));
-  --clear-edge: color-mix(in srgb, #9fb4ff 22%, #111318);
-  --clear-light: #9a9cff;
+/* Registered so the light fades between states instead of jumping. */
+@property --deck-light {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #4cc9e0;
+}
+
+.deck-wrap {
+  --deck-light: #4cc9e0;
+  --listen: #9d8cff;
+  --glass: color-mix(in srgb, var(--surface) 58%, transparent);
+  --glass-edge: rgb(255 255 255 / 0.1);
+  --key: rgb(255 255 255 / 0.055);
+  --key-edge: rgb(255 255 255 / 0.07);
+  --key-press: rgb(255 255 255 / 0.15);
+  --screen: rgb(0 0 0 / 0.24);
+  position: relative;
   flex: none;
+  display: flex;
+  flex-direction: column;
   margin: 0.4rem 0.6rem calc(0.5rem + var(--safe-bottom));
-  padding: 0.6rem;
-  border-radius: 22px;
-  background: var(--plate);
-  border: 1px solid color-mix(in srgb, var(--glow) 55%, var(--border));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--glow) 18%, transparent),
-    0 6px 22px color-mix(in srgb, var(--glow) 28%, transparent),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
-  transition:
-    border-color 0.4s ease,
-    box-shadow 0.4s ease;
+  transition: --deck-light 0.6s ease;
 }
 @media (prefers-color-scheme: light) {
-  .deck {
-    --plate: linear-gradient(180deg, #fbfcff, #eef1fb);
-    --cap: linear-gradient(180deg, #ffffff, #f0f1f5);
-    --cap-edge: #c9cdd8;
-    --clear: color-mix(in srgb, #8f9cff 12%, #ffffff);
-    --clear-edge: #c3c9ec;
-    --clear-light: #5b5fe0;
-  }
-}
-.deck[data-status='running'],
-.deck[data-status='starting'] {
-  --glow: var(--accent);
-  animation: deck-breathe 1.8s ease-in-out infinite;
-}
-.deck[data-status='awaiting_permission'] {
-  --glow: var(--warn);
-  animation: deck-breathe 1s ease-in-out infinite;
-}
-.deck[data-status='done'] {
-  --glow: var(--ok);
-}
-.deck[data-status='error'] {
-  --glow: var(--danger);
-}
-.deck[data-status='none'],
-.deck[data-status='closed'],
-.deck[data-status='pc'] {
-  --glow: var(--muted);
-}
-@keyframes deck-breathe {
-  50% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--glow) 40%, transparent),
-      0 6px 30px color-mix(in srgb, var(--glow) 55%, transparent),
-      inset 0 1px 0 rgb(255 255 255 / 0.06);
+  .deck-wrap {
+    --listen: #5b4bd8;
+    --glass: rgb(255 255 255 / 0.55);
+    --glass-edge: rgb(255 255 255 / 0.9);
+    --key: rgb(255 255 255 / 0.62);
+    --key-edge: rgb(30 30 60 / 0.08);
+    --key-press: rgb(255 255 255 / 0.95);
+    --screen: rgb(255 255 255 / 0.6);
   }
 }
 
+/* The light: ready is a calm cyan, work drifts, an approval pulses amber, done blooms
+   green once, an error holds red, dictation glows violet, no session is dim. */
+.deck-wrap[data-status='starting'],
+.deck-wrap[data-status='running'] {
+  --deck-light: var(--accent);
+}
+.deck-wrap[data-status='awaiting_permission'] {
+  --deck-light: var(--warn);
+}
+.deck-wrap[data-status='done'] {
+  --deck-light: #33c26b;
+}
+.deck-wrap[data-status='error'] {
+  --deck-light: var(--danger);
+}
+.deck-wrap[data-status='none'],
+.deck-wrap[data-status='closed'],
+.deck-wrap[data-status='pc'] {
+  --deck-light: #8a919e;
+}
+.deck-wrap[data-listening] {
+  --deck-light: var(--listen);
+}
+
+.deck-light {
+  position: absolute;
+  inset: 8% 5%;
+  pointer-events: none;
+  opacity: 0.5;
+  filter: blur(30px);
+  transition: opacity 0.6s ease;
+}
+.deck-light::before,
+.deck-light::after {
+  content: '';
+  position: absolute;
+  width: 70%;
+  height: 80%;
+  border-radius: 50%;
+  background: var(--deck-light);
+}
+.deck-light::before {
+  left: -4%;
+  bottom: -8%;
+}
+.deck-light::after {
+  right: -4%;
+  top: -8%;
+  background: color-mix(in oklab, var(--deck-light) 65%, #ffffff);
+  opacity: 0.7;
+}
+.deck-wrap[data-status='starting'] .deck-light {
+  animation: deck-pulse 2.4s ease-in-out infinite;
+}
+.deck-wrap[data-status='running'] .deck-light {
+  opacity: 0.75;
+}
+.deck-wrap[data-status='running'] .deck-light::before {
+  animation: deck-drift-a 6s ease-in-out infinite alternate;
+}
+.deck-wrap[data-status='running'] .deck-light::after {
+  animation: deck-drift-b 8s ease-in-out infinite alternate;
+}
+.deck-wrap[data-status='awaiting_permission'] .deck-light {
+  animation: deck-pulse 1.3s ease-in-out infinite;
+}
+.deck-wrap[data-status='done'] .deck-light {
+  animation: deck-bloom 1.6s ease-out;
+}
+.deck-wrap[data-status='error'] .deck-light {
+  opacity: 0.65;
+}
+.deck-wrap[data-status='none'] .deck-light,
+.deck-wrap[data-status='closed'] .deck-light,
+.deck-wrap[data-status='pc'] .deck-light {
+  opacity: 0.25;
+}
+.deck-wrap[data-listening] .deck-light {
+  opacity: 0.8;
+  animation: deck-pulse 0.9s ease-in-out infinite;
+}
+@keyframes deck-drift-a {
+  to {
+    transform: translate(45%, -20%) scale(1.1);
+  }
+}
+@keyframes deck-drift-b {
+  to {
+    transform: translate(-45%, 25%) scale(0.9);
+  }
+}
+@keyframes deck-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+@keyframes deck-bloom {
+  from {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+/* The glass sheet the controls sit on. */
+.deck {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.6rem;
+  border-radius: 24px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 0 0 1px color-mix(in srgb, var(--deck-light) 24%, transparent),
+    0 12px 32px rgb(0 0 0 / 0.2);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .deck {
+    background: color-mix(in srgb, var(--surface) 90%, var(--deck-light));
+  }
+}
+
+/* The display: state, tools and (full deck) Claude's latest reply. */
 .deck-display {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: var(--screen);
+  border: 1px solid var(--key-edge);
+}
+.deck-display-bar {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  min-height: 36px;
-  padding: 0 0.15rem 0 0.7rem;
-  margin-bottom: 0.55rem;
-  border-radius: 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  font-size: 0.85rem;
+  gap: 0.15rem;
+  min-height: 44px;
+  padding-left: 0.75rem;
 }
 .deck-led {
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
+  margin-right: 0.45rem;
   border-radius: 50%;
-  background: var(--glow);
-  box-shadow: 0 0 8px var(--glow);
+  background: var(--deck-light);
+  box-shadow: 0 0 10px var(--deck-light);
+}
+.deck-wrap[data-status='running'] .deck-led,
+.deck-wrap[data-status='awaiting_permission'] .deck-led,
+.deck-wrap[data-listening] .deck-led {
+  animation: deck-blink 1.2s ease-in-out infinite;
+}
+@keyframes deck-blink {
+  50% {
+    opacity: 0.35;
+  }
 }
 .deck-display-text {
   flex: 1;
   min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.deck-display-btn {
+.deck-tool-wrap {
+  position: relative;
+  display: flex;
+}
+.deck-tool {
   flex: none;
   width: 44px;
-  height: 36px;
+  height: 44px;
   display: grid;
   place-items: center;
+  padding: 0;
   border: none;
+  border-radius: 12px;
   background: none;
   color: var(--muted);
-  border-radius: 8px;
   cursor: pointer;
 }
+.deck-tool:active,
+.deck-tool[aria-expanded='true'] {
+  background: var(--key-press);
+}
+.deck-tool.on,
+.deck-tool[aria-pressed='true'] {
+  color: var(--text);
+}
+.deck-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 5;
+  min-width: 11rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.3rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.deck-menu-item {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.8rem;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+.deck-menu-item:active {
+  background: var(--key-press);
+}
+.deck-menu-item[aria-checked='true']::after {
+  content: '\2713';
+  color: var(--accent);
+}
+.deck-reply {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0 0.45rem 0.45rem;
+  padding: 0.5rem 0.65rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--key);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.deck-reply-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.deck-reply-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 
+/* Controls placed by name: grid areas change per layout, the markup does not. */
 .deck-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: clamp(48px, 7vh, 62px);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: clamp(50px, 7vh, 60px);
+  grid-template-areas:
+    'k1 k1 k1 k2 k2 k2 k3 k3 k3 dial dial dial'
+    'k4 k4 k4 k5 k5 k5 k6 k6 k6 stick stick stick'
+    'new new new stop stop stop reject reject reject accept accept accept'
+    'type type type mic mic mic mic mic mic sessions sessions sessions';
   gap: 0.5rem;
 }
 
 .deck-key {
   position: relative;
   min-width: 0;
-  padding: 0;
-  border: none;
-  border-radius: 14px;
-  background: var(--cap);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-  touch-action: manipulation;
-  box-shadow:
-    0 3px 0 var(--cap-edge),
-    0 5px 10px rgb(0 0 0 / 0.16),
-    inset 0 1px 0 rgb(255 255 255 / 0.08);
-  transition:
-    transform 0.06s ease,
-    box-shadow 0.06s ease;
-}
-.deck-key:not(:disabled):active {
-  transform: translateY(3px);
-  box-shadow:
-    0 0 0 var(--cap-edge),
-    0 2px 4px rgb(0 0 0 / 0.16),
-    inset 0 1px 0 rgb(255 255 255 / 0.08);
-}
-.deck-key:disabled {
-  cursor: default;
-}
-.deck-key:disabled .deck-key-cap {
-  opacity: 0.38;
-}
-.deck-key-cap {
-  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.15rem;
-  padding: 0 0.25rem;
+  gap: 0.2rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--key-edge);
+  border-radius: 14px;
+  background: var(--key);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    transform 0.08s ease,
+    background-color 0.15s ease,
+    border-color 0.25s ease;
+}
+.deck-key:not(:disabled):active {
+  transform: scale(0.96);
+  background: var(--key-press);
+}
+.deck-key:disabled {
+  cursor: default;
+}
+.deck-key:disabled > * {
+  opacity: 0.35;
+}
+.deck-key svg {
+  flex: none;
 }
 .deck-key-caption {
   max-width: 100%;
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* Programmable keys: clear caps with a soft light inside, like the hardware. */
-.deck-key-macro {
-  background: var(--clear);
-  box-shadow:
-    0 3px 0 var(--clear-edge),
-    0 5px 12px color-mix(in srgb, var(--clear-light) 16%, transparent),
-    inset 0 0 0 1px rgb(255 255 255 / 0.1);
-}
-.deck-key-macro .deck-key-cap svg {
-  color: var(--clear-light);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--clear-light) 55%, transparent));
-}
-.deck-key-macro:not(:disabled):active {
-  box-shadow:
-    0 0 0 var(--clear-edge),
-    0 0 18px color-mix(in srgb, var(--clear-light) 45%, transparent);
+.deck-key-macro .deck-key-caption {
+  color: var(--text);
 }
 
-.deck-key.lit::after {
-  content: '';
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 6px currentColor;
+/* A command key that can act now takes its colour: Accept green, Reject and Stop red. */
+.deck-key-accept {
+  --tone: var(--ok);
 }
-.deck-key-accept.lit {
-  color: var(--ok);
+.deck-key-reject,
+.deck-key-stop {
+  --tone: var(--danger);
 }
-.deck-key-reject.lit,
-.deck-key-stop.lit {
-  color: var(--danger);
+/* Stop only colours its glyph: next to a lit Reject, two red keys would compete. */
+.deck-key.lit:not(.deck-key-stop) {
+  background: color-mix(in srgb, var(--tone) 20%, var(--key));
+  border-color: color-mix(in srgb, var(--tone) 55%, transparent);
 }
+.deck-key.lit svg,
 .deck-key.lit .deck-key-caption {
-  color: inherit;
+  color: var(--tone);
 }
 
 .deck-key-mic {
-  grid-column: span 2;
-}
-.deck-key-mic .deck-key-cap {
+  --tone: var(--listen);
   flex-direction: row;
-  gap: 0.5rem;
+  gap: 0.55rem;
+  background: color-mix(in srgb, var(--accent) 14%, var(--key));
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+}
+.deck-key-mic svg {
+  color: var(--accent);
 }
 .deck-key-mic .deck-key-caption {
-  font-size: 0.8rem;
-}
-.deck-key-mic.lit {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
-}
-.deck-key-mic.lit::after {
-  animation: pulse 1.2s ease-in-out infinite;
+  font-size: 0.85rem;
+  color: var(--text);
 }
 
-/* The dial: a knob whose notch turns with your finger. */
-.deck-dial {
-  position: relative;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: none;
-  background: none;
-  border-radius: 50%;
-  cursor: grab;
-  touch-action: none;
-}
-.deck-dial-ring {
-  position: absolute;
-  height: min(100%, 64px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: repeating-conic-gradient(
-    color-mix(in srgb, var(--muted) 55%, transparent) 0deg 2deg,
-    transparent 2deg 15deg
-  );
-  mask: radial-gradient(circle, transparent 64%, #000 65%);
-}
-.deck-dial-knob {
-  position: relative;
-  height: min(78%, 50px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffffff, #dfe2ea 60%, #c4c8d3);
-  box-shadow:
-    0 4px 0 #a2a7b4,
-    0 7px 14px rgb(0 0 0 / 0.25);
-}
-.deck-dial-notch {
-  position: absolute;
-  top: 5px;
-  left: 50%;
-  width: 3px;
-  height: 10px;
-  margin-left: -1.5px;
-  border-radius: 2px;
-  background: #5b6070;
-}
-
-/* The joystick: a dark stick on a base, with tappable arrows at its edges. */
+/* The dial: a flat ring with a marker that turns under the finger. */
+.deck-dial,
 .deck-stick {
   position: relative;
+  min-width: 0;
+  min-height: 0;
   display: grid;
   place-items: center;
+  container-type: size;
 }
+.deck-dial {
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: grab;
+  touch-action: none;
+}
+.deck-dial-face,
 .deck-stick-base {
-  height: min(74%, 48px);
-  aspect-ratio: 1;
-  border-radius: 50%;
+  position: relative;
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
   display: grid;
   place-items: center;
-  background: radial-gradient(circle, #3a3e48, #15171c);
-  box-shadow:
-    inset 0 2px 6px rgb(0 0 0 / 0.5),
-    0 1px 0 rgb(255 255 255 / 0.08);
+  border-radius: 50%;
+  background: var(--key);
+  border: 1px solid var(--key-edge);
+}
+.deck-dial-face::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(currentColor 0deg 1.5deg, transparent 1.5deg 15deg);
+  mask: radial-gradient(circle, transparent 78%, #000 79%);
+  opacity: 0.45;
+}
+.deck-dial-marker {
+  position: absolute;
+  inset: 0;
+}
+.deck-dial-marker::after {
+  content: '';
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--text);
+}
+.deck-dial:active .deck-dial-face {
+  background: var(--key-press);
+}
+
+/* The four-way pad: drag the thumb, or (with room) tap a named direction. */
+.deck-stick-base {
   touch-action: none;
   cursor: grab;
 }
-.deck-stick-knob {
-  width: 66%;
-  aspect-ratio: 1;
+.deck-stick-thumb {
+  width: 42%;
+  height: 42%;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #505562, #1b1d23 70%);
-  box-shadow:
-    0 4px 8px rgb(0 0 0 / 0.45),
-    inset 0 1px 0 rgb(255 255 255 / 0.14);
+  background: var(--key-press);
+  border: 1px solid var(--key-edge);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.18);
   pointer-events: none;
-  transition: transform 0.12s ease-out;
+  transition: transform 0.14s ease-out;
 }
-.deck-stick-base:active .deck-stick-knob {
+.deck-stick-base:active .deck-stick-thumb {
   transition: none;
 }
-.deck-stick-arrow {
+.deck-stick-dir {
+  --r: min(50cqw, 50cqh);
   position: absolute;
-  width: 24px;
-  height: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  min-height: 18px;
   padding: 0;
-  display: grid;
-  place-items: center;
   border: none;
   background: none;
   color: var(--muted);
-  font-size: 0.72rem;
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.1;
   cursor: pointer;
+  /* Small pads leave the whole circle to the drag; the buttons stay for keyboards. */
+  pointer-events: none;
 }
-.deck-stick-arrow-up {
-  top: -6px;
+.deck-stick-dir-up {
+  top: calc(50cqh - var(--r) + 2px);
+  left: 50%;
+  translate: -50% 0;
 }
-.deck-stick-arrow-down {
-  bottom: -6px;
+.deck-stick-dir-down {
+  bottom: calc(50cqh - var(--r) + 2px);
+  left: 50%;
+  translate: -50% 0;
+  flex-direction: column-reverse;
 }
-.deck-stick-arrow-left {
-  left: -4px;
+.deck-stick-dir-left {
+  left: calc(50cqw - var(--r) + 3px);
+  top: 50%;
+  translate: 0 -50%;
 }
-.deck-stick-arrow-right {
-  right: -4px;
+.deck-stick-dir-right {
+  right: calc(50cqw - var(--r) + 3px);
+  top: 50%;
+  translate: 0 -50%;
 }
-.deck-stick-up .deck-stick-arrow-up,
-.deck-stick-down .deck-stick-arrow-down,
-.deck-stick-left .deck-stick-arrow-left,
-.deck-stick-right .deck-stick-arrow-right {
-  color: var(--accent);
+.deck-stick.labelled .deck-stick-dir {
+  min-width: 44px;
+  min-height: 44px;
+  max-width: calc(var(--r) * 0.62);
+  pointer-events: auto;
+}
+/* Names only fit on a big pad; a small one goes back to arrows and the drag. */
+@container (max-width: 170px) or (max-height: 170px) {
+  .deck-stick.labelled .deck-stick-dir {
+    min-width: 18px;
+    min-height: 18px;
+    pointer-events: none;
+  }
+  .deck-stick-label {
+    display: none;
+  }
+}
+.deck-stick-label {
+  max-width: 100%;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deck-stick-up .deck-stick-dir-up,
+.deck-stick-down .deck-stick-dir-down,
+.deck-stick-left .deck-stick-dir-left,
+.deck-stick-right .deck-stick-dir-right {
+  color: var(--text);
+}
+.deck-stick-up .deck-stick-base,
+.deck-stick-down .deck-stick-base,
+.deck-stick-left .deck-stick-base,
+.deck-stick-right .deck-stick-base {
+  border-color: color-mix(in srgb, var(--deck-light) 60%, transparent);
+}
+
+/* Full deck: the conversation steps aside (approvals and the prompt box stay). */
+.claude-deck-full .transcript-wrap {
+  display: none;
+}
+.claude-deck-full .claude-column {
+  flex: 0 1 auto;
+}
+/* The deck keeps its size; the column above (approvals scroll) gives way. */
+.deck-full {
+  flex: 1 0 auto;
+}
+.claude-deck-approval .deck-reply {
+  display: none;
+}
+.deck-full .deck-grid {
+  flex: 1;
+  min-height: 0;
+  grid-auto-rows: unset;
+  grid-template-rows:
+    minmax(48px, 1fr) minmax(48px, 1fr) minmax(96px, 2fr) minmax(48px, 1fr)
+    minmax(52px, 1.15fr);
+  grid-template-areas:
+    'k1 k1 k1 k1 k2 k2 k2 k2 k3 k3 k3 k3'
+    'k4 k4 k4 k4 k5 k5 k5 k5 k6 k6 k6 k6'
+    'dial dial dial dial dial dial stick stick stick stick stick stick'
+    'new new new stop stop stop reject reject reject accept accept accept'
+    'type type type mic mic mic mic mic mic sessions sessions sessions';
+}
+.deck-full .deck-key-caption {
+  font-size: 0.8rem;
+}
+.deck-full .deck-key-mic .deck-key-caption {
+  font-size: 0.95rem;
 }
 
 /* Settings: layout picker. Deck editor sheet. */
@@ -1712,27 +1972,69 @@ a {
   outline-offset: 2px;
 }
 
-/* Landscape phones: the deck moves beside the conversation. */
+/* Landscape phones: the deck moves beside the conversation, or (full) puts the
+   display on the left and the controls on the right. */
 @media (orientation: landscape) and (max-height: 560px) {
   .claude-deck {
     flex-direction: row;
   }
-  .claude-deck .deck {
-    width: min(46vw, 380px);
+  .claude-deck .deck-wrap {
+    width: min(46vw, 400px);
     margin: 0.4rem calc(0.5rem + var(--safe-right)) calc(0.4rem + var(--safe-bottom)) 0;
-    padding: 0.45rem;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
   }
-  .claude-deck .deck-display {
-    margin-bottom: 0.4rem;
-    min-height: 32px;
+  .claude-deck .deck {
+    padding: 0.45rem;
+    gap: 0.4rem;
   }
   .claude-deck .deck-grid {
     flex: 1;
-    grid-auto-rows: minmax(44px, 1fr);
+    grid-auto-rows: minmax(40px, 1fr);
     gap: 0.4rem;
+  }
+  .claude-deck-full {
+    flex-direction: column;
+  }
+  .claude-deck-full .deck-wrap {
+    width: auto;
+    margin-left: calc(0.5rem + var(--safe-left));
+  }
+  .claude-deck-full .deck {
+    flex-direction: row;
+  }
+  .claude-deck-full .deck-display {
+    width: 36%;
+  }
+  .claude-deck-full .deck-reply {
+    flex: 1;
+    justify-content: flex-start;
+  }
+  .claude-deck-full .deck-reply-text {
+    -webkit-line-clamp: 6;
+    line-clamp: 6;
+  }
+  .claude-deck-full .deck-grid {
+    grid-template-rows: repeat(4, minmax(40px, 1fr));
+    grid-template-areas:
+      'k1 k1 k1 k2 k2 k2 k3 k3 k3 dial dial dial'
+      'k4 k4 k4 k5 k5 k5 k6 k6 k6 stick stick stick'
+      'new new new stop stop stop reject reject reject accept accept accept'
+      'type type type mic mic mic mic mic mic sessions sessions sessions';
+  }
+  /* An approval needs the room: it sits on the left, the deck on the right. */
+  .claude-deck-full.claude-deck-approval {
+    flex-direction: row;
+  }
+  .claude-deck-full.claude-deck-approval .claude-column {
+    flex: 0 0 44%;
+  }
+  .claude-deck-full.claude-deck-approval .deck-wrap {
+    margin-left: 0;
+  }
+  .claude-deck-full.claude-deck-approval .deck {
+    flex-direction: column;
+  }
+  .claude-deck-full.claude-deck-approval .deck-display {
+    width: auto;
   }
 }
 

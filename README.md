@@ -221,6 +221,15 @@ send. The sliders button on the deck opens the editor: pick a layout pack, or gi
 or joystick push its own label, icon and prompt, optionally put in the box for review
 instead of sent. Layouts are stored per device.
 
+The deck is a flat glass panel lit from behind by the session's state, and the display
+spells the state out too: cyan when ready, the accent colour drifting while Claude works,
+amber pulsing for an approval, a green bloom when done, red after an error and violet while
+you talk. The expand button on the display hides the conversation so the deck fills the
+screen; the display then shows Claude's latest reply, and turning the dial pages through
+earlier ones. Approval cards still appear above the deck in full-screen mode. The rotate
+button locks the screen to portrait or landscape where the browser allows it: installed
+apps and fullscreen tabs on Android can lock rotation, but iOS can't, so the deck says so.
+
 **Every Claude session on the PC.** The sessions sheet (tap the session title) also lists
 Claude Code sessions running elsewhere on the PC, such as in a terminal, with their status
 (working, idle, needs input). Tap one to follow it live, read-only. Once it's idle, **Continue on
