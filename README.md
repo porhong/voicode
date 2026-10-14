@@ -191,6 +191,9 @@ key in the text box.
 
 ## Development
 
+Setting up a new machine, the test tiers (including the real-browser `npm run e2e`) and
+troubleshooting are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 ```bash
 npm install
 npm run build:native     # optional: native mouse helper (MinGW gcc/MSVC on Windows; gcc + libx11-dev libxtst-dev on Linux)

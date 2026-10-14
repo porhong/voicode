@@ -11,6 +11,7 @@ coverage/
 native/**/build/
 apps/agent/native-bin/
 apps/agent/build/
+e2e-shots/
 
 # Local agent state written during development
 .voicecode/
