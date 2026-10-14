@@ -102,6 +102,13 @@ const demoQuery = ((params: { prompt: AsyncIterable<SDKUserMessage>; options?: O
   return Object.assign(run(), {
     interrupt: async () => undefined,
     setPermissionMode: async () => undefined,
+    setModel: async () => undefined,
+    supportedModels: async () => [
+      { value: 'default', displayName: 'Default (recommended)', description: 'Opus 5.5' },
+      { value: 'fable', displayName: 'Fable', description: 'Fable 5.1 · most capable' },
+      { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 5.5 · fast' },
+      { value: 'haiku', displayName: 'Haiku', description: 'Haiku 5.5 · fastest' },
+    ],
     close: () => undefined,
   }) as unknown as Query;
 }) as unknown as typeof query;
@@ -155,7 +162,13 @@ class DemoPty implements PtyHandle {
       setTimeout(() => this.exitListener?.({ exitCode: 0 }), 50);
       return;
     } else if (data === '\r') {
-      if (this.typed.trim()) this.lines.push(`> ${this.typed.trim()}`, '  (demo: nothing happens)');
+      const typed = this.typed.trim();
+      const model = /^\/model (\S+)$/.exec(typed)?.[1];
+      if (model) {
+        this.lines.push(`> ${typed}`, `  ⎿  Set model to ${model} and saved as your default`);
+      } else if (typed) {
+        this.lines.push(`> ${typed}`, '  (demo: nothing happens)');
+      }
       this.typed = '';
     } else if (data === '\x1b' || data === '\x03') {
       this.typed = '';

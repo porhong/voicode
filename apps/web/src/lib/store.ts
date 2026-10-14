@@ -3,6 +3,7 @@ import {
   type ClaudeEvent,
   type FolderListing,
   type HistoricSession,
+  type ModelChoice,
   type MouseStatus,
   type PcSession,
   type PermissionRequest,
@@ -51,6 +52,8 @@ export interface AppState {
   /** Whether the agent can take over a Claude Code running in a terminal on the PC. */
   pcControl: { available: boolean; reason?: string };
   history: Record<string, HistoricSession[]>;
+  /** The latest model list the agent sent (for a session, or in general). */
+  models?: { sessionId?: string; models: ModelChoice[]; persistsDefault: boolean };
   /** Claude sessions running elsewhere on the PC (terminals), read-only. */
   pcSessions: PcSession[];
   pcEvents: Record<string, EventItem[]>;
@@ -221,6 +224,10 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
     }
     case 'claude.sessions.history':
       return { ...state, history: { ...state.history, [msg.projectId]: msg.sessions } };
+    case 'claude.models': {
+      const { type: _type, ...models } = msg;
+      return { ...state, models };
+    }
 
     case 'claude.task.done': {
       const onScreen =

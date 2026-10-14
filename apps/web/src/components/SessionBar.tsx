@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { PcSession, PcSessionStatus, ProjectInfo, SessionSummary } from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
+import { modelLabel } from '../lib/models';
 import type { AppState } from '../lib/store';
 import { ChevronDownIcon, PlusIcon } from './Icons';
 import { Sheet } from './Sheet';
@@ -41,15 +42,24 @@ interface Props {
   onOpenFolder?: () => void;
   sheetOpen: boolean;
   onSheetOpenChange: (open: boolean) => void;
-  /** New sessions run Claude Code in a terminal on the PC, for its own dictation. */
+  /** How new sessions start: in a terminal on the PC (for its dictation), with which model. */
+  start?: StartOptions;
+  /** Opens the model picker for the session on screen. */
+  onOpenModel?: () => void;
+}
+
+interface StartOptions {
   voice?: boolean;
+  /** '' or absent: the PC's default. */
+  model?: string;
 }
 
 /** The message that starts a session of the chosen kind. */
-function startMessage(voice: boolean | undefined, projectId: string, resume?: string) {
-  return voice
-    ? ({ type: 'voice.session.start', projectId, resume } as const)
-    : ({ type: 'claude.session.start', projectId, resume } as const);
+function startMessage(start: StartOptions | undefined, projectId: string, resume?: string) {
+  const model = start?.model || undefined;
+  return start?.voice
+    ? ({ type: 'voice.session.start', projectId, resume, model } as const)
+    : ({ type: 'claude.session.start', projectId, resume, model } as const);
 }
 
 /**
@@ -65,7 +75,8 @@ export function SessionBar({
   disabled = false,
   sheetOpen,
   onSheetOpenChange,
-  voice,
+  start,
+  onOpenModel,
 }: Props) {
   const pc = state.activePcSessionId
     ? state.pcSessions.find((p) => p.sessionId === state.activePcSessionId)
@@ -134,6 +145,15 @@ export function SessionBar({
             {PC_STATUS[pc.status].label}
           </span>
         )}
+        {active && onOpenModel && (
+          <button
+            className="chip chip-model"
+            onClick={onOpenModel}
+            aria-label={`Model: ${modelLabel(active.model) ?? 'PC default'}. Change the model`}
+          >
+            {modelLabel(active.model) ?? 'Model'}
+          </button>
+        )}
         {active && (
           <span className={`chip chip-${active.state}`} role="status">
             {STATE_LABEL[active.state]}
@@ -144,7 +164,7 @@ export function SessionBar({
           disabled={disabled || !state.projects.length}
           onClick={() =>
             newSessionProject
-              ? send(startMessage(voice, newSessionProject))
+              ? send(startMessage(start, newSessionProject))
               : onSheetOpenChange(true)
           }
           aria-label={
@@ -161,7 +181,7 @@ export function SessionBar({
           state={state}
           send={send}
           disabled={disabled}
-          voice={voice}
+          start={start}
           onSelect={(id) => {
             onSelect(id);
             onSheetOpenChange(false);
@@ -188,7 +208,7 @@ function SessionSheet({
   state,
   send,
   disabled,
-  voice,
+  start,
   onSelect,
   onSelectPc,
   onOpenFolder,
@@ -197,7 +217,7 @@ function SessionSheet({
   state: AppState;
   send: Send;
   disabled: boolean;
-  voice?: boolean;
+  start?: StartOptions;
   onSelect: (sessionId: string) => void;
   onSelectPc: (sessionId: string) => void;
   onOpenFolder?: () => void;
@@ -225,7 +245,7 @@ function SessionSheet({
           onProjectChange={setProjectId}
           disabled={disabled}
           onStart={() => {
-            send(startMessage(voice, projectId));
+            send(startMessage(start, projectId));
             onClose();
           }}
           onOpenFolder={onOpenFolder}
@@ -321,7 +341,7 @@ function SessionSheet({
               className="list-main"
               disabled={disabled}
               onClick={() => {
-                send(startMessage(voice, projectId, h.claudeSessionId));
+                send(startMessage(start, projectId, h.claudeSessionId));
                 onClose();
               }}
             >

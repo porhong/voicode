@@ -6,7 +6,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { ClaudeEvent, SessionState, SessionSummary } from '@voicecode/protocol';
+import type { ClaudeEvent, ModelChoice, SessionState, SessionSummary } from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import {
   describeAutoApprovals,
@@ -17,6 +17,7 @@ import type { Logger } from '../util/logger.js';
 import type { ApprovalBroker } from './approval-broker.js';
 import { AsyncQueue } from './async-queue.js';
 import { claudeExecutablePath } from './claude-executable.js';
+import { isDefaultModel, MODEL_ALIASES } from './models.js';
 import { summarizeToolResult, summarizeToolUse } from './tool-summary.js';
 
 /** Events kept per session so reconnecting clients can catch up. */
@@ -37,6 +38,8 @@ export interface ClaudeSessionOptions {
   resume?: string;
   /** Resume into a new session id, leaving the original transcript untouched. */
   fork?: boolean;
+  /** Model chosen on the phone for this session; overrides the configured one. */
+  model?: string;
   config: AgentConfig['claude'];
   broker: ApprovalBroker;
   logger: Logger;
@@ -95,7 +98,7 @@ export class ClaudeSession extends EventEmitter<{
       disallowedTools: ['AskUserQuestion'],
       stderr: (data) => this.opts.logger.debug({ session: this.id, data }, 'claude stderr'),
       ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
-      ...(config.model ? { model: config.model } : {}),
+      ...(this.startModel ? { model: this.startModel } : {}),
       ...(config.maxBudgetUsd ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       ...(this.opts.resume ? { resume: this.opts.resume } : {}),
       ...(this.opts.resume && this.opts.fork ? { forkSession: true } : {}),
@@ -112,6 +115,46 @@ export class ClaudeSession extends EventEmitter<{
     const approvals = await inspectProjectSettings(this.project.path);
     if (hasAutoApprovals(approvals)) {
       this.record({ kind: 'status', message: describeAutoApprovals(approvals) });
+    }
+  }
+
+  private get startModel(): string | undefined {
+    const chosen = this.opts.model;
+    if (chosen) return isDefaultModel(chosen) ? undefined : chosen;
+    return this.opts.config.model;
+  }
+
+  /**
+   * Switches the model for the following replies (the SDK's `setModel`, this session
+   * only; nothing is saved on the PC).
+   */
+  async setModel(model: string | null): Promise<void> {
+    if (this.isClosed || !this.q) throw new Error('This session is closed');
+    const target = isDefaultModel(model) ? undefined : model!;
+    await this.q.setModel(target);
+    this.model = target ?? this.opts.config.model ?? this.model;
+    this.record({
+      kind: 'status',
+      message: target
+        ? `Model switched to ${target} for the next replies.`
+        : 'Model switched back to the default for the next replies.',
+    });
+    this.emitState();
+  }
+
+  /** The models this Claude Code offers, as the SDK reports them. */
+  async models(): Promise<ModelChoice[]> {
+    if (this.isClosed || !this.q) return MODEL_ALIASES;
+    try {
+      const list = await this.q.supportedModels();
+      if (!list.length) return MODEL_ALIASES;
+      return list.map((m) => ({
+        value: m.value,
+        label: m.displayName,
+        description: m.description,
+      }));
+    } catch {
+      return MODEL_ALIASES;
     }
   }
 
@@ -237,6 +280,12 @@ export class ClaudeSession extends EventEmitter<{
 
       case 'assistant': {
         if (message.parent_tool_use_id) return;
+        // The model that actually answered (after a switch, an alias resolves to an id).
+        const answered = (message.message as { model?: unknown }).model;
+        if (typeof answered === 'string' && answered !== '<synthetic>' && answered !== this.model) {
+          this.model = answered;
+          this.emitState();
+        }
         for (const block of message.message.content) {
           if (block.type === 'text' && block.text.trim()) {
             this.record({ kind: 'assistant_text', text: block.text });

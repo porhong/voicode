@@ -3,6 +3,13 @@ import { AUDIO, LIMITS, MOUSE_BUTTONS } from './constants.js';
 
 const delta = (max: number) => z.number().int().min(-max).max(max);
 const id = z.string().min(1).max(128);
+/**
+ * A model alias or id (`opus`, `claude-sonnet-5-5`, `claude-opus-5-5[1m]`). Restricted to
+ * these characters because terminal sessions receive it as typed text (`/model …`).
+ */
+export const ModelNameSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:[\]-]{0,99}$/, 'not a model name');
 
 export const MouseButtonSchema = z.enum(MOUSE_BUTTONS);
 
@@ -48,7 +55,12 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
    * Start an interactive Claude Code session on the PC (in a pseudo-terminal) whose
    * dictation is driven from here: the phone's microphone and push-to-talk.
    */
-  z.object({ type: z.literal('voice.session.start'), projectId: id, resume: id.optional() }),
+  z.object({
+    type: z.literal('voice.session.start'),
+    projectId: id,
+    resume: id.optional(),
+    model: ModelNameSchema.optional(),
+  }),
   /** Push-to-talk for a voice session: press taps the dictation key, release sends. */
   z.object({ type: z.literal('voice.ptt'), sessionId: id, pressed: z.boolean() }),
 
@@ -78,6 +90,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     projectId: id,
     /** Resume an earlier Claude Code session by its SDK session id. */
     resume: id.optional(),
+    /** Model for this session; the PC's default when omitted. */
+    model: ModelNameSchema.optional(),
   }),
   z.object({ type: z.literal('claude.session.subscribe'), sessionId: id }),
   z.object({ type: z.literal('claude.session.close'), sessionId: id }),
@@ -88,6 +102,14 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     text: z.string().trim().min(1).max(LIMITS.maxPromptLength),
   }),
   z.object({ type: z.literal('claude.interrupt'), sessionId: id }),
+  /** Switch the model of a session; `null` goes back to the PC's default. */
+  z.object({
+    type: z.literal('claude.model.set'),
+    sessionId: id,
+    model: ModelNameSchema.nullable(),
+  }),
+  /** The models that can be picked (for a session when given, else the general list). */
+  z.object({ type: z.literal('claude.models'), sessionId: id.optional() }),
   /** Give a session the name shown on the phone (a controlled terminal session keeps Claude Code's otherwise). */
   z.object({
     type: z.literal('claude.session.rename'),

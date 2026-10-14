@@ -4,6 +4,7 @@ import { Composer, type ComposerHandle } from '../components/Composer';
 import { Deck, type DeckStatus } from '../components/Deck';
 import { DeckEditor } from '../components/DeckEditor';
 import { FolderSheet } from '../components/FolderSheet';
+import { ModelSheet } from '../components/ModelSheet';
 import { ChatIcon, DeckPadIcon, GearIcon } from '../components/Icons';
 import { PermissionCard } from '../components/PermissionCard';
 import { SessionBar, StartSession, useProjectChoice } from '../components/SessionBar';
@@ -75,6 +76,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [foldersOpen, setFoldersOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const deckMode = settings.claudeLayout === 'deck';
   /** The deck has the screen: the conversation is hidden, approvals still show. */
   const deckFull = deckMode && !settings.deckHistory;
@@ -236,11 +238,12 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   // With Claude Code dictation chosen and a virtual microphone on the PC, new sessions
   // run Claude Code in a terminal there so its own /voice can be used.
   const voiceSessions = settings.dictation === 'claude-code' && state.voiceMic.status.available;
+  const startModel = settings.model || undefined;
   const startSession = (projectId: string) =>
     send(
       voiceSessions
-        ? { type: 'voice.session.start', projectId }
-        : { type: 'claude.session.start', projectId },
+        ? { type: 'voice.session.start', projectId, model: startModel }
+        : { type: 'claude.session.start', projectId, model: startModel },
     );
 
   // A short buzz when a new approval arrives, so a phone in hand notices it.
@@ -442,7 +445,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               onSelect={openSession}
               onSelectPc={openPcSession}
               onOpenFolder={openFolder}
-              voice={voiceSessions}
+              start={{ voice: voiceSessions, model: settings.model }}
+              onOpenModel={() => setModelOpen(true)}
             />
             {pcId ? (
               <Transcript
@@ -643,6 +647,18 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
 
       {deckEditorOpen && (
         <DeckEditor deck={deck} onChange={saveDeck} onClose={() => setDeckEditorOpen(false)} />
+      )}
+
+      {modelOpen && (
+        <ModelSheet
+          state={state}
+          send={send}
+          session={active}
+          chosen={settings.model}
+          onChoose={(model) => updateSettings({ model })}
+          disabled={connection !== 'open'}
+          onClose={() => setModelOpen(false)}
+        />
       )}
 
       {settingsOpen && (

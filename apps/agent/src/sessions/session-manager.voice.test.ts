@@ -278,6 +278,43 @@ describe('voice sessions', () => {
     expect(session.summary().state).toBe('closed');
   });
 
+  it("switches the model by typing /model and reading Claude Code's answer", async () => {
+    // Its own terminal, so the first session's fake and registry entry stay untouched.
+    const first = pty;
+    pty = new FakePty();
+    pty.pid = 6262;
+    const id2 = (await manager.startVoice('p1', undefined, 'haiku')).id;
+    expect(spawned!.args).toContain('--model');
+    expect(spawned!.args[spawned!.args.indexOf('--model') + 1]).toBe('haiku');
+    pty.show('❯ /voice tap\n  ⎿  Voice mode enabled (tap).\n❯ ');
+    await until(() => manager.get(id2).summary().state === 'idle');
+
+    pty.written = '';
+    const switching = manager.setModel(id2, 'sonnet');
+    await until(() => pty.written.endsWith('\r'));
+    expect(pty.written).toBe('/model sonnet\r');
+    pty.show(
+      '❯ /model sonnet\n  ⎿  Set model to Sonnet 5.5 and saved as your default for new sessions\n❯ ',
+    );
+    await switching;
+    expect(manager.get(id2).summary().model).toBe('Sonnet 5.5');
+    expect((await manager.models(id2)).persistsDefault).toBe(true);
+
+    pty.written = '';
+    const wrong = manager.setModel(id2, 'nonsense');
+    await until(() => pty.written.endsWith('\r'));
+    pty.show("❯ /model nonsense\n  ⎿  Model 'nonsense' not found\n❯ ");
+    await expect(wrong).rejects.toThrow(/not found/);
+
+    // Not while something is typed in the prompt.
+    pty.show('❯ half a sentence');
+    await sleep(100); // xterm parses writes asynchronously
+    await expect(manager.setModel(id2, 'opus')).rejects.toThrow(/not empty/);
+    manager.close(id2);
+    pty.exit(0);
+    pty = first;
+  });
+
   it('types prompts as a paste and closes with /exit', async () => {
     pty.written = '';
     manager.prompt(id, 'run the tests', 'Phone');

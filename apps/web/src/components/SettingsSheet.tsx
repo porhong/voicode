@@ -5,6 +5,7 @@ import { micCaptureSupported } from '../hooks/useMicStream';
 import type { Settings } from '../hooks/useSettings';
 import { speechSynthesisSupported } from '../hooks/useSpeakReplies';
 import { api } from '../lib/api';
+import { MODEL_PRESETS } from '../lib/models';
 import { Sheet } from './Sheet';
 
 interface Props {
@@ -230,6 +231,28 @@ export function SettingsSheet({
         disabled={!speechSynthesisSupported()}
         onChange={(speakReplies) => update({ speakReplies })}
       />
+
+      <h3>Model</h3>
+      <label className="field">
+        <span>Model for new sessions</span>
+        <select
+          className="select"
+          value={
+            MODEL_PRESETS.some(([value]) => value === settings.model) ? settings.model : 'custom'
+          }
+          onChange={(e) => update({ model: e.target.value })}
+        >
+          {MODEL_PRESETS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+          {!MODEL_PRESETS.some(([value]) => value === settings.model) && (
+            <option value="custom">{settings.model}</option>
+          )}
+        </select>
+      </label>
+      <p className="small muted">The model chip above a session switches the one on screen.</p>
 
       <h3>Approvals</h3>
       <Toggle

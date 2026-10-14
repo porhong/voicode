@@ -321,7 +321,7 @@ export class WsGateway {
       case 'voice.mic.stop':
         return this.check(conn, mic.release(id));
       case 'voice.session.start': {
-        const session = await sessions.startVoice(msg.projectId, msg.resume);
+        const session = await sessions.startVoice(msg.projectId, msg.resume, msg.model);
         return this.sendSnapshot(conn, session.id);
       }
       case 'voice.ptt':
@@ -355,7 +355,7 @@ export class WsGateway {
         return sessions.getVoice(msg.sessionId).resize(msg.cols, msg.rows);
 
       case 'claude.session.start': {
-        const session = sessions.start(msg.projectId, msg.resume);
+        const session = sessions.start(msg.projectId, msg.resume, { model: msg.model });
         return this.sendSnapshot(conn, session.id);
       }
       case 'claude.session.subscribe':
@@ -374,6 +374,14 @@ export class WsGateway {
         return sessions.interrupt(msg.sessionId);
       case 'claude.session.rename':
         return sessions.rename(msg.sessionId, msg.title);
+      case 'claude.model.set':
+        return sessions.setModel(msg.sessionId, msg.model);
+      case 'claude.models':
+        return this.send(conn, {
+          type: 'claude.models',
+          sessionId: msg.sessionId,
+          ...(await sessions.models(msg.sessionId)),
+        });
       case 'pc.session.subscribe': {
         const pc = this.deps.pcSessions;
         if (!pc?.get(msg.sessionId)) {

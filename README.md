@@ -209,6 +209,14 @@ session to auto-accept edits (commands still ask). Turn on approval notification
 settings to get a system notification when Claude is waiting while you're in another
 app.
 
+**Model.** The chip next to the session's state (e.g. "Opus 5.5") opens the model
+picker. The choice switches the session on screen and is used for the sessions this
+phone starts next (also in **Settings → Model**). Agent SDK sessions switch for the
+following replies only. In a Claude Code terminal session (hosted or taken over) the
+agent types `/model <name>` once the prompt is free, so Claude Code on the PC also saves
+it as its default for new sessions; the picker says so. Unknown or unavailable models
+are reported back by Claude Code.
+
 **Deck layout.** The button next to Settings (or **Settings → Claude layout**) switches
 the Claude tab from a chat to a deck: a macro pad modelled on Work Louder's Codex Micro,
 shown under a shorter conversation (beside it in landscape). Six programmable keys and a

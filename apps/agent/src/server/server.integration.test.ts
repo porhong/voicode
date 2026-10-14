@@ -555,6 +555,39 @@ describe('WebSocket gateway', () => {
     client.ws.close();
   });
 
+  it('starts a session with a chosen model and switches it from the phone', async () => {
+    const client = new Client(tunnelCookie);
+    await client.waitFor('welcome');
+    client.send({ type: 'claude.session.start', projectId: 'p1', model: 'sonnet' });
+    const snapshot = await client.waitFor('claude.session.snapshot');
+    const sessionId = snapshot.session.id;
+    expect(fake.control.options?.model).toBe('sonnet');
+
+    client.send({ type: 'claude.models', sessionId });
+    const offer = await client.waitFor('claude.models', (m) => m.sessionId === sessionId);
+    expect(offer.persistsDefault).toBe(false);
+    expect(offer.models.map((m) => m.value)).toEqual(['default', 'sonnet']);
+
+    fake.control.modelSets.length = 0;
+    client.send({ type: 'claude.model.set', sessionId, model: 'opus' });
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.id === sessionId && m.session.model === 'opus',
+    );
+    client.send({ type: 'claude.model.set', sessionId, model: null });
+    await client.waitFor(
+      'claude.event',
+      (m) => m.event.kind === 'status' && /back to the default/.test(m.event.message),
+    );
+    expect(fake.control.modelSets).toEqual(['opus', undefined]);
+
+    // A model name is never free text: it is typed into terminal sessions.
+    client.send({ type: 'claude.model.set', sessionId, model: 'opus\r/exit' });
+    await client.waitFor('error', (m) => m.code === 'bad_request');
+    client.send({ type: 'claude.session.close', sessionId });
+    client.ws.close();
+  });
+
   it('rejects sessions for projects outside the allow-list', async () => {
     const client = new Client(await pairDevice('Phone'));
     await client.waitFor('welcome');

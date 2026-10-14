@@ -5,7 +5,13 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.mjs';
 import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.mjs';
-import type { ClaudeEvent, SessionState, SessionSummary, VoiceState } from '@voicecode/protocol';
+import type {
+  ClaudeEvent,
+  ModelChoice,
+  SessionState,
+  SessionSummary,
+  VoiceState,
+} from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import { claudeConfigDir, isAlive, mapStatus } from '../sessions/pc-sessions.js';
 import { findTranscript, TranscriptTail } from '../sessions/transcript-tail.js';
@@ -14,6 +20,7 @@ import { isStandalone } from '../util/standalone.js';
 import { packageRoot } from '../util/version.js';
 import type { ApprovalBroker } from './approval-broker.js';
 import { interactiveClaudePath } from './claude-binary.js';
+import { isDefaultModel, MODEL_ALIASES } from './models.js';
 import type { SessionEventRecord } from './claude-session.js';
 import { readVoiceScreen, type VoiceScreen } from './voice-screen.js';
 
@@ -122,6 +129,8 @@ export interface VoiceSessionOptions {
     /** The terminal session's name as the PC list showed it, so the phone can tell it apart. */
     title?: string;
   };
+  /** Model chosen on the phone for a new hosted session. */
+  model?: string;
   /** Injection points for tests. */
   spawn?: PtySpawn;
   claudePath?: string;
@@ -151,6 +160,7 @@ export class VoiceSession extends EventEmitter<{
   private state: SessionState = 'starting';
   private readonly claudeSessionId: string;
   private title: string | undefined;
+  private model: string | undefined;
   /** Where the title came from: Claude Code's own name wins unless the user renamed here. */
   private titleSource: 'prompt' | 'registry' | 'user' | undefined;
   private readonly history: SessionEventRecord[] = [];
@@ -244,7 +254,9 @@ export class VoiceSession extends EventEmitter<{
       'AskUserQuestion',
       '--settings',
       JSON.stringify(settings),
-      ...(config.model ? ['--model', config.model] : []),
+      ...(startModel(opts.model, config.model)
+        ? ['--model', startModel(opts.model, config.model)!]
+        : []),
     ];
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -271,6 +283,7 @@ export class VoiceSession extends EventEmitter<{
       this.fail(`Could not start Claude Code in a terminal: ${(err as Error).message}`);
       return;
     }
+    this.model = startModel(opts.model, config.model);
     opts.logger.info(
       { session: this.id, pid: this.pty.pid, claude, resume: opts.resume },
       'claude code started in a pty',
@@ -326,6 +339,7 @@ export class VoiceSession extends EventEmitter<{
       createdAt: this.createdAt,
       title: this.title,
       kind: 'voice',
+      model: this.model,
       attached: this.attached || undefined,
       voice: { state: this.voice, detail: this.voiceDetail },
     };
@@ -426,6 +440,62 @@ export class VoiceSession extends EventEmitter<{
     this.record({ kind: 'status', message });
   }
 
+  /**
+   * Switches the model by typing `/model <name>` into Claude Code, which answers on screen
+   * ("Set model to …" or "Model '…' not found"). Claude Code also saves the choice as its
+   * default for new sessions on the PC; the phone says so before switching.
+   */
+  async setModel(model: string | null): Promise<void> {
+    if (this.isClosed || !this.pty) throw new Error('This session is closed');
+    if (this.state === 'running' || this.state === 'awaiting_permission') {
+      throw new Error('Claude is working; switch the model once it has finished.');
+    }
+    if (this.voice === 'recording' || this.voice === 'starting' || this.voice === 'finalizing') {
+      throw new Error('Wait until dictation has finished.');
+    }
+    if (!promptIsEmpty(this.screenLines())) {
+      throw new Error('The prompt in the terminal is not empty; clear it first.');
+    }
+    const name = isDefaultModel(model) ? 'default' : model!;
+    const command = `/model ${name}`;
+    this.pty.write(command);
+    await sleep(200);
+    this.pty?.write('\r');
+    const answer = await this.waitForModelAnswer(command);
+    if (answer?.error) throw new Error(answer.error);
+    this.model = answer?.label ?? name;
+    this.record({
+      kind: 'status',
+      message: answer?.label
+        ? `Model switched to ${answer.label}. Claude Code also saved it as its default for new sessions on the PC.`
+        : `Asked Claude Code to switch to ${name}.`,
+    });
+    this.emitState();
+  }
+
+  /** The aliases Claude Code accepts; terminal sessions have no live list. */
+  models(): ModelChoice[] {
+    return MODEL_ALIASES;
+  }
+
+  private async waitForModelAnswer(
+    command: string,
+  ): Promise<{ label?: string; error?: string } | undefined> {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline && !this.isClosed) {
+      await sleep(150);
+      const lines = this.screenLines();
+      const at = lines.map((l) => l.includes(command)).lastIndexOf(true);
+      if (at < 0) continue;
+      const after = lines.slice(at + 1, at + 4).join('\n');
+      const set = /Set model to (.+?)(?: and saved|$)/m.exec(after);
+      if (set) return { label: set[1]!.replace(/\s*\(default\)\s*$/, ' (default)').trim() };
+      const missing = /(Model '.*' not found[^\n]*|Invalid model[^\n]*)/i.exec(after);
+      if (missing) return { error: missing[1]!.trim() };
+    }
+    return undefined;
+  }
+
   /** A name chosen on the phone; it then stays even if Claude Code's own name changes. */
   rename(title: string): void {
     this.title = title;
@@ -515,6 +585,16 @@ export class VoiceSession extends EventEmitter<{
       this.setState('idle');
     this.trackDialog(screen);
     this.trackError(screen);
+    // Claude Code's banner names the model ("Haiku 5.5 · Claude Max"); replies refine it.
+    if (!this.model) {
+      const banner = lines
+        .map((l) => /\b((?:Fable|Mythos|Opus|Sonnet|Haiku) \d+(?:\.\d+)?)\b[^\n]*·/.exec(l)?.[1])
+        .find(Boolean);
+      if (banner) {
+        this.model = banner;
+        this.emitState();
+      }
+    }
     if (this.state !== 'starting') this.ensureDictation(lines);
     for (const w of this.screenWaiters.splice(0)) {
       if (w.pred(screen)) w.resolve();
@@ -622,6 +702,10 @@ export class VoiceSession extends EventEmitter<{
     if (!this.tail) return;
     const result = await this.tail.read();
     if (result.reset) this.history.length = 0;
+    if (result.model && result.model !== this.model) {
+      this.model = result.model;
+      this.emitState();
+    }
     for (const item of result.items) {
       let event: ClaudeEvent = item.event;
       if (event.kind === 'user_prompt') {
@@ -672,12 +756,22 @@ export class VoiceSession extends EventEmitter<{
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The model a new hosted session starts with: the phone's choice, else the config. */
+function startModel(
+  chosen: string | undefined,
+  configured: string | undefined,
+): string | undefined {
+  if (chosen) return isDefaultModel(chosen) ? undefined : chosen;
+  return configured;
+}
+
 /**
  * Whether Claude Code's input line shows nothing typed (so a tap starts dictation). The
  * prompt is `❯` (or `>` in older versions); a `Try "…"` suggestion is placeholder text.
  */
 export function promptIsEmpty(lines: string[]): boolean {
-  const prompt = lines.find((l) => /^[\s│|]*[>❯](\s|$)/.test(l));
+  // Earlier prompts stay on screen as `❯ …` history; the input line is the last one.
+  const prompt = lines.findLast((l) => /^[\s│|]*[>❯](\s|$)/.test(l));
   if (!prompt) return false;
   return /^[\s│|]*[>❯]\s*(Try\s+".*)?[\s│|]*$/.test(prompt);
 }

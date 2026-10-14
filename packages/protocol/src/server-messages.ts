@@ -51,6 +51,14 @@ export interface SessionSummary {
   voice?: { state: VoiceState; detail?: string };
 }
 
+/** A model the phone can offer. */
+export interface ModelChoice {
+  /** What is sent back in `claude.model.set` (an alias or a model id). */
+  value: string;
+  label: string;
+  description?: string;
+}
+
 export interface HistoricSession {
   claudeSessionId: string;
   summary: string;
@@ -192,6 +200,13 @@ export type ServerMessage =
       deviceName?: string;
     }
   | { type: 'claude.sessions.history'; projectId: string; sessions: HistoricSession[] }
+  | {
+      type: 'claude.models';
+      sessionId?: string;
+      models: ModelChoice[];
+      /** Switching also changes Claude Code's saved default on the PC (terminal sessions). */
+      persistsDefault: boolean;
+    }
   /** A turn finished, in a phone session (`agent`) or a session on the PC (`pc`). */
   | {
       type: 'claude.task.done';

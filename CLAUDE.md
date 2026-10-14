@@ -158,6 +158,12 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
     no phone audio, "No audio detected from microphone" is surfaced as a voice error. An
     enclosing Claude Code's `CLAUDE_CODE_CHILD_SESSION` marker is stripped from the child
     env (it switches transcript saving off).
+  - Model switching (2026-10-15): `claude.model.set` / `claude.models`, and a `model` on
+    session start. SDK sessions use `setModel()` / `supportedModels()`; terminal sessions
+    type `/model <name>` (prompt must be empty, not while working) and read "Set model to
+    …" or "Model '…' not found" back. Note: Claude Code's `/model` persists the choice to
+    `~/.claude/settings.json` (the picker warns); probes on the dev PC must leave the
+    owner's `"model": "opus"` in place. Verified on Claude Code 2.1.299 (Haiku → Opus).
   - Phase 3: the standalone build embeds the `@lydell/node-pty-<target>` package under
     `node-pty/` and `loadPtySpawn()` loads it from the extracted runtime (`doctor` row
     "Claude Code terminal", asserted by `smoke-sea.mjs`); the xterm packages are imported

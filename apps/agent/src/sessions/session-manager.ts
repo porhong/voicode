@@ -5,10 +5,12 @@ import { EventEmitter } from 'node:events';
 import { listSessions, type query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   HistoricSession,
+  ModelChoice,
   PcSession,
   PermissionRequest,
   SessionSummary,
 } from '@voicecode/protocol';
+import { MODEL_ALIASES } from '../claude/models.js';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
 import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
@@ -155,7 +157,7 @@ export class SessionManager extends EventEmitter<{
    * An interactive Claude Code in a pseudo-terminal, for dictation through Claude Code's
    * own `/voice`. Its tool calls come back through the hook server for phone approval.
    */
-  async startVoice(projectId: string, resume?: string): Promise<VoiceSession> {
+  async startVoice(projectId: string, resume?: string, model?: string): Promise<VoiceSession> {
     const project = this.project(projectId);
     this.checkCapacity(resume);
     const hooks = await this.ensureHooks();
@@ -167,6 +169,7 @@ export class SessionManager extends EventEmitter<{
       broker: this.broker,
       logger: this.logger.child({ session: project.name, kind: 'voice' }),
       hook: { url: hooks.url, token: hooks.token, command: hookCommandLine() },
+      model,
       spawn: this.voiceDeps.spawn,
       claudePath: this.voiceDeps.claudePath,
       claudeDir: this.voiceDeps.claudeDir,
@@ -263,7 +266,11 @@ export class SessionManager extends EventEmitter<{
     void this.getVoice(sessionId).pressPtt(pressed, deviceName);
   }
 
-  start(projectId: string, resume?: string, opts: { fork?: boolean } = {}): ClaudeSession {
+  start(
+    projectId: string,
+    resume?: string,
+    opts: { fork?: boolean; model?: string } = {},
+  ): ClaudeSession {
     const project = this.project(projectId);
     this.checkCapacity(resume, opts.fork);
 
@@ -272,6 +279,7 @@ export class SessionManager extends EventEmitter<{
       project,
       resume,
       fork: opts.fork,
+      model: opts.model,
       config: this.config.claude,
       broker: this.broker,
       logger: this.logger.child({ session: project.name }),
@@ -321,6 +329,23 @@ export class SessionManager extends EventEmitter<{
 
   rename(sessionId: string, title: string): void {
     this.get(sessionId).rename(title);
+  }
+
+  async setModel(sessionId: string, model: string | null): Promise<void> {
+    const session = this.get(sessionId);
+    try {
+      await session.setModel(model);
+    } catch (err) {
+      throw new SessionError('bad_request', (err as Error).message);
+    }
+  }
+
+  /** What the phone's model picker offers, for a session or in general. */
+  async models(sessionId?: string): Promise<{ models: ModelChoice[]; persistsDefault: boolean }> {
+    const session = sessionId ? this.sessions.get(sessionId) : undefined;
+    if (session instanceof VoiceSession) return { models: session.models(), persistsDefault: true };
+    if (session) return { models: await session.models(), persistsDefault: false };
+    return { models: MODEL_ALIASES, persistsDefault: false };
   }
 
   close(sessionId: string): void {

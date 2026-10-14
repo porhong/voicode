@@ -74,6 +74,7 @@ export class FakeMouseDriver implements MouseDriver {
 export interface FakeQueryControl {
   options?: Options;
   permissionModeSets: string[];
+  modelSets: Array<string | undefined>;
   interrupted: number;
   closed: boolean;
 }
@@ -87,7 +88,12 @@ export function createFakeQuery(init: { permissionMode?: string } = {}): {
   queryFn: typeof query;
   control: FakeQueryControl;
 } {
-  const control: FakeQueryControl = { permissionModeSets: [], interrupted: 0, closed: false };
+  const control: FakeQueryControl = {
+    permissionModeSets: [],
+    modelSets: [],
+    interrupted: 0,
+    closed: false,
+  };
 
   const queryFn = ((params: {
     prompt: string | AsyncIterable<SDKUserMessage>;
@@ -173,6 +179,13 @@ export function createFakeQuery(init: { permissionMode?: string } = {}): {
       setPermissionMode: async (mode: string) => {
         control.permissionModeSets.push(mode);
       },
+      setModel: async (model?: string) => {
+        control.modelSets.push(model);
+      },
+      supportedModels: async () => [
+        { value: 'default', displayName: 'Default (recommended)', description: 'Opus 5.5' },
+        { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 5.5' },
+      ],
       close: () => {
         control.closed = true;
       },

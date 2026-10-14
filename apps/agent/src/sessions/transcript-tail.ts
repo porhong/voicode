@@ -105,6 +105,8 @@ export interface TailResult {
   items: Array<{ at: number; event: ClaudeEvent }>;
   /** The latest `last-prompt` entry seen, if any. */
   lastPrompt?: string;
+  /** The model of the latest assistant reply, if any. */
+  model?: string;
 }
 
 /**
@@ -162,9 +164,24 @@ export class TranscriptTail {
       } catch {
         continue;
       }
-      const e = entry as { type?: string; lastPrompt?: unknown; timestamp?: unknown };
+      const e = entry as {
+        type?: string;
+        lastPrompt?: unknown;
+        timestamp?: unknown;
+        isSidechain?: boolean;
+        message?: { model?: unknown };
+      };
       if (e.type === 'last-prompt' && typeof e.lastPrompt === 'string') {
         result.lastPrompt = e.lastPrompt.slice(0, 200);
+      }
+      const model = e.message?.model;
+      if (
+        e.type === 'assistant' &&
+        !e.isSidechain &&
+        typeof model === 'string' &&
+        model !== '<synthetic>'
+      ) {
+        result.model = model.slice(0, 100);
       }
       const at =
         typeof e.timestamp === 'string' ? Date.parse(e.timestamp) || Date.now() : Date.now();

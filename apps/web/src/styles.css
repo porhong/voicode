@@ -2181,3 +2181,21 @@ a {
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+
+/* The model chip in the session header: a button that looks like the state chip. */
+.chip-model {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip-model::after {
+  content: '';
+  position: absolute;
+  inset: -10px -2px;
+}

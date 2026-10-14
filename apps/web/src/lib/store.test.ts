@@ -38,6 +38,20 @@ describe('app state', () => {
     expect(apply(initialState, welcome(PROTOCOL_VERSION + 1)).protocolMismatch).toBe(true);
   });
 
+  it('keeps the model list the agent sent', () => {
+    const s = apply(initialState, {
+      type: 'claude.models',
+      sessionId: 's1',
+      models: [{ value: 'opus', label: 'Opus' }],
+      persistsDefault: true,
+    });
+    expect(s.models).toEqual({
+      sessionId: 's1',
+      models: [{ value: 'opus', label: 'Opus' }],
+      persistsDefault: true,
+    });
+  });
+
   it('replaces the project list when the agent reloads it', () => {
     const s = apply(apply(initialState, welcome()), {
       type: 'projects',
