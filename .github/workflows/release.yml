@@ -114,6 +114,10 @@ jobs:
         run: |
           if [ "$DRY_RUN" = "true" ]; then
             npm publish -w @anantbot/voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --dry-run
+          elif npm view "@anantbot/voicecode-agent@${{ steps.meta.outputs.version }}" version >/dev/null 2>&1; then
+            # Published by hand (the first release was, from the owner's npm login with
+            # 2FA); still build and attach the GitHub release below.
+            echo "::notice::@anantbot/voicecode-agent@${{ steps.meta.outputs.version }} is already on npm; skipping publish"
           else
             npm publish -w @anantbot/voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --provenance
           fi
