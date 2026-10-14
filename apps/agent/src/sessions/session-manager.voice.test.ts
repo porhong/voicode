@@ -228,6 +228,11 @@ describe('voice sessions', () => {
       status: 'idle' as const,
       projectId: 'p1',
     };
+    // The fake process must look alive: a registry entry stands in for a real pid.
+    await writeFile(
+      path.join(claudeDir, 'sessions', '5151.json'),
+      JSON.stringify({ pid: 5151, sessionId: 'term-1', cwd: home, status: 'idle' }),
+    );
     const session = await manager.controlPc(pc);
     expect(attachedPid).toBe(5151);
     expect(session.summary()).toMatchObject({
