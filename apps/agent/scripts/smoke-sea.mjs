@@ -128,7 +128,13 @@ try {
   if (hook.trim() !== '') throw new Error(`hook printed something:\n${hook}`);
   log('hook subcommand ok');
 
-  const doctor = execFileSync(exe, ['doctor'], { env, encoding: 'utf8' });
+  // doctor exits 1 on a headless runner (no desktop session); its output is what matters.
+  let doctor;
+  try {
+    doctor = execFileSync(exe, ['doctor'], { env, encoding: 'utf8' });
+  } catch (err) {
+    doctor = err.stdout ?? '';
+  }
   if (!doctor.includes('Phone microphone')) throw new Error(`doctor is missing checks:\n${doctor}`);
   if (!/Claude Code terminal\s+node-pty loaded/.test(doctor)) {
     throw new Error(`node-pty did not load from the extracted runtime:\n${doctor}`);
