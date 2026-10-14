@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { isStandalone } from '../util/standalone.js';
 import { packageRoot } from '../util/version.js';
 
 /**
@@ -35,20 +36,24 @@ export function autostartFile(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(config, 'autostart', 'voicecode-agent.desktop');
 }
 
-/** The node binary and CLI script that should be launched at login. */
-export function launchTarget(): { node: string; cli: string } {
+/**
+ * The program (and script, for the npm package) to launch at login: the standalone
+ * executable itself, or node with the installed CLI.
+ */
+export function launchTarget(): string[] {
+  if (isStandalone()) return [process.execPath];
   const cli = path.join(packageRoot(), 'dist', 'cli.js');
   if (!existsSync(cli)) {
     throw new Error(`Cannot find the built CLI at ${cli}. Build or install voicecode-agent first.`);
   }
-  return { node: process.execPath, cli };
+  return [process.execPath, cli];
 }
 
-export function windowsLauncher(target: { node: string; cli: string }, home?: string): string {
+export function windowsLauncher(target: string[], home?: string): string {
   // VBScript strings escape " by doubling it (Windows paths cannot contain quotes).
   // Window style 0 = hidden.
   const q = (s: string) => `""${s}""`;
-  let command = `${q(target.node)} ${q(target.cli)} start --no-qr`;
+  let command = `${target.map(q).join(' ')} start --no-qr`;
   if (home) command = `cmd.exe /c set ""VOICECODE_HOME=${home}"" && ${command}`;
   return [
     "' Created by `voicecode-agent autostart enable`. Starts the agent hidden at login.",
@@ -58,7 +63,7 @@ export function windowsLauncher(target: { node: string; cli: string }, home?: st
   ].join('\r\n');
 }
 
-export function desktopEntry(target: { node: string; cli: string }, home?: string): string {
+export function desktopEntry(target: string[], home?: string): string {
   // Desktop Entry spec: quote arguments and escape ", `, $ and \ inside quotes.
   const q = (s: string) => `"${s.replace(/(["`$\\])/g, '\\$1')}"`;
   const env = home ? `env ${q(`VOICECODE_HOME=${home}`)} ` : '';
@@ -67,7 +72,7 @@ export function desktopEntry(target: { node: string; cli: string }, home?: strin
     'Type=Application',
     'Name=VoiceCode Agent',
     'Comment=Voice-controlled Claude Code and trackpad server for your LAN',
-    `Exec=${env}${q(target.node)} ${q(target.cli)} start --no-qr`,
+    `Exec=${env}${target.map(q).join(' ')} start --no-qr`,
     'Terminal=false',
     'NoDisplay=true',
     'X-GNOME-Autostart-enabled=true',
@@ -87,7 +92,7 @@ export async function enableAutostart(): Promise<AutostartStatus> {
   // which would garble non-ASCII paths such as C:\Users\José.
   const data = process.platform === 'win32' ? Buffer.from(`\ufeff${content}`, 'utf16le') : content;
   await writeFile(file, data, { mode: 0o644 });
-  return { enabled: true, file, command: `${target.node} ${target.cli} start --no-qr` };
+  return { enabled: true, file, command: `${target.join(' ')} start --no-qr` };
 }
 
 export async function disableAutostart(): Promise<AutostartStatus> {

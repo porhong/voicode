@@ -7,7 +7,12 @@ import {
   hasAutoApprovals,
   inspectProjectSettings,
 } from '../config/project-settings.js';
-import { out, warn } from './ui.js';
+import {
+  bundledClaudePackage,
+  claudeCodeVersion,
+  ensureClaudeExecutable,
+} from '../claude/claude-executable.js';
+import { ok, out, warn } from './ui.js';
 
 export function parsePort(value: string): number {
   const port = Number(value);
@@ -46,4 +51,33 @@ export async function warnAboutAutoApprovals(projectDir: string): Promise<void> 
   if (!hasAutoApprovals(approvals)) return;
   out(warn(`  ! ${describeAutoApprovals(approvals)}`));
   out(warn(`    Only allow projects you trust. Review ${approvals.files.join(' and ')}.`));
+}
+
+/**
+ * Standalone executables download Claude Code on first use (see claude-executable.ts).
+ * Returns false when it is unavailable; the agent still starts for mouse control.
+ */
+export async function prepareClaudeCode(): Promise<boolean> {
+  const version = claudeCodeVersion(bundledClaudePackage());
+  const tty = process.stdout.isTTY;
+  let lastPercent = -1;
+  try {
+    const result = await ensureClaudeExecutable((received, total) => {
+      if (lastPercent === -1) out(`  Downloading Claude Code ${version} (one-time)…`);
+      const percent = total ? Math.floor((received / total) * 100) : 0;
+      if (tty && total && percent !== lastPercent) {
+        process.stdout.write(`\r  ${percent}% of ${Math.round(total / 1048576)} MB`);
+      }
+      lastPercent = Math.max(percent, 0);
+    });
+    if (tty && lastPercent >= 0) process.stdout.write('\n');
+    if (result.downloaded) out(ok(`  Claude Code ${version} installed`));
+    if (result.warning) out(warn(`  ! ${result.warning}`));
+    return true;
+  } catch (err) {
+    if (tty && lastPercent >= 0) process.stdout.write('\n');
+    out(warn(`  ! ${(err as Error).message}`));
+    out(warn('    Claude sessions will not work until this is fixed; mouse control still will.'));
+    return false;
+  }
 }

@@ -14,6 +14,7 @@
   "scripts": {
     "build": "npm run build -w @voicecode/web && npm run build -w voicecode-agent",
     "build:native": "node scripts/build-native.mjs",
+    "build:sea": "node apps/agent/scripts/build-sea.mjs",
     "dev:agent": "npm run dev -w voicecode-agent",
     "dev:web": "npm run dev -w @voicecode/web",
     "typecheck": "npm run typecheck --workspaces --if-present",

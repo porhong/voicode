@@ -10,6 +10,7 @@ coverage/
 # Native helper build outputs (prebuilt binaries are produced by CI)
 native/**/build/
 apps/agent/native-bin/
+apps/agent/build/
 
 # Local agent state written during development
 .voicecode/

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isStandalone, standaloneRoot } from './standalone.js';
 
 declare const __AGENT_VERSION__: string | undefined;
 
@@ -12,10 +13,12 @@ let cachedRoot: string | undefined;
 /**
  * Directory containing the agent's package.json. Works both from the bundled `dist/`
  * output and when running sources with tsx, so bundled assets (web UI, native helpers,
- * scripts) can be located relative to it.
+ * scripts) can be located relative to it. Standalone executables use the directory their
+ * embedded assets were extracted to, which has the same layout.
  */
 export function packageRoot(): string {
   if (cachedRoot) return cachedRoot;
+  if (isStandalone()) return (cachedRoot = standaloneRoot());
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (;;) {
     const candidate = path.join(dir, 'package.json');

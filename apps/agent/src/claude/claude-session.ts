@@ -16,6 +16,7 @@ import {
 import type { Logger } from '../util/logger.js';
 import type { ApprovalBroker } from './approval-broker.js';
 import { AsyncQueue } from './async-queue.js';
+import { claudeExecutablePath } from './claude-executable.js';
 import { summarizeToolResult, summarizeToolUse } from './tool-summary.js';
 
 /** Events kept per session so reconnecting clients can catch up. */
@@ -77,6 +78,7 @@ export class ClaudeSession extends EventEmitter<{
 
   start(): void {
     const { config, broker } = this.opts;
+    const executable = this.opts.queryFn ? undefined : claudeExecutablePath();
     const options: Options = {
       cwd: this.project.path,
       abortController: this.abort,
@@ -89,6 +91,7 @@ export class ClaudeSession extends EventEmitter<{
       // plain text instead, which works naturally with voice replies.
       disallowedTools: ['AskUserQuestion'],
       stderr: (data) => this.opts.logger.debug({ session: this.id, data }, 'claude stderr'),
+      ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
       ...(config.model ? { model: config.model } : {}),
       ...(config.maxBudgetUsd ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       ...(this.opts.resume ? { resume: this.opts.resume } : {}),

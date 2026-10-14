@@ -36,3 +36,7 @@ jobs:
 
   native:
     uses: ./.github/workflows/native.yml
+
+  standalone:
+    needs: native
+    uses: ./.github/workflows/standalone.yml

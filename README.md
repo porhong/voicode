@@ -17,11 +17,17 @@ trackpad. No cloud backend and no app to install.
 
 ## Quick start
 
-Requires **Node.js 22.12+**, a logged-in Claude Code account (`claude` → `/login`) or an
-`ANTHROPIC_API_KEY`, and a graphical desktop session.
+Requires a logged-in Claude Code account (`claude` → `/login`) or an
+`ANTHROPIC_API_KEY`, and a graphical desktop session. Install it either way:
+
+- **Standalone executable** (no Node.js needed): download the archive for your platform
+  from [GitHub Releases](https://github.com/porhong/voicode/releases) —
+  `voicecode-agent-<version>-windows-x64.zip`, `-linux-x64.tar.gz` or
+  `-linux-arm64.tar.gz` — and extract `voicecode-agent` somewhere on your `PATH`. See
+  [Standalone executables](#standalone-executables).
+- **npm** (Node.js 22.12+): `npm install -g voicecode-agent`
 
 ```bash
-npm install -g voicecode-agent          # once published; see "Development" to run from source
 voicecode-agent init --project ./my-app # config, local CA, server certificate, diagnostics
 voicecode-agent start
 ```
@@ -42,6 +48,29 @@ VoiceCode Agent  v0.1.0
 ```
 
 Scan the QR code (it carries the pairing code), confirm a device name, and you're in.
+
+### Standalone executables
+
+Each executable is a [Node.js single executable application](https://nodejs.org/api/single-executable-applications.html)
+with the web client and the native mouse helpers embedded; they are unpacked to a cache
+directory on first run (`%LOCALAPPDATA%oicecode-agent` on Windows,
+`~/.cache/voicecode-agent` on Linux, or `VOICECODE_CACHE_DIR`).
+
+Claude Code itself (~250 MB) is not embedded. On first `init` or `start` the agent
+downloads the exact version it was built and tested with from the npm registry
+(`@anthropic-ai/claude-agent-sdk-<platform>`) and verifies it against the SHA-512
+integrity hash recorded at build time. Offline, it falls back to a native `claude` on your
+`PATH`. To use a specific binary instead, set `VOICECODE_CLAUDE_PATH`.
+
+The release page lists `SHA256SUMS.txt`, and every archive carries a signed build
+provenance attestation:
+
+```bash
+gh attestation verify voicecode-agent-0.1.0-linux-x64.tar.gz --repo porhong/voicode
+```
+
+The Windows executable is not Authenticode-signed, so SmartScreen may warn the first time
+you run it (More info → Run anyway).
 
 ### Trust the agent's certificate (once per device)
 
@@ -167,7 +196,14 @@ npm install
 npm run build:native     # optional: native mouse helper (MinGW gcc/MSVC on Windows; gcc + libx11-dev libxtst-dev on Linux)
 npm run build            # web client → agent bundle (apps/agent/dist)
 node apps/agent/dist/cli.js start --project .
+npm run build:sea        # optional: standalone executable for this platform (apps/agent/build/sea)
 ```
+
+`npm run build:sea` bundles the CLI to CommonJS with esbuild and injects it, the web
+client and any native helpers in `apps/agent/native-bin/` into a copy of the running
+`node` binary. `node apps/agent/scripts/smoke-sea.mjs` then runs `init`, `start`, fetches
+the web client over HTTPS and stops it, in a throwaway home directory (add
+`--with-claude` to also test the Claude Code download).
 
 Live-reload loop: run the agent with `npm run dev:agent` and the web client with
 `npm run dev:web`. The Vite dev server reuses the agent's certificate and proxies `/api`
@@ -223,7 +259,9 @@ when a `v*` tag is pushed. It builds the native helpers for `win32-x64`, `linux-
 `linux-arm64` (Linux on Ubuntu 22.04 for glibc compatibility), runs lint, typecheck and
 tests, builds the bundle, verifies the tarball contents
 (`node scripts/verify-package.mjs --require-native`), publishes with provenance and
-creates a GitHub release. Versions with a pre-release suffix (`1.0.0-beta.1`) go to the
+creates a GitHub release. The standalone executables are built and smoke-tested on each
+target platform (including the real Claude Code download), then attached to the release
+with `SHA256SUMS.txt` and build provenance attestations. Versions with a pre-release suffix (`1.0.0-beta.1`) go to the
 `next` dist-tag.
 
 ```bash
@@ -249,6 +287,5 @@ that already exists, so:
 
 ## Roadmap
 
-- Standalone executables (Node SEA) with the native helper embedded
 - Optional PTY mode for attaching to an interactive `claude` terminal
 - Keyboard input and text injection

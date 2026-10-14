@@ -4,6 +4,11 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { inspectCertificate, serverSubjectAltNames } from '@voicecode/security';
+import {
+  bundledClaudePackage,
+  claudeCodeVersion,
+  resolveClaudeExecutable,
+} from '../claude/claude-executable.js';
 import type { AgentConfig } from '../config/config.js';
 import {
   describeAutoApprovals,
@@ -15,6 +20,7 @@ import { isAgentRunning } from '../ipc/control.js';
 import { InputRouter } from '../mouse/input-router.js';
 import { detectDisplayServer, driverCandidates } from '../mouse/resolve-driver.js';
 import { fileExists } from '../util/fs.js';
+import { isStandalone } from '../util/standalone.js';
 import { silentLogger } from '../util/logger.js';
 import { rankedLanAddresses } from '../util/network.js';
 import { autostartStatus } from '../system/autostart.js';
@@ -41,7 +47,7 @@ export async function runChecks(
   add({
     name: 'Node.js',
     status: major > 22 || (major === 22 && minor >= 12) ? 'ok' : 'fail',
-    detail: `v${process.versions.node}`,
+    detail: `v${process.versions.node}${isStandalone() ? ' (built in)' : ''}`,
     fix: 'Install Node.js 22.12 or newer',
   });
   add({
@@ -52,7 +58,7 @@ export async function runChecks(
   });
 
   // Claude Code --------------------------------------------------------------
-  add(await checkClaude());
+  for (const result of await checkClaude()) add(result);
 
   // Config -------------------------------------------------------------------
   if (!config) {
@@ -149,17 +155,42 @@ export async function runChecks(
   return results;
 }
 
-async function checkClaude(): Promise<CheckResult> {
-  try {
-    import.meta.resolve('@anthropic-ai/claude-agent-sdk');
-  } catch {
-    return {
-      name: 'Claude Agent SDK',
-      status: 'fail',
-      detail: 'not installed',
-      fix: 'Reinstall voicecode-agent',
-    };
+function checkClaudeExecutable(): CheckResult | undefined {
+  const exe = resolveClaudeExecutable();
+  const version = claudeCodeVersion(bundledClaudePackage());
+  switch (exe.source) {
+    case 'sdk':
+      return undefined;
+    case 'env':
+      return existsSync(exe.path!)
+        ? { name: 'Claude Code', status: 'ok', detail: `${exe.path} (VOICECODE_CLAUDE_PATH)` }
+        : {
+            name: 'Claude Code',
+            status: 'fail',
+            detail: `VOICECODE_CLAUDE_PATH points to a missing file: ${exe.path}`,
+            fix: 'Fix or unset VOICECODE_CLAUDE_PATH',
+          };
+    case 'managed':
+      return { name: 'Claude Code', status: 'ok', detail: `${version} (managed)` };
+    case 'path':
+      return {
+        name: 'Claude Code',
+        status: 'warn',
+        detail: `using ${exe.path}; its version may not match ${version || 'this build'}`,
+        fix: 'Run `voicecode-agent start` with internet access to download the matching version',
+      };
+    case 'missing':
+      return {
+        name: 'Claude Code',
+        status: 'warn',
+        detail: 'not downloaded yet',
+        fix: 'It is downloaded the first time you run `voicecode-agent start`',
+      };
   }
+}
+
+async function checkClaude(): Promise<CheckResult[]> {
+  const executable = checkClaudeExecutable();
 
   const env = process.env;
   const configDir = env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
@@ -172,7 +203,7 @@ async function checkClaude(): Promise<CheckResult> {
   if (env.CLAUDE_CODE_USE_FOUNDRY) sources.push('Microsoft Foundry');
   if (existsSync(path.join(configDir, '.credentials.json'))) sources.push('Claude login');
 
-  return sources.length
+  const auth: CheckResult = sources.length
     ? { name: 'Claude Code auth', status: 'ok', detail: sources.join(', ') }
     : {
         name: 'Claude Code auth',
@@ -180,6 +211,7 @@ async function checkClaude(): Promise<CheckResult> {
         detail: 'no credentials detected',
         fix: 'Run `claude` once and log in, or set ANTHROPIC_API_KEY',
       };
+  return executable ? [executable, auth] : [auth];
 }
 
 async function checkMouse(config: AgentConfig): Promise<CheckResult> {

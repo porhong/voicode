@@ -8,7 +8,7 @@ import { ensureTls } from '../../tls/certificates.js';
 import { silentLogger } from '../../util/logger.js';
 import { lanAddresses } from '../../util/network.js';
 import { VERSION } from '../../util/version.js';
-import { loadOrInit, parsePort, warnAboutAutoApprovals } from '../shared.js';
+import { loadOrInit, parsePort, prepareClaudeCode, warnAboutAutoApprovals } from '../shared.js';
 import { heading, ok, out, printChecks, row, warn } from '../ui.js';
 
 export function registerInit(program: Command): void {
@@ -39,6 +39,7 @@ export function registerInit(program: Command): void {
 
         heading('VoiceCode Agent', VERSION);
         out(created ? ok('  Initialized') : ok('  Updated'));
+        await prepareClaudeCode();
         row('Config', paths.config);
         row('Projects', config.projects.map((p) => p.path).join(', ') || warn('none yet'));
         row('CA SHA-256', tls.caFingerprint);

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import Fastify from 'fastify';
+import Fastify, { LogController } from 'fastify';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
@@ -58,7 +58,7 @@ export async function buildServer(deps: ServerDeps) {
     forceCloseConnections: true,
     // Per-request access logs would fill agent.log with asset fetches; errors are
     // still logged, and security-relevant events are logged explicitly.
-    disableRequestLogging: true,
+    logController: new LogController({ disableRequestLogging: true }),
   });
 
   app.decorateRequest('device', null);

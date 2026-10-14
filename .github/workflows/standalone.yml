@@ -1,0 +1,86 @@
+# Builds the standalone executables (Node.js single executable applications) with the
+# native helpers from native.yml embedded, smoke-tests each one on its own platform, and
+# uploads the release archives. Called by CI and by the release workflow.
+name: Standalone executables
+
+on:
+  workflow_call:
+    inputs:
+      with-claude:
+        description: Also test the real Claude Code download in the smoke test
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Standalone (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+            archive: windows-x64
+          # The official Node.js binaries need glibc 2.28+; build on the oldest
+          # supported runner anyway so nothing newer sneaks in.
+          - os: ubuntu-22.04
+            target: linux-x64
+            archive: linux-x64
+          - os: ubuntu-22.04-arm
+            target: linux-arm64
+            archive: linux-arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      # The executable embeds this exact Node.js runtime.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-${{ matrix.target }}-*
+          path: apps/agent/native-bin/${{ matrix.target }}
+          merge-multiple: true
+
+      - name: Restore helper permissions
+        if: runner.os == 'Linux'
+        run: chmod 755 apps/agent/native-bin/${{ matrix.target }}/voicecode-input-*
+
+      - run: node apps/agent/scripts/build-sea.mjs --require-native
+
+      - run: node apps/agent/scripts/smoke-sea.mjs ${{ inputs.with-claude && '--with-claude' || '' }}
+
+      - name: Package
+        run: |
+          VERSION=$(node -p "require('./apps/agent/package.json').version")
+          NAME="voicecode-agent-$VERSION-${{ matrix.archive }}"
+          mkdir -p "release/$NAME"
+          cp apps/agent/build/sea/voicecode-agent* apps/agent/build/sea/THIRD_PARTY_NOTICES.txt \
+             LICENSE README.md "release/$NAME/"
+          cd release
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z a -tzip "$NAME.zip" "$NAME" > /dev/null
+          else
+            tar -czf "$NAME.tar.gz" "$NAME"
+          fi
+          rm -rf "$NAME"
+          ls -l
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: standalone-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 7

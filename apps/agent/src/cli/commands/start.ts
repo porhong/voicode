@@ -7,7 +7,7 @@ import { runChecks } from '../../doctor/checks.js';
 import { isAgentRunning } from '../../ipc/control.js';
 import { createLogger } from '../../util/logger.js';
 import { VERSION } from '../../util/version.js';
-import { loadOrInit, parsePort, warnAboutAutoApprovals } from '../shared.js';
+import { loadOrInit, parsePort, prepareClaudeCode, warnAboutAutoApprovals } from '../shared.js';
 import {
   clean,
   fail,
@@ -59,6 +59,7 @@ async function start(opts: StartOptions): Promise<void> {
     return;
   }
 
+  await prepareClaudeCode();
   const logger = createLogger({ file: paths.log, verbose: opts.verbose });
   process.on('unhandledRejection', (err) => logger.error({ err }, 'unhandled rejection'));
   const agent = new Agent(config, paths, logger);

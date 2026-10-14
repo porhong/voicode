@@ -16,5 +16,7 @@ export default defineConfig({
   // Workspace packages are TypeScript sources; inline them so the published package
   // depends only on what is listed in package.json.
   noExternal: ['@voicecode/protocol', '@voicecode/security'],
+  // Keep `node:` specifiers: prefix-only builtins such as `node:sea` have no bare name.
+  removeNodeProtocol: false,
   define: { __AGENT_VERSION__: JSON.stringify(pkg.version) },
 });

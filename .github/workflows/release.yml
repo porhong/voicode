@@ -1,4 +1,5 @@
-# Publishes voicecode-agent to npm when a version tag (v1.2.3) is pushed.
+# Publishes voicecode-agent to npm when a version tag (v1.2.3) is pushed, and attaches
+# the standalone executables (Windows x64, Linux x64/arm64) to the GitHub release.
 #
 # Authentication uses npm trusted publishing (GitHub OIDC): no long-lived token, and
 # npm attaches a signed provenance statement linking the package to this workflow.
@@ -6,7 +7,8 @@
 # can be configured, set an NPM_TOKEN repository secret; remove it afterwards.
 #
 # Running the workflow manually (Actions → Release → Run workflow) performs a full dry
-# run: native builds, tests, package verification and `npm publish --dry-run`.
+# run: native builds, standalone builds, tests, package verification and
+# `npm publish --dry-run`.
 name: Release
 
 on:
@@ -25,13 +27,20 @@ jobs:
   native:
     uses: ./.github/workflows/native.yml
 
-  publish:
-    name: Publish to npm${{ github.event_name == 'workflow_dispatch' && ' (dry run)' || '' }}
+  standalone:
     needs: native
+    uses: ./.github/workflows/standalone.yml
+    with:
+      with-claude: true
+
+  publish:
+    name: Publish${{ github.event_name == 'workflow_dispatch' && ' (dry run)' || '' }}
+    needs: [native, standalone]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub release
-      id-token: write # npm trusted publishing + provenance
+      id-token: write # npm trusted publishing + provenance, build attestations
+      attestations: write
     env:
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
@@ -66,6 +75,18 @@ jobs:
           pattern: native-*
           path: native-artifacts
 
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: standalone-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: release-assets
+        run: |
+          sha256sum voicecode-agent-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
       - name: Bundle native helpers
         run: |
           # Artifacts are named native-<platform>-<arch>-<helper>.
@@ -97,6 +118,12 @@ jobs:
             npm publish -w voicecode-agent --tag "${{ steps.meta.outputs.dist_tag }}" --provenance
           fi
 
+      - name: Attest standalone builds
+        if: env.DRY_RUN != 'true'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: release-assets/voicecode-agent-*
+
       - name: Create GitHub release
         if: env.DRY_RUN != 'true'
         env:
@@ -106,4 +133,5 @@ jobs:
             --verify-tag \
             --title "voicecode-agent $GITHUB_REF_NAME" \
             --generate-notes \
-            ${{ steps.meta.outputs.dist_tag == 'next' && '--prerelease' || '' }}
+            ${{ steps.meta.outputs.dist_tag == 'next' && '--prerelease' || '' }} \
+            release-assets/*

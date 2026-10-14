@@ -5,7 +5,13 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', 'native/**/build/**', 'apps/agent/native-bin/**'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      'native/**/build/**',
+      'apps/agent/native-bin/**',
+      'apps/agent/build/**',
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
