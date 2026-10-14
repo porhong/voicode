@@ -46,6 +46,9 @@ const ERROR_MESSAGES: Record<string, string> = {
  * final transcript is sent as a prompt. `onFinal` is called with each finalized phrase,
  * `onEnd` when dictation stops.
  */
+export const speechRecognitionSupported = () =>
+  typeof window !== 'undefined' && recognitionCtor() !== undefined;
+
 export function useSpeechRecognition(options: {
   lang: string;
   onFinal: (text: string) => void;
@@ -60,7 +63,7 @@ export function useSpeechRecognition(options: {
     optionsRef.current = options;
   });
 
-  const supported = typeof window !== 'undefined' && recognitionCtor() !== undefined;
+  const supported = speechRecognitionSupported();
 
   const start = useCallback(() => {
     const Ctor = recognitionCtor();

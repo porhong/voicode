@@ -189,6 +189,18 @@ session to auto-accept edits (commands still ask). Turn on approval notification
 settings to get a system notification when Claude is waiting while you're in another
 app.
 
+**Deck layout.** The button next to Settings (or **Settings → Claude layout**) switches
+the Claude tab from a chat to a deck: a macro pad modelled on Work Louder's Codex Micro,
+shown under a shorter conversation (beside it in landscape). Six programmable keys and a
+four-way joystick send preset or custom prompts (push the stick and release to fire; the
+display names what it will do first). Turn the dial to scroll the conversation and tap it
+to jump to the latest output. Command keys **Stop**, **Accept**, **Reject** and **New**
+work on the session on screen; Accept and Reject answer the approval card shown above the
+deck, which still carries the full tool input. Hold the wide mic key to talk and release to
+send. The sliders button on the deck opens the editor: pick a layout pack, or give any key
+or joystick push its own label, icon and prompt, optionally put in the box for review
+instead of sent. Layouts are stored per device.
+
 **Every Claude session on the PC.** The sessions sheet (tap the session title) also lists
 Claude Code sessions running elsewhere on the PC, such as in a terminal, with their status
 (working, idle, needs input). Tap one to follow it live, read-only. Once it's idle, **Continue on

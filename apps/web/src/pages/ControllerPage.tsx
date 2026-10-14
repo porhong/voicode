@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ServerMessage } from '@voicecode/protocol';
 import { Composer, type ComposerHandle } from '../components/Composer';
-import { GearIcon } from '../components/Icons';
+import { Deck, type DeckStatus } from '../components/Deck';
+import { DeckEditor } from '../components/DeckEditor';
+import { ChatIcon, DeckPadIcon, GearIcon } from '../components/Icons';
 import { PermissionCard } from '../components/PermissionCard';
 import { SessionBar, StartSession, useProjectChoice } from '../components/SessionBar';
 import { Toasts } from '../components/Toasts';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { Trackpad } from '../components/Trackpad';
-import { Transcript } from '../components/Transcript';
+import { Transcript, type TranscriptHandle } from '../components/Transcript';
 import { useAgentSocket } from '../hooks/useAgentSocket';
 import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
+import { useDeck, type Macro } from '../hooks/useDeck';
+import { speechRecognitionSupported } from '../hooks/useSpeechRecognition';
 import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
 import { useWakeLock } from '../hooks/useWakeLock';
@@ -38,6 +42,11 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [settings, updateSettings] = useSettings();
   const composerRef = useRef<ComposerHandle>(null);
+  const transcriptRef = useRef<TranscriptHandle>(null);
+  const [deck, saveDeck] = useDeck();
+  const [deckEditorOpen, setDeckEditorOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  const deckMode = settings.claudeLayout === 'deck';
 
   const onMessage = useCallback(
     (message: ServerMessage) => dispatch({ type: 'server', message }),
@@ -162,6 +171,14 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
         Resume an earlier session
       </button>
     </div>
+  ) : deckMode ? (
+    <div className="empty-card">
+      <h2>What should Claude do?</h2>
+      <p className="muted">
+        Press a key, push the joystick, or hold the mic key and speak. The sliders button on the
+        deck changes what each control does.
+      </p>
+    </div>
   ) : (
     <div className="empty-card">
       <h2>What should Claude do?</h2>
@@ -180,6 +197,38 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       </div>
     </div>
   );
+
+  const approval = activePermissions[0];
+  const lastEvent = activeEvents[activeEvents.length - 1]?.event;
+  const deckStatus: DeckStatus = pcId
+    ? 'pc'
+    : !active
+      ? 'none'
+      : active.state === 'idle' && lastEvent?.kind === 'result'
+        ? lastEvent.isError
+          ? 'error'
+          : 'done'
+        : active.state;
+  const canPrompt = connection === 'open' && !!live;
+  const respond = (decision: 'allow' | 'deny') =>
+    approval &&
+    send({
+      type: 'claude.permission.respond',
+      sessionId: approval.sessionId,
+      requestId: approval.requestId,
+      decision,
+      rememberForSession: false,
+    });
+  const runMacro = (macro: Macro) => {
+    if (!active || !canPrompt) return;
+    if (macro.review) composerRef.current?.setDraft(macro.prompt);
+    else send({ type: 'claude.prompt', sessionId: active.id, text: macro.prompt });
+  };
+  const newSession = () => {
+    const projectId = active?.projectId ?? startProjectId;
+    if (projectId) startSession(projectId);
+    else setSessionsOpen(true);
+  };
 
   return (
     <div className="app">
@@ -216,6 +265,16 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
             Trackpad
           </button>
         </nav>
+        {tab === 'claude' && (
+          <button
+            className="icon-button"
+            onClick={() => updateSettings({ claudeLayout: deckMode ? 'chat' : 'deck' })}
+            aria-label={deckMode ? 'Switch to chat layout' : 'Switch to deck layout'}
+            title={deckMode ? 'Chat layout' : 'Deck layout'}
+          >
+            {deckMode ? <ChatIcon /> : <DeckPadIcon />}
+          </button>
+        )}
         <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label="Settings">
           <GearIcon />
         </button>
@@ -242,111 +301,140 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       )}
 
       {tab === 'claude' ? (
-        <main className="claude">
-          <SessionBar
-            disabled={connection !== 'open'}
-            state={state}
-            send={send}
-            sheetOpen={sessionsOpen}
-            onSheetOpenChange={setSessionsOpen}
-            onSelect={openSession}
-            onSelectPc={openPcSession}
-          />
-          {pcId ? (
-            <Transcript
-              key={`pc-${pcId}`}
-              events={pcEvents}
-              streaming=""
-              empty={
-                <div className="empty-card">
-                  <p className="muted">No messages in this session yet.</p>
-                </div>
-              }
-            />
-          ) : (
-            <Transcript
-              key={active?.id ?? 'none'}
-              events={activeEvents}
-              streaming={active ? (state.streaming[active.id] ?? '') : ''}
-              empty={emptyState}
-            />
-          )}
-          {otherPermissions > 0 && (
-            <button className="banner banner-action" onClick={() => setSessionsOpen(true)}>
-              {otherPermissions} approval{otherPermissions > 1 ? 's' : ''} waiting in another
-              session →
-            </button>
-          )}
-          {activePermissions.length > 0 && (
-            // Scrolls on its own on short screens (landscape) so the composer stays visible.
-            <div className="approvals">
-              {activePermissions.map((request) => (
-                <PermissionCard
-                  key={request.requestId}
-                  request={request}
-                  send={send}
-                  disabled={connection !== 'open'}
-                />
-              ))}
-            </div>
-          )}
-          {pcId && (
-            <div className="pc-bar">
-              {pc ? (
-                <>
-                  <p className="pc-bar-text">
-                    <strong>Running in a terminal on the PC.</strong>{' '}
-                    <span className="muted">
-                      {pc.status === 'working' || pc.status === 'waiting'
-                        ? 'You can continue it here once it finishes.'
-                        : 'Continue it here as a copy; the terminal keeps its own.'}
-                    </span>
-                  </p>
-                  <button
-                    className="btn btn-primary"
-                    disabled={
-                      connection !== 'open' || pc.status === 'working' || pc.status === 'waiting'
-                    }
-                    onClick={continuePc}
-                  >
-                    Continue on phone
-                  </button>
-                </>
-              ) : (
-                <p className="pc-bar-text muted">This session has ended on the PC.</p>
-              )}
-            </div>
-          )}
-          {active && live && (
-            <Composer
-              ref={composerRef}
+        <main className={deckMode ? 'claude claude-deck' : 'claude'}>
+          <div className="claude-column">
+            <SessionBar
               disabled={connection !== 'open'}
-              activity={
-                active.state === 'running' || active.state === 'awaiting_permission'
-                  ? active.state
-                  : undefined
-              }
-              approvalShown={activePermissions.length > 0}
-              settings={settings}
-              onSend={(text) => send({ type: 'claude.prompt', sessionId: active.id, text })}
-              onInterrupt={() => send({ type: 'claude.interrupt', sessionId: active.id })}
+              state={state}
+              send={send}
+              sheetOpen={sessionsOpen}
+              onSheetOpenChange={setSessionsOpen}
+              onSelect={openSession}
+              onSelectPc={openPcSession}
             />
-          )}
-          {active && !live && (
-            <div className="session-ended">
-              <span className="muted">
-                {active.state === 'error'
-                  ? 'This session stopped with an error.'
-                  : 'Session closed.'}
-              </span>
-              <button
-                className="btn btn-primary btn-small"
-                disabled={connection !== 'open'}
-                onClick={() => startSession(active.projectId)}
-              >
-                New session
+            {pcId ? (
+              <Transcript
+                ref={transcriptRef}
+                key={`pc-${pcId}`}
+                events={pcEvents}
+                streaming=""
+                empty={
+                  <div className="empty-card">
+                    <p className="muted">No messages in this session yet.</p>
+                  </div>
+                }
+              />
+            ) : (
+              <Transcript
+                ref={transcriptRef}
+                key={active?.id ?? 'none'}
+                events={activeEvents}
+                streaming={active ? (state.streaming[active.id] ?? '') : ''}
+                empty={emptyState}
+              />
+            )}
+            {otherPermissions > 0 && (
+              <button className="banner banner-action" onClick={() => setSessionsOpen(true)}>
+                {otherPermissions} approval{otherPermissions > 1 ? 's' : ''} waiting in another
+                session →
               </button>
-            </div>
+            )}
+            {activePermissions.length > 0 && (
+              // Scrolls on its own on short screens (landscape) so the composer stays visible.
+              <div className="approvals">
+                {activePermissions.map((request) => (
+                  <PermissionCard
+                    key={request.requestId}
+                    request={request}
+                    send={send}
+                    disabled={connection !== 'open'}
+                  />
+                ))}
+              </div>
+            )}
+            {pcId && (
+              <div className="pc-bar">
+                {pc ? (
+                  <>
+                    <p className="pc-bar-text">
+                      <strong>Running in a terminal on the PC.</strong>{' '}
+                      <span className="muted">
+                        {pc.status === 'working' || pc.status === 'waiting'
+                          ? 'You can continue it here once it finishes.'
+                          : 'Continue it here as a copy; the terminal keeps its own.'}
+                      </span>
+                    </p>
+                    <button
+                      className="btn btn-primary"
+                      disabled={
+                        connection !== 'open' || pc.status === 'working' || pc.status === 'waiting'
+                      }
+                      onClick={continuePc}
+                    >
+                      Continue on phone
+                    </button>
+                  </>
+                ) : (
+                  <p className="pc-bar-text muted">This session has ended on the PC.</p>
+                )}
+              </div>
+            )}
+            {active && live && (
+              <Composer
+                ref={composerRef}
+                disabled={connection !== 'open'}
+                activity={
+                  active.state === 'running' || active.state === 'awaiting_permission'
+                    ? active.state
+                    : undefined
+                }
+                approvalShown={activePermissions.length > 0}
+                settings={settings}
+                compact={deckMode}
+                onListeningChange={setListening}
+                onSend={(text) => send({ type: 'claude.prompt', sessionId: active.id, text })}
+                onInterrupt={() => send({ type: 'claude.interrupt', sessionId: active.id })}
+              />
+            )}
+            {active && !live && (
+              <div className="session-ended">
+                <span className="muted">
+                  {active.state === 'error'
+                    ? 'This session stopped with an error.'
+                    : 'Session closed.'}
+                </span>
+                <button
+                  className="btn btn-primary btn-small"
+                  disabled={connection !== 'open'}
+                  onClick={() => startSession(active.projectId)}
+                >
+                  New session
+                </button>
+              </div>
+            )}
+          </div>
+          {deckMode && (
+            <Deck
+              deck={deck}
+              status={deckStatus}
+              canPrompt={canPrompt}
+              connected={connection === 'open'}
+              running={active?.state === 'running' || active?.state === 'awaiting_permission'}
+              approval={approval}
+              micSupported={speechRecognitionSupported()}
+              listening={canPrompt && listening}
+              onMacro={runMacro}
+              onAccept={() => respond('allow')}
+              onReject={() => respond('deny')}
+              onStop={() => active && send({ type: 'claude.interrupt', sessionId: active.id })}
+              onNew={newSession}
+              onType={() => composerRef.current?.focus()}
+              onSessions={() => setSessionsOpen(true)}
+              onCustomize={() => setDeckEditorOpen(true)}
+              onPushToTalk={(pressed) => composerRef.current?.pushToTalk(pressed)}
+              onScroll={(dy) => transcriptRef.current?.scrollBy(dy)}
+              onLatest={() => transcriptRef.current?.toEnd()}
+            />
           )}
         </main>
       ) : (
@@ -366,6 +454,10 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       )}
 
       <Toasts toasts={state.toasts} onOpen={openToast} onDismiss={dismissToast} />
+
+      {deckEditorOpen && (
+        <DeckEditor deck={deck} onChange={saveDeck} onClose={() => setDeckEditorOpen(false)} />
+      )}
 
       {settingsOpen && (
         <SettingsSheet

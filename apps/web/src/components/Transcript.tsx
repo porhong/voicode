@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import type { EventItem } from '../lib/store';
 import { ArrowDownIcon } from './Icons';
 import { Markdown } from './Markdown';
@@ -52,7 +60,14 @@ function EventRow({ item }: { item: EventItem }) {
 /** Within this many pixels of the end counts as "reading the latest output". */
 const STICK_PX = 96;
 
+/** Lets the deck's dial drive the transcript. */
+export interface TranscriptHandle {
+  scrollBy: (dy: number) => void;
+  toEnd: () => void;
+}
+
 interface Props {
+  ref?: Ref<TranscriptHandle>;
   events: EventItem[];
   streaming: string;
   /** Shown instead of the transcript when there is nothing in it yet. */
@@ -64,7 +79,7 @@ interface Props {
  * reader is already there; someone scrolled up to re-read gets a "Latest" button
  * instead of being yanked down by every streamed word.
  */
-export function Transcript({ events, streaming, empty }: Props) {
+export function Transcript({ ref, events, streaming, empty }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const atEndRef = useRef(true);
   const [behind, setBehind] = useState(false);
@@ -76,6 +91,13 @@ export function Transcript({ events, streaming, empty }: Props) {
     atEndRef.current = true;
     setBehind(false);
   };
+
+  useImperativeHandle(ref, () => ({
+    // Instant, not smooth: the dial sends many small steps that must not queue up.
+    // The onScroll handler keeps the pinned/behind state in step.
+    scrollBy: (dy: number) => scrollRef.current?.scrollBy({ top: dy }),
+    toEnd: () => scrollToEnd(true),
+  }));
 
   // Your own new prompt always brings you back to the end; later chunks of the reply
   // respect where you scrolled to.

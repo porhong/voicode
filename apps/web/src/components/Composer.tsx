@@ -8,6 +8,10 @@ import { MicIcon, SendIcon, StopIcon } from './Icons';
 export interface ComposerHandle {
   /** Replaces the draft (e.g. with a suggested prompt) and focuses the input. */
   setDraft: (text: string) => void;
+  /** Hold-to-talk from the deck's mic key: start on press, stop and send on release. */
+  pushToTalk: (pressed: boolean) => void;
+  /** Shows the input row (deck layout) and focuses it for typing. */
+  focus: () => void;
 }
 
 interface Props {
@@ -18,6 +22,10 @@ interface Props {
   /** An approval card is on screen: the input row steps aside to give it the room. */
   approvalShown: boolean;
   settings: Settings;
+  /** Deck layout: the input row stays out of the way until there is something in it. */
+  compact?: boolean;
+  /** Reports dictation starting and stopping (the deck lights its mic key). */
+  onListeningChange?: (listening: boolean) => void;
   onSend: (text: string) => void;
   onInterrupt: () => void;
 }
@@ -36,10 +44,13 @@ export function Composer({
   activity,
   approvalShown,
   settings,
+  compact = false,
+  onListeningChange,
   onSend,
   onInterrupt,
 }: Props) {
   const [text, setText] = useState('');
+  const [typing, setTyping] = useState(false);
   // Mirrors `text` for callbacks that fire outside React's render cycle (speech events).
   const textRef = useRef('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -47,13 +58,6 @@ export function Composer({
     textRef.current = next;
     setText(next);
   };
-
-  useImperativeHandle(ref, () => ({
-    setDraft: (draft: string) => {
-      updateText(draft);
-      inputRef.current?.focus();
-    },
-  }));
 
   const submit = (value = textRef.current) => {
     const trimmed = value.trim();
@@ -63,6 +67,7 @@ export function Composer({
   };
 
   const suppressAutoSendRef = useRef(false);
+  const pushToTalkRef = useRef(false);
   const speech = useSpeechRecognition({
     lang: settings.voiceLang,
     onFinal: (phrase) => {
@@ -70,8 +75,10 @@ export function Composer({
       updateText(prev ? `${prev} ${phrase}` : phrase);
     },
     onEnd: () => {
-      if (settings.autoSendVoice && !suppressAutoSendRef.current) submit();
+      const send = settings.autoSendVoice || pushToTalkRef.current;
+      if (send && !suppressAutoSendRef.current) submit();
       suppressAutoSendRef.current = false;
+      pushToTalkRef.current = false;
     },
   });
 
@@ -86,6 +93,8 @@ export function Composer({
     }
   }, [approvalShown, listening, stop]);
 
+  useEffect(() => onListeningChange?.(listening), [listening, onListeningChange]);
+
   const preview = speech.interim ? `${text}${text ? ' ' : ''}${speech.interim}` : text;
 
   // Grow with the content up to the CSS max-height, then scroll inside. Skipped while
@@ -95,9 +104,10 @@ export function Composer({
     if (!el || el.offsetParent === null) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [preview, approvalShown]);
+  }, [preview, approvalShown, typing]);
 
   const hasText = text.trim().length > 0;
+  const rowHidden = approvalShown || (compact && !typing && !hasText && !speech.listening);
   const action: 'stop-dictation' | 'send' | 'dictate' = speech.listening
     ? 'stop-dictation'
     : hasText || !speech.supported
@@ -110,6 +120,29 @@ export function Composer({
     navigator.vibrate?.(10);
     speech.start();
   };
+
+  useImperativeHandle(ref, () => ({
+    setDraft: (draft: string) => {
+      updateText(draft);
+      setTyping(true);
+      // The row may only just be un-hidden; focus once it is laid out.
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    pushToTalk: (pressed: boolean) => {
+      if (!speech.supported || disabled) return;
+      if (pressed) {
+        if (speech.listening) return;
+        pushToTalkRef.current = true;
+        dictate();
+      } else {
+        speech.stop();
+      }
+    },
+    focus: () => {
+      setTyping(true);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+  }));
   const onAction = () => {
     if (action === 'stop-dictation') return speech.stop();
     if (action === 'send') return submit();
@@ -117,8 +150,14 @@ export function Composer({
   };
 
   return (
-    <div className="composer">
-      {activity && (
+    <div
+      className={
+        rowHidden && (!activity || compact) && !speech.error
+          ? 'composer composer-empty'
+          : 'composer'
+      }
+    >
+      {activity && !compact && (
         <div className="working-strip" role="status">
           <span className="working-dots" aria-hidden>
             <i />
@@ -141,7 +180,7 @@ export function Composer({
       </span>
       {/* While an approval is pending the card needs the room (landscape especially),
           and a new prompt could not be acted on until it is answered anyway. */}
-      <div className="composer-row" hidden={approvalShown}>
+      <div className="composer-row" hidden={rowHidden}>
         {speech.supported && hasText && !speech.listening && (
           // Keep dictating after typing or a first phrase; the main button sends.
           <button
@@ -167,6 +206,7 @@ export function Composer({
                 : 'Ask Claude (use your keyboard’s mic to dictate)'
           }
           onChange={(e) => updateText(e.target.value)}
+          onBlur={() => setTyping(false)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && finePointer()) {
               e.preventDefault();

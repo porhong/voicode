@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 
 export interface Settings {
+  /** Claude tab style: a chat thread, or a macro pad (deck) under a shorter thread. */
+  claudeLayout: 'chat' | 'deck';
   /** Base pointer speed multiplier (phone CSS px → desktop px). */
   sensitivity: number;
   /** How strongly fast swipes are amplified. 0 = linear. */
@@ -21,6 +23,7 @@ export interface Settings {
 const KEY = 'voicecode.settings.v1';
 
 const defaults: Settings = {
+  claudeLayout: 'chat',
   sensitivity: 1.6,
   acceleration: 0.8,
   naturalScroll: true,

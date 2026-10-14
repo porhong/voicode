@@ -128,6 +128,27 @@ export function SettingsSheet({
 
   return (
     <Sheet title="Settings" onClose={onClose}>
+      <h3>Claude layout</h3>
+      <div className="segmented" role="radiogroup" aria-label="Claude layout">
+        {(
+          [
+            ['chat', 'Chat', 'Conversation and a prompt box'],
+            ['deck', 'Deck', 'Macro keys, dial and joystick'],
+          ] as const
+        ).map(([value, label, hint]) => (
+          <button
+            key={value}
+            role="radio"
+            aria-checked={settings.claudeLayout === value}
+            className={settings.claudeLayout === value ? 'segment active' : 'segment'}
+            onClick={() => update({ claudeLayout: value })}
+          >
+            <strong>{label}</strong>
+            <span className="small muted">{hint}</span>
+          </button>
+        ))}
+      </div>
+
       <h3>Voice</h3>
       <label className="field">
         <span>Dictation language</span>

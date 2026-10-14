@@ -69,3 +69,22 @@ export function GearIcon({ size = 22 }: { size?: number }) {
     </svg>
   );
 }
+
+export function ChatIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <path d="M4 5h16v11H9l-5 4z" {...stroke} />
+    </svg>
+  );
+}
+
+/** A small macro pad: the deck layout. */
+export function DeckPadIcon({ size = 22 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="4" {...stroke} />
+      <circle cx="8.5" cy="8.5" r="2" {...stroke} />
+      <path d="M14 8.5h3M7 15.5h3M14 15.5h3" {...stroke} />
+    </svg>
+  );
+}
