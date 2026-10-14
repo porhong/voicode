@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { listSessions, type query } from '@anthropic-ai/claude-agent-sdk';
@@ -108,10 +109,20 @@ export class SessionManager extends EventEmitter<{
     return false;
   }
 
-  /** The allow-listed project whose folder is `dir` (compared case-insensitively on Windows). */
+  /**
+   * The allow-listed project whose folder is `dir`. Both sides are resolved to their
+   * canonical form first: Claude Code may report a folder through a symlink or a
+   * Windows short (8.3) name that differs from the stored realpath.
+   */
   projectForFolder(dir: string): ProjectConfig | undefined {
     const norm = (p: string) => {
-      const resolved = path.resolve(p).replace(/[\\/]+$/, '');
+      let resolved = path.resolve(p);
+      try {
+        resolved = realpathSync.native(resolved);
+      } catch {
+        // A folder that no longer exists can only match textually.
+      }
+      resolved = resolved.replace(/[\\/]+$/, '');
       return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
     };
     const wanted = norm(dir);

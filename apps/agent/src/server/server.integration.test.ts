@@ -2,7 +2,7 @@ import https from 'node:https';
 import { appendFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import WebSocket from 'ws';
 import type { ServerMessage } from '@voicecode/protocol';
 import { addProject, ConfigSchema } from '../config/config.js';
@@ -338,6 +338,10 @@ describe('WebSocket gateway', () => {
   });
 
   it('follows a terminal session and continues it from the phone as a fork', async () => {
+    // The fake query is shared; later tests count its calls from zero.
+    onTestFinished(() => {
+      fake.control.permissionModeSets.length = 0;
+    });
     // Pairing is rate limited per IP; reuse the device paired by the tunnel test.
     const client = new Client(tunnelCookie);
     const welcome = await client.waitFor('welcome');
@@ -386,8 +390,6 @@ describe('WebSocket gateway', () => {
     });
     expect(sessions.projectForFolder(pcCwd)?.id).toBe(started.session.projectId);
     sessions.close(started.session.id);
-    // The fake query is shared; later tests count its calls from zero.
-    fake.control.permissionModeSets.length = 0;
   });
 
   it('runs a Claude turn with a remote approval', async () => {
