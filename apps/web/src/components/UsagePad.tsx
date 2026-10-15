@@ -77,8 +77,19 @@ function Ring({ limit, size, withReset }: { limit: UsageLimit; size: number; wit
 }
 
 /**
- * The plan's usage limits on the deck, in the joystick's place: one ring per limit (the
- * 5-hour session, the week, each model, extra usage). The limits are separate budgets,
+ * The limits the pad shows: the subscription's 5-hour session and its weekly limit, the
+ * two that decide whether Claude can keep working. Per-model and extra-usage limits are
+ * in the details sheet (the pad counts them as "+n more"). Everything is shown when the
+ * plan reports neither.
+ */
+export function padLimits(limits: UsageLimit[]): UsageLimit[] {
+  const primary = limits.filter((l) => l.scope === 'session' || l.scope === 'week');
+  return primary.length ? primary : limits;
+}
+
+/**
+ * The plan's usage limits on the deck, in the joystick's place: the 5-hour session and
+ * the week, one ring each. The limits are separate budgets,
  * not shares of one whole, so each gets its own ring rather than a slice of one pie.
  * A ring turns amber from 75 % and red from 90 %; the numbers say the same in text.
  * Tap for the details sheet.
@@ -115,7 +126,7 @@ export function UsagePad({
   }, []);
 
   const limits = usage?.limits ?? [];
-  const layout = layoutRings(limits, box.w, box.h);
+  const layout = layoutRings(padLimits(limits), box.w, box.h);
   const hidden = limits.length - layout.shown.length;
   const top = tightest(limits);
 

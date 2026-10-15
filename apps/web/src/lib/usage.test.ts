@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { UsageLimit } from '@voicecode/protocol';
-import { layoutRings } from '../components/UsagePad';
+import { layoutRings, padLimits } from '../components/UsagePad';
 import { describeLimit, resetsIn, tightest, usageLevel } from './usage';
 
 const limit = (id: string, utilization: number | null): UsageLimit => ({
@@ -62,5 +62,31 @@ describe('layoutRings', () => {
 
   it('draws nothing in a box too small for any ring', () => {
     expect(layoutRings([limit('5h', 1)], 20, 20).shown).toEqual([]);
+  });
+});
+
+describe('padLimits', () => {
+  const limit = (id: string, scope: UsageLimit['scope']): UsageLimit => ({
+    id,
+    label: id,
+    short: id,
+    scope,
+    utilization: 10,
+    resetsAt: null,
+  });
+
+  it('keeps the 5-hour session and the week for the pad', () => {
+    const limits = [
+      limit('five_hour', 'session'),
+      limit('seven_day', 'week'),
+      limit('model:Fable', 'model'),
+      limit('extra', 'extra'),
+    ];
+    expect(padLimits(limits).map((l) => l.id)).toEqual(['five_hour', 'seven_day']);
+  });
+
+  it('falls back to every limit when neither is reported', () => {
+    const limits = [limit('model:Fable', 'model')];
+    expect(padLimits(limits)).toEqual(limits);
   });
 });
