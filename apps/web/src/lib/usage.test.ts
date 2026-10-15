@@ -47,10 +47,10 @@ describe('layoutRings', () => {
     expect(layout.ring).toBeGreaterThanOrEqual(34);
   });
 
-  it('keeps the fullest limits, in their order, when not all fit', () => {
+  it('keeps the first limits in priority order when not all fit', () => {
     const limits = [limit('5h', 10), limit('week', 80), limit('opus', 95), limit('apps', 5)];
     const layout = layoutRings(limits, 56, 116);
-    expect(layout.shown.map((l) => l.id)).toEqual(['week', 'opus']);
+    expect(layout.shown.map((l) => l.id)).toEqual(['5h', 'week']);
   });
 
   it('lays every limit out side by side on the full deck, with reset times', () => {
@@ -75,18 +75,19 @@ describe('padLimits', () => {
     resetsAt: null,
   });
 
-  it('keeps the 5-hour session and the week for the pad', () => {
+  it('shows the 5-hour session, then the week, then each model, in that order', () => {
     const limits = [
-      limit('five_hour', 'session'),
-      limit('seven_day', 'week'),
       limit('model:Fable', 'model'),
+      limit('seven_day', 'week'),
+      limit('seven_day_oauth_apps', 'apps'),
+      limit('five_hour', 'session'),
       limit('extra', 'extra'),
     ];
-    expect(padLimits(limits).map((l) => l.id)).toEqual(['five_hour', 'seven_day']);
+    expect(padLimits(limits).map((l) => l.id)).toEqual(['five_hour', 'seven_day', 'model:Fable']);
   });
 
-  it('falls back to every limit when neither is reported', () => {
-    const limits = [limit('model:Fable', 'model')];
+  it('falls back to every limit when none of those is reported', () => {
+    const limits = [limit('extra', 'extra')];
     expect(padLimits(limits)).toEqual(limits);
   });
 });

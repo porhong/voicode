@@ -19,18 +19,13 @@ interface Layout {
 
 /**
  * How many rings fit the pad's box, and how big: every column count is tried and the
- * one giving the largest rings wins. When even one per cell is too small, the fullest
- * limits are kept (they are the ones that will stop Claude) and the rest are counted.
+ * one giving the largest rings wins. `limits` comes in priority order (see `padLimits`:
+ * 5-hour session, week, then models); when not all fit, the first ones are kept and the
+ * rest are counted, so the 5-hour ring is never the one that disappears.
  */
 export function layoutRings(limits: UsageLimit[], w: number, h: number): Layout {
   for (let k = limits.length; k >= 1; k--) {
-    const shown =
-      k === limits.length
-        ? limits
-        : [...limits]
-            .sort((a, b) => (b.utilization ?? -1) - (a.utilization ?? -1))
-            .slice(0, k)
-            .sort((a, b) => limits.indexOf(a) - limits.indexOf(b));
+    const shown = limits.slice(0, k);
     let best: Layout | undefined;
     for (let cols = 1; cols <= k; cols++) {
       const rows = Math.ceil(k / cols);
@@ -76,14 +71,19 @@ function Ring({ limit, size, withReset }: { limit: UsageLimit; size: number; wit
   );
 }
 
+/** The pad's order: the 5-hour session first, then the week, then each model's week. */
+const PAD_ORDER: Partial<Record<UsageLimit['scope'], number>> = { session: 0, week: 1, model: 2 };
+
 /**
- * The limits the pad shows: the subscription's 5-hour session and its weekly limit, the
- * two that decide whether Claude can keep working. Per-model and extra-usage limits are
- * in the details sheet (the pad counts them as "+n more"). Everything is shown when the
- * plan reports neither.
+ * The limits the pad shows, in this order: the subscription's 5-hour session, its weekly
+ * limit, then the weekly limit of each model that has one (e.g. Fable). App and
+ * extra-usage limits are in the details sheet (the pad counts them as "+n more").
+ * Everything is shown when the plan reports none of these.
  */
 export function padLimits(limits: UsageLimit[]): UsageLimit[] {
-  const primary = limits.filter((l) => l.scope === 'session' || l.scope === 'week');
+  const primary = limits
+    .filter((l) => PAD_ORDER[l.scope] !== undefined)
+    .sort((a, b) => PAD_ORDER[a.scope]! - PAD_ORDER[b.scope]!);
   return primary.length ? primary : limits;
 }
 
