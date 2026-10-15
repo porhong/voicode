@@ -1,0 +1,577 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-15T03:25:51.024Z",
+  "title": "Design System: VoiceCode",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15% 0.012 265)",
+          "oklch(27% 0.012 265)",
+          "oklch(39% 0.012 265)",
+          "oklch(51% 0.012 265)",
+          "oklch(63% 0.012 265)",
+          "oklch(75% 0.012 265)",
+          "oklch(86% 0.012 265)",
+          "oklch(95% 0.012 265)"
+        ]
+      },
+      "ink-surface": {
+        "role": "neutral",
+        "displayName": "Ink Surface",
+        "tonalRamp": [
+          "oklch(15% 0.012 265)",
+          "oklch(27% 0.012 265)",
+          "oklch(39% 0.012 265)",
+          "oklch(51% 0.012 265)",
+          "oklch(63% 0.012 265)",
+          "oklch(75% 0.012 265)",
+          "oklch(86% 0.012 265)",
+          "oklch(95% 0.012 265)"
+        ]
+      },
+      "ink-raised": {
+        "role": "neutral",
+        "displayName": "Ink Raised",
+        "tonalRamp": [
+          "oklch(15% 0.014 265)",
+          "oklch(27% 0.014 265)",
+          "oklch(39% 0.014 265)",
+          "oklch(51% 0.014 265)",
+          "oklch(63% 0.014 265)",
+          "oklch(75% 0.014 265)",
+          "oklch(86% 0.014 265)",
+          "oklch(95% 0.014 265)"
+        ]
+      },
+      "ink-rule": {
+        "role": "neutral",
+        "displayName": "Ink Rule",
+        "tonalRamp": [
+          "oklch(15% 0.016 265)",
+          "oklch(27% 0.016 265)",
+          "oklch(39% 0.016 265)",
+          "oklch(51% 0.016 265)",
+          "oklch(63% 0.016 265)",
+          "oklch(75% 0.016 265)",
+          "oklch(86% 0.016 265)",
+          "oklch(95% 0.016 265)"
+        ]
+      },
+      "bone": {
+        "role": "neutral",
+        "displayName": "Bone",
+        "tonalRamp": [
+          "oklch(15% 0.008 85)",
+          "oklch(27% 0.008 85)",
+          "oklch(39% 0.008 85)",
+          "oklch(51% 0.008 85)",
+          "oklch(63% 0.008 85)",
+          "oklch(75% 0.008 85)",
+          "oklch(86% 0.008 85)",
+          "oklch(95% 0.008 85)"
+        ]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "tonalRamp": [
+          "oklch(15% 0.016 265)",
+          "oklch(27% 0.016 265)",
+          "oklch(39% 0.016 265)",
+          "oklch(51% 0.016 265)",
+          "oklch(63% 0.016 265)",
+          "oklch(75% 0.016 265)",
+          "oklch(86% 0.016 265)",
+          "oklch(95% 0.016 265)"
+        ]
+      },
+      "kiln-terracotta": {
+        "role": "primary",
+        "displayName": "Kiln Terracotta",
+        "tonalRamp": [
+          "oklch(15% 0.13 41)",
+          "oklch(27% 0.13 41)",
+          "oklch(39% 0.13 41)",
+          "oklch(51% 0.13 41)",
+          "oklch(63% 0.13 41)",
+          "oklch(75% 0.13 41)",
+          "oklch(86% 0.13 41)",
+          "oklch(95% 0.13 41)"
+        ]
+      },
+      "kiln-ink": {
+        "role": "primary",
+        "displayName": "Kiln Ink",
+        "tonalRamp": [
+          "oklch(15% 0.02 41)",
+          "oklch(27% 0.02 41)",
+          "oklch(39% 0.02 41)",
+          "oklch(51% 0.02 41)",
+          "oklch(63% 0.02 41)",
+          "oklch(75% 0.02 41)",
+          "oklch(86% 0.02 41)",
+          "oklch(95% 0.02 41)"
+        ]
+      },
+      "signal-red": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "tonalRamp": [
+          "oklch(15% 0.19 22)",
+          "oklch(27% 0.19 22)",
+          "oklch(39% 0.19 22)",
+          "oklch(51% 0.19 22)",
+          "oklch(63% 0.19 22)",
+          "oklch(75% 0.19 22)",
+          "oklch(86% 0.19 22)",
+          "oklch(95% 0.19 22)"
+        ]
+      },
+      "go-green": {
+        "role": "tertiary",
+        "displayName": "Go Green",
+        "tonalRamp": [
+          "oklch(15% 0.14 148)",
+          "oklch(27% 0.14 148)",
+          "oklch(39% 0.14 148)",
+          "oklch(51% 0.14 148)",
+          "oklch(63% 0.14 148)",
+          "oklch(75% 0.14 148)",
+          "oklch(86% 0.14 148)",
+          "oklch(95% 0.14 148)"
+        ]
+      },
+      "caution-amber": {
+        "role": "tertiary",
+        "displayName": "Caution Amber",
+        "tonalRamp": [
+          "oklch(15% 0.16 72)",
+          "oklch(27% 0.16 72)",
+          "oklch(39% 0.16 72)",
+          "oklch(51% 0.16 72)",
+          "oklch(63% 0.16 72)",
+          "oklch(75% 0.16 72)",
+          "oklch(86% 0.16 72)",
+          "oklch(95% 0.16 72)"
+        ]
+      },
+      "ready-cyan": {
+        "role": "tertiary",
+        "displayName": "Ready Cyan",
+        "tonalRamp": [
+          "oklch(15% 0.11 210)",
+          "oklch(27% 0.11 210)",
+          "oklch(39% 0.11 210)",
+          "oklch(51% 0.11 210)",
+          "oklch(63% 0.11 210)",
+          "oklch(75% 0.11 210)",
+          "oklch(86% 0.11 210)",
+          "oklch(95% 0.11 210)"
+        ]
+      },
+      "done-green": {
+        "role": "tertiary",
+        "displayName": "Done Green",
+        "tonalRamp": [
+          "oklch(15% 0.16 150)",
+          "oklch(27% 0.16 150)",
+          "oklch(39% 0.16 150)",
+          "oklch(51% 0.16 150)",
+          "oklch(63% 0.16 150)",
+          "oklch(75% 0.16 150)",
+          "oklch(86% 0.16 150)",
+          "oklch(95% 0.16 150)"
+        ]
+      },
+      "idle-grey": {
+        "role": "neutral",
+        "displayName": "Idle Grey",
+        "tonalRamp": [
+          "oklch(15% 0.016 265)",
+          "oklch(27% 0.016 265)",
+          "oklch(39% 0.016 265)",
+          "oklch(51% 0.016 265)",
+          "oklch(63% 0.016 265)",
+          "oklch(75% 0.016 265)",
+          "oklch(86% 0.016 265)",
+          "oklch(95% 0.016 265)"
+        ]
+      },
+      "listen-violet": {
+        "role": "secondary",
+        "displayName": "Listen Violet",
+        "tonalRamp": [
+          "oklch(15% 0.15 290)",
+          "oklch(27% 0.15 290)",
+          "oklch(39% 0.15 290)",
+          "oklch(51% 0.15 290)",
+          "oklch(63% 0.15 290)",
+          "oklch(75% 0.15 290)",
+          "oklch(86% 0.15 290)",
+          "oklch(95% 0.15 290)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "tonalRamp": [
+          "oklch(15% 0.006 85)",
+          "oklch(27% 0.006 85)",
+          "oklch(39% 0.006 85)",
+          "oklch(51% 0.006 85)",
+          "oklch(63% 0.006 85)",
+          "oklch(75% 0.006 85)",
+          "oklch(86% 0.006 85)",
+          "oklch(95% 0.006 85)"
+        ]
+      },
+      "paper-surface": {
+        "role": "neutral",
+        "displayName": "Paper Surface",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(27% 0 0)",
+          "oklch(39% 0 0)",
+          "oklch(51% 0 0)",
+          "oklch(63% 0 0)",
+          "oklch(75% 0 0)",
+          "oklch(86% 0 0)",
+          "oklch(95% 0 0)"
+        ]
+      },
+      "paper-raised": {
+        "role": "neutral",
+        "displayName": "Paper Raised",
+        "tonalRamp": [
+          "oklch(15% 0.008 85)",
+          "oklch(27% 0.008 85)",
+          "oklch(39% 0.008 85)",
+          "oklch(51% 0.008 85)",
+          "oklch(63% 0.008 85)",
+          "oklch(75% 0.008 85)",
+          "oklch(86% 0.008 85)",
+          "oklch(95% 0.008 85)"
+        ]
+      },
+      "paper-rule": {
+        "role": "neutral",
+        "displayName": "Paper Rule",
+        "tonalRamp": [
+          "oklch(15% 0.012 85)",
+          "oklch(27% 0.012 85)",
+          "oklch(39% 0.012 85)",
+          "oklch(51% 0.012 85)",
+          "oklch(63% 0.012 85)",
+          "oklch(75% 0.012 85)",
+          "oklch(86% 0.012 85)",
+          "oklch(95% 0.012 85)"
+        ]
+      },
+      "paper-ink": {
+        "role": "neutral",
+        "displayName": "Paper Ink",
+        "tonalRamp": [
+          "oklch(15% 0.006 85)",
+          "oklch(27% 0.006 85)",
+          "oklch(39% 0.006 85)",
+          "oklch(51% 0.006 85)",
+          "oklch(63% 0.006 85)",
+          "oklch(75% 0.006 85)",
+          "oklch(86% 0.006 85)",
+          "oklch(95% 0.006 85)"
+        ]
+      },
+      "paper-muted": {
+        "role": "neutral",
+        "displayName": "Paper Muted",
+        "tonalRamp": [
+          "oklch(15% 0.01 85)",
+          "oklch(27% 0.01 85)",
+          "oklch(39% 0.01 85)",
+          "oklch(51% 0.01 85)",
+          "oklch(63% 0.01 85)",
+          "oklch(75% 0.01 85)",
+          "oklch(86% 0.01 85)",
+          "oklch(95% 0.01 85)"
+        ]
+      },
+      "kiln-terracotta-light": {
+        "role": "primary",
+        "displayName": "Kiln Terracotta (light)",
+        "tonalRamp": [
+          "oklch(15% 0.14 38)",
+          "oklch(27% 0.14 38)",
+          "oklch(39% 0.14 38)",
+          "oklch(51% 0.14 38)",
+          "oklch(63% 0.14 38)",
+          "oklch(75% 0.14 38)",
+          "oklch(86% 0.14 38)",
+          "oklch(95% 0.14 38)"
+        ]
+      },
+      "signal-red-light": {
+        "role": "tertiary",
+        "displayName": "Signal Red (light)",
+        "tonalRamp": [
+          "oklch(15% 0.18 25)",
+          "oklch(27% 0.18 25)",
+          "oklch(39% 0.18 25)",
+          "oklch(51% 0.18 25)",
+          "oklch(63% 0.18 25)",
+          "oklch(75% 0.18 25)",
+          "oklch(86% 0.18 25)",
+          "oklch(95% 0.18 25)"
+        ]
+      },
+      "go-green-light": {
+        "role": "tertiary",
+        "displayName": "Go Green (light)",
+        "tonalRamp": [
+          "oklch(15% 0.13 148)",
+          "oklch(27% 0.13 148)",
+          "oklch(39% 0.13 148)",
+          "oklch(51% 0.13 148)",
+          "oklch(63% 0.13 148)",
+          "oklch(75% 0.13 148)",
+          "oklch(86% 0.13 148)",
+          "oklch(95% 0.13 148)"
+        ]
+      },
+      "listen-violet-light": {
+        "role": "secondary",
+        "displayName": "Listen Violet (light)",
+        "tonalRamp": [
+          "oklch(15% 0.2 285)",
+          "oklch(27% 0.2 285)",
+          "oklch(39% 0.2 285)",
+          "oklch(51% 0.2 285)",
+          "oklch(63% 0.2 285)",
+          "oklch(75% 0.2 285)",
+          "oklch(86% 0.2 285)",
+          "oklch(95% 0.2 285)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Pair page title; the only large type."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Sheet titles and centred status titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Transcript, inputs, buttons (at 600)."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Chips, tabs, key captions, project names."
+      },
+      "overline": {
+        "displayName": "Overline",
+        "purpose": "Uppercase muted sheet section headings and permission badges."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Tool input, inline code, the terminal view."
+      }
+    },
+    "shadows": [
+      {
+        "name": "interrupt-lift",
+        "value": "0 8px 24px rgb(0 0 0 / 0.35)",
+        "purpose": "Permission cards, toasts, floating buttons (0.12 alpha in light)."
+      },
+      {
+        "name": "deck-slab",
+        "value": "inset 0 1px 0 rgb(255 255 255 / 0.06), 0 0 0 1px color-mix(in srgb, var(--deck-light) 24%, transparent), 0 12px 32px rgb(0 0 0 / 0.2)",
+        "purpose": "The glass deck, hairline tinted by the state light."
+      },
+      {
+        "name": "sheet-backdrop",
+        "value": "rgb(0 0 0 / 0.5)",
+        "purpose": "Scrim behind bottom sheets."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press",
+        "value": "transform 0.08s–0.1s ease, scale(0.96–0.97)",
+        "purpose": "Key and button presses."
+      },
+      {
+        "name": "surface-in",
+        "value": "translateY(24px) to 0, 0.2s–0.22s ease-out",
+        "purpose": "Sheets and toasts entering."
+      },
+      {
+        "name": "light-fade",
+        "value": "--deck-light 0.6s ease",
+        "purpose": "State light colour change."
+      },
+      {
+        "name": "light-drift",
+        "value": "6s and 8s ease-in-out alternate",
+        "purpose": "Working state."
+      },
+      {
+        "name": "light-pulse",
+        "value": "1.3s ease-in-out (approval), 0.9s (dictation), 2.4s (starting)",
+        "purpose": "Attention states."
+      },
+      {
+        "name": "light-bloom",
+        "value": "1.6s ease-out, once",
+        "purpose": "Turn finished."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation: none; transition: none",
+        "purpose": "prefers-reduced-motion disables all motion; colours still change."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "short",
+        "value": "max-height: 500px"
+      },
+      {
+        "name": "landscape-phone",
+        "value": "orientation: landscape and max-height: 560px"
+      },
+      {
+        "name": "wide",
+        "value": "min-width: 720px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "Default pill action on Ink Raised.",
+      "html": "<button class=\"ds-btn\">Open a folder</button>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-weight:600;padding:0.7rem 1.1rem;border-radius:999px;min-height:44px;cursor:pointer;transition:transform 0.1s ease} .ds-btn:active{transform:scale(0.97)} .ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .ds-btn:disabled{opacity:0.45}"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action that moves things forward: Approve, Pair, Start.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Approve</button>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-weight:600;padding:0.7rem 1.1rem;border-radius:999px;min-height:44px;cursor:pointer;transition:transform 0.1s ease} .ds-btn:active{transform:scale(0.97)} .ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .ds-btn:disabled{opacity:0.45} .ds-btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Outline-only destructive action; red never fills.",
+      "html": "<button class=\"ds-btn ds-btn-danger\">Reject</button>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-weight:600;padding:0.7rem 1.1rem;border-radius:999px;min-height:44px;cursor:pointer;transition:transform 0.1s ease} .ds-btn:active{transform:scale(0.97)} .ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .ds-btn:disabled{opacity:0.45} .ds-btn-danger{background:transparent;border-color:var(--danger);color:var(--danger)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Settings and pairing fields.",
+      "html": "<input class=\"ds-input\" placeholder=\"Device name\" />",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-input{width:100%;font:inherit;color:var(--text);background:var(--surface);border:1px solid color-mix(in srgb, var(--muted) 70%, var(--surface));border-radius:10px;padding:0.65rem 0.8rem} .ds-input:focus{outline:2px solid var(--accent);outline-offset:1px}"
+    },
+    {
+      "name": "Tabs",
+      "kind": "nav",
+      "refersTo": "tabs",
+      "description": "Claude / Trackpad switch: a pill track with an active pill.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Claude<span class=\"ds-badge\">2</span></button><button class=\"ds-tab\">Trackpad</button></div>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-tabs{display:inline-flex;background:var(--surface-2);border-radius:999px;padding:2px} .ds-tab{border:none;background:transparent;color:var(--muted);font:inherit;font-weight:600;font-size:0.9rem;padding:0.45rem 0.95rem;min-height:44px;border-radius:999px;display:inline-flex;align-items:center;cursor:pointer} .ds-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .ds-tab-active{background:var(--surface);color:var(--text)} .ds-badge{margin-left:0.35rem;background:var(--accent);color:var(--accent-text);border-radius:999px;padding:0 0.4rem;font-size:0.75rem}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Session state next to the session switcher.",
+      "html": "<span class=\"ds-chip ds-chip-running\">Working</span> <span class=\"ds-chip ds-chip-await\">Needs approval</span> <span class=\"ds-chip ds-chip-idle\">Ready</span>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-chip{font-size:0.75rem;font-weight:700;padding:0.25rem 0.6rem;border-radius:999px;background:var(--surface-2);white-space:nowrap} .ds-chip-running{color:var(--accent)} .ds-chip-await{background:var(--accent);color:var(--accent-text)} .ds-chip-idle{color:var(--ok)}"
+    },
+    {
+      "name": "Permission Card",
+      "kind": "card",
+      "refersTo": "permission-card",
+      "description": "An approval: complete tool input in a mono well, then Approve / Reject.",
+      "html": "<article class=\"ds-perm\"><span class=\"ds-perm-badge\">Bash</span><h3>Run a command</h3><pre class=\"ds-perm-detail\">npm test -- --run</pre><div class=\"ds-perm-actions\"><button class=\"ds-btn ds-btn-danger\">Reject</button><button class=\"ds-btn ds-btn-primary\">Approve</button></div></article>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:0.4rem;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-weight:600;padding:0.7rem 1.1rem;border-radius:999px;min-height:44px;cursor:pointer;transition:transform 0.1s ease} .ds-btn:active{transform:scale(0.97)} .ds-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .ds-btn:disabled{opacity:0.45} .ds-btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)} .ds-btn-danger{background:transparent;border-color:var(--danger);color:var(--danger)} .ds-perm{box-shadow:var(--shadow);padding:0.9rem;border-radius:var(--radius);background:var(--surface);border:2px solid var(--accent);display:flex;flex-direction:column;gap:0.5rem;max-width:360px} .ds-perm h3{margin:0;font-size:1rem} .ds-perm-badge{font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--accent)} .ds-perm-detail{margin:0;background:var(--bg);border-radius:8px;padding:0.6rem;font:0.8rem ui-monospace,'Cascadia Code',Consolas,monospace;white-space:pre-wrap} .ds-perm-actions{display:grid;grid-template-columns:1fr 1fr;gap:0.6rem} .ds-perm-actions .ds-btn{min-height:50px}"
+    },
+    {
+      "name": "Deck Keys",
+      "kind": "custom",
+      "refersTo": "deck-key",
+      "description": "Signature: the glass deck. Command keys take their tone only when they can act; push-to-talk is tinted terracotta.",
+      "html": "<div class=\"ds-deck\"><button class=\"ds-key\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 5v14M5 12h14\"/></svg><span class=\"ds-cap\">New</span></button><button class=\"ds-key ds-lit ds-reject\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 6l12 12M18 6L6 18\"/></svg><span class=\"ds-cap\">Reject</span></button><button class=\"ds-key ds-lit ds-accept\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12l5 5L19 7\"/></svg><span class=\"ds-cap\">Accept</span></button><button class=\"ds-key ds-mic\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"9\" y=\"3\" width=\"6\" height=\"11\" rx=\"3\"/><path d=\"M5 11a7 7 0 0 0 14 0M12 18v3\"/></svg><span class=\"ds-cap\">Hold to talk</span></button></div>",
+      "css": ":host{--bg:#0f1115;--surface:#181b21;--surface-2:#20242c;--border:#2b303a;--text:#f3f1ec;--muted:#9aa0ab;--accent:#d97757;--accent-text:#1a0f0a;--danger:#ff6369;--ok:#46a758;--warn:#f5a524;--radius:14px;--shadow:0 8px 24px rgb(0 0 0 / 0.35);font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--text)} .ds-deck{--key:rgb(255 255 255 / 0.055);--key-edge:rgb(255 255 255 / 0.07);--key-press:rgb(255 255 255 / 0.15);--deck-light:#f5a524;display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;padding:0.6rem;border-radius:24px;background:color-mix(in srgb, var(--surface) 58%, transparent);backdrop-filter:blur(24px) saturate(160%);border:1px solid rgb(255 255 255 / 0.1);box-shadow:inset 0 1px 0 rgb(255 255 255 / 0.06),0 0 0 1px color-mix(in srgb, var(--deck-light) 24%, transparent),0 12px 32px rgb(0 0 0 / 0.2);max-width:360px} .ds-key{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.2rem;height:56px;border:1px solid var(--key-edge);border-radius:14px;background:var(--key);color:var(--text);font:inherit;cursor:pointer;transition:transform 0.08s ease,background-color 0.15s ease} .ds-key:active{transform:scale(0.96);background:var(--key-press)} .ds-key:focus-visible{outline:2px solid var(--accent);outline-offset:2px} .ds-cap{font-size:0.72rem;font-weight:600;color:var(--muted)} .ds-accept{--tone:var(--ok)} .ds-reject{--tone:var(--danger)} .ds-lit{background:color-mix(in srgb, var(--tone) 20%, var(--key));border-color:color-mix(in srgb, var(--tone) 55%, transparent)} .ds-lit svg,.ds-lit .ds-cap{color:var(--tone)} .ds-mic{grid-column:span 3;flex-direction:row;gap:0.55rem;background:color-mix(in srgb, var(--accent) 14%, var(--key));border-color:color-mix(in srgb, var(--accent) 32%, transparent)} .ds-mic svg{color:var(--accent)} .ds-mic .ds-cap{font-size:0.85rem;color:var(--text)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Desk Instrument",
+    "overview": "VoiceCode is a piece of studio hardware that happens to run in a phone browser. It sits next to the keyboard like a stream deck or a synth controller: a dark, warm body, rounded keys you press with a thumb, and one soft light that tells you what Claude is doing without you having to read anything. The rest of the app (pairing, transcript, settings) is the instrument's quiet manual: flat ink surfaces, system type, generous 44px targets.\n\nDensity is medium and deliberate. Every control is finger-sized and reachable with one hand, and text is set at a size that reads at arm's length next to a monitor. Expression is concentrated in exactly two places: the Kiln Terracotta accent that marks what you can act on, and the deck's state light. Everything else holds back so those two stay legible.\n\nIt must never read as gamer RGB, a generic SaaS dashboard, a chat-app clone or skeuomorphic chrome. It is a calm instrument, not a toy, a report or a messenger.",
+    "keyCharacteristics": [
+      "Warm near-black ink in dark mode, warm paper in light; both meet WCAG AA.",
+      "One accent, Kiln Terracotta, for primary actions, the user's own messages and attention.",
+      "Pills for actions, 14px rounded rectangles for keys and cards, a 24px glass slab for the deck.",
+      "Flat and tonal everywhere except the deck (frosted glass + state light) and things that interrupt you (approvals, sheets, toasts), which lift with a shadow.",
+      "Tactile and calm: presses scale to 0.96–0.97, nothing glows unless it means something."
+    ],
+    "rules": [
+      {
+        "name": "The One Clay Rule",
+        "section": "colors",
+        "body": "Kiln Terracotta is the only brand colour. It marks what you can act on or what needs you; it is never a background for a whole region or a decorative stripe."
+      },
+      {
+        "name": "The Light Means State Rule",
+        "section": "colors",
+        "body": "Cyan, amber, green, red, grey and violet exist to report Claude's state through the deck light and command keys. Never use them for decoration, categories or charts."
+      },
+      {
+        "name": "The Two Red Keys Rule",
+        "section": "colors",
+        "body": "When Reject is lit, Stop colours only its glyph so two red keys never compete."
+      },
+      {
+        "name": "The No Display Face Rule",
+        "section": "typography",
+        "body": "No web fonts and nothing above 2rem. An instrument labels its controls; it doesn't headline them."
+      },
+      {
+        "name": "The Glass Stays on the Deck Rule",
+        "section": "elevation",
+        "body": "Frosted glass (`blur(24px) saturate(160%)`) and the blurred state light belong to the deck only. Headers, sheets and cards stay opaque and flat."
+      },
+      {
+        "name": "The Lift Means Interrupt Rule",
+        "section": "elevation",
+        "body": "A shadow says \"this needs you now\": approvals, sheets, toasts. Static content never gets one."
+      }
+    ],
+    "dos": [
+      "Do keep every interactive target at least 44px tall, and approval actions at 50px.",
+      "Do show a tool call's complete input in the mono well of the permission card before Approve is reachable.",
+      "Do define new colours in both themes and check WCAG AA in dark and light.",
+      "Do honour `prefers-reduced-motion`: drop the light's drift and pulses, keep the colour change.",
+      "Do give presses a small scale (0.96–0.97) and keep transitions at 0.08–0.25s; only the state light moves slowly (0.6s+)."
+    ],
+    "donts": [
+      "Don't use rainbow glows, neon saturation or multiple simultaneous light colours (gamer RGB).",
+      "Don't add stat-tile grids, gradient hero cards or blue-purple gradients (generic SaaS dashboard).",
+      "Don't make the Claude tab look like a chat app; the deck and approvals lead, the transcript supports.",
+      "Don't add bevels, fake metal, textures or photographic materials (skeuomorphic chrome).",
+      "Don't spread glass or blur beyond the deck, or put shadows on static content.",
+      "Don't use state colours for decoration or fill a button with red."
+    ]
+  }
+}
