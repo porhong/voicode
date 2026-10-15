@@ -21,6 +21,7 @@ import { resolvePaths } from '../src/config/paths.js';
 import { listRootFolder, resolveRootFolder } from '../src/config/workspace-roots.js';
 import { InputRouter } from '../src/mouse/input-router.js';
 import { DeviceRegistry } from '../src/pairing/device-registry.js';
+import { StorageJanitor } from '../src/storage/janitor.js';
 import { PairingService } from '../src/pairing/pairing-service.js';
 import { buildServer } from '../src/server/app.js';
 import { WsGateway } from '../src/server/ws-gateway.js';
@@ -261,7 +262,27 @@ const pcSessions = new PcSessionWatcher({
   intervalMs: 1_000,
 });
 pcSessions.start();
+// Disposable files for Settings → Storage: an old Claude Code download and a rotated log.
+const cache = path.join(home, 'cache');
+await mkdir(path.join(cache, 'claude-code', '1.0.0'), { recursive: true });
+await writeFile(
+  path.join(cache, 'claude-code', '1.0.0', 'claude'),
+  Buffer.alloc(240 * 1024 * 1024),
+);
+await writeFile(`${paths.log}.1`, Buffer.alloc(9 * 1024 * 1024));
+const cleanup = { auto: true, maxCacheMb: 250 };
+const janitor = new StorageJanitor({
+  locations: { home, cache, log: paths.log, claudeVersionInUse: '2.0.0' },
+  settings: () => cleanup,
+  logger,
+});
+
 const gateway = new WsGateway({
+  storage: {
+    info: () => janitor.info(),
+    cleanNow: () => janitor.cleanNow(),
+    configure: async (settings) => void Object.assign(cleanup, settings),
+  },
   router,
   mic,
   sessions,

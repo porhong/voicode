@@ -20,6 +20,7 @@ import { buildServer } from './server/app.js';
 import { WsGateway } from './server/ws-gateway.js';
 import { PcSessionWatcher } from './sessions/pc-sessions.js';
 import { SessionManager } from './sessions/session-manager.js';
+import { StorageJanitor, storageLocations } from './storage/janitor.js';
 import { ensureTls, type TlsMaterial } from './tls/certificates.js';
 import {
   prepareTunnel,
@@ -71,6 +72,7 @@ export class Agent extends EventEmitter<{
   private sessions!: SessionManager;
   private pcSessions: PcSessionWatcher | undefined;
   private gateway!: WsGateway;
+  private janitor!: StorageJanitor;
   private app: Awaited<ReturnType<typeof buildServer>> | undefined;
   private control: http.Server | undefined;
   private tls!: TlsMaterial;
@@ -139,6 +141,12 @@ export class Agent extends EventEmitter<{
       projectFor: (cwd) => sessions.projectForFolder(cwd)?.id,
     });
     this.pcSessions.start();
+    this.janitor = new StorageJanitor({
+      locations: storageLocations(paths),
+      settings: () => this.config.cleanup,
+      logger: logger.child({ component: 'storage' }),
+    });
+    this.janitor.start();
     this.gateway = new WsGateway({
       pcSessions: this.pcSessions,
       allowFolder: (dir, deviceName) => this.allowFolder(dir, deviceName),
@@ -151,6 +159,11 @@ export class Agent extends EventEmitter<{
             this.sessions.projectForFolder(folder) ?? (await this.allowFolder(folder, deviceName))
           );
         },
+      },
+      storage: {
+        info: () => this.janitor.info(),
+        cleanNow: () => this.janitor.cleanNow(),
+        configure: (settings) => this.configureCleanup(settings),
       },
       router: this.router,
       mic: this.mic,
@@ -245,6 +258,19 @@ export class Agent extends EventEmitter<{
     return project;
   }
 
+  /** Changes the automatic cleanup (from a device or the CLI) and saves it to disk. */
+  private async configureCleanup(settings: AgentConfig['cleanup']): Promise<void> {
+    // Saved into the file on disk rather than wholesale, as in allowFolder().
+    const onDisk = await loadConfig(this.paths.config);
+    if (onDisk) {
+      onDisk.cleanup = { ...settings };
+      await saveConfig(this.paths.config, onDisk);
+    }
+    this.config.cleanup = { ...settings };
+    this.logger.info(settings, 'cleanup settings changed');
+    if (settings.auto) void this.janitor.autoCleanup().catch(() => undefined);
+  }
+
   issuePairingCode(): PairingCode {
     return this.pairing.issueCode();
   }
@@ -252,6 +278,7 @@ export class Agent extends EventEmitter<{
   stop(): Promise<void> {
     this.stopping ??= (async () => {
       this.logger.info('agent stopping');
+      this.janitor?.stop();
       this.sessions?.closeAll();
       this.gateway?.closeAll();
       await this.tunnel?.stop();
@@ -318,6 +345,18 @@ export class Agent extends EventEmitter<{
           'projects reloaded',
         );
         return { projects: fresh.projects };
+      },
+      'GET /storage': () => this.janitor.info(),
+      'POST /storage/cleanup': async () => ({
+        result: await this.janitor.cleanNow(),
+        storage: await this.janitor.info(),
+      }),
+      // Re-reads the cleanup settings after `voicecode-agent cleanup auto …`.
+      'POST /storage/reload': async () => {
+        const fresh = await loadConfig(this.paths.config);
+        if (!fresh) throw new Error('config file is missing');
+        await this.configureCleanup(fresh.cleanup);
+        return this.janitor.info();
       },
       'POST /stop': () => {
         setTimeout(() => void this.stop(), 50);

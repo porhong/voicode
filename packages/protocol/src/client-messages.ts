@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AUDIO, LIMITS, MOUSE_BUTTONS } from './constants.js';
+import { AUDIO, LIMITS, MOUSE_BUTTONS, STORAGE_LIMIT_MB } from './constants.js';
 
 const delta = (max: number) => z.number().int().min(-max).max(max);
 const id = z.string().min(1).max(128);
@@ -115,6 +115,17 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('claude.session.rename'),
     sessionId: id,
     title: z.string().trim().min(1).max(80),
+  }),
+  // --- Disposable files on the PC --------------------------------------------
+  /** How much space the agent's caches, old versions and rotated logs take. */
+  z.object({ type: z.literal('storage.info') }),
+  /** Remove them now (never config, pairing, certificates or the current versions). */
+  z.object({ type: z.literal('storage.cleanup') }),
+  /** Automatic cleanup once the disposable files pass `maxCacheMb`. */
+  z.object({
+    type: z.literal('storage.settings'),
+    auto: z.boolean(),
+    maxCacheMb: z.number().int().min(STORAGE_LIMIT_MB.min).max(STORAGE_LIMIT_MB.max),
   }),
   // --- Workspace roots -------------------------------------------------------
   /** List the subfolders of a folder inside a workspace root (the roots when omitted). */

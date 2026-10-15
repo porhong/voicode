@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import https from 'node:https';
 import { appendFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
@@ -13,6 +14,7 @@ import { DeviceRegistry } from '../pairing/device-registry.js';
 import { PairingService } from '../pairing/pairing-service.js';
 import { encodeProjectDir, PcSessionWatcher } from '../sessions/pc-sessions.js';
 import { SessionManager } from '../sessions/session-manager.js';
+import { StorageJanitor } from '../storage/janitor.js';
 import { createFakeQuery, FakeMicDriver, FakeMouseDriver } from '../test-utils/fakes.js';
 import { ensureTls, type TlsMaterial } from '../tls/certificates.js';
 import { silentLogger } from '../util/logger.js';
@@ -36,6 +38,8 @@ let pcCwd: string;
 let workspace: string;
 let pcTranscript: string;
 let registerPc: (status: string) => Promise<void>;
+let cache: string;
+const cleanupSettings = { auto: true, maxCacheMb: 250 };
 /** A device paired by the tunnel test, reused where a separate device isn't needed. */
 let tunnelCookie: string;
 const driver = new FakeMouseDriver();
@@ -189,7 +193,23 @@ beforeAll(async () => {
   });
   await pcWatcher.poll();
 
+  // An old Claude Code download beside the one this build uses.
+  cache = path.join(home, 'cache');
+  await mkdir(path.join(cache, 'claude-code', '1.0.0'), { recursive: true });
+  await writeFile(path.join(cache, 'claude-code', '1.0.0', 'claude'), 'x'.repeat(4096));
+  await mkdir(path.join(cache, 'claude-code', '2.0.0'), { recursive: true });
+  const janitor = new StorageJanitor({
+    locations: { home, cache, log: paths.log, claudeVersionInUse: '2.0.0' },
+    settings: () => cleanupSettings,
+    logger,
+  });
+
   const gateway = new WsGateway({
+    storage: {
+      info: () => janitor.info(),
+      cleanNow: () => janitor.cleanNow(),
+      configure: async (settings) => void Object.assign(cleanupSettings, settings),
+    },
     router,
     mic,
     sessions,
@@ -585,6 +605,28 @@ describe('WebSocket gateway', () => {
     client.send({ type: 'claude.model.set', sessionId, model: 'opus\r/exit' });
     await client.waitFor('error', (m) => m.code === 'bad_request');
     client.send({ type: 'claude.session.close', sessionId });
+    client.ws.close();
+  });
+
+  it('reports and cleans up disposable files, and changes the automatic cleanup', async () => {
+    const client = new Client(tunnelCookie);
+    await client.waitFor('welcome');
+    client.send({ type: 'storage.info' });
+    const before = await client.waitFor('storage.info');
+    expect(before.storage.totalBytes).toBe(4096);
+    expect(before.storage.categories.find((c) => c.category === 'downloads')?.count).toBe(1);
+
+    client.send({ type: 'storage.cleanup' });
+    const after = await client.waitFor('storage.info', (m) => !!m.storage.lastCleanup);
+    expect(after.storage.totalBytes).toBe(0);
+    expect(after.storage.lastCleanup).toMatchObject({ trigger: 'manual', freedBytes: 4096 });
+    expect(existsSync(path.join(cache, 'claude-code', '2.0.0'))).toBe(true);
+
+    client.send({ type: 'storage.settings', auto: false, maxCacheMb: 500 });
+    await client.waitFor('storage.info', (m) => !m.storage.auto && m.storage.maxCacheMb === 500);
+    // Outside the allowed range: refused before it reaches the agent.
+    client.send({ type: 'storage.settings', auto: true, maxCacheMb: 1 });
+    await client.waitFor('error', (m) => m.code === 'bad_request');
     client.ws.close();
   });
 

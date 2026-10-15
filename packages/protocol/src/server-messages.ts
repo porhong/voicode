@@ -1,4 +1,4 @@
-import type { MouseButton, SessionState, VoiceState } from './constants.js';
+import type { MouseButton, SessionState, StorageCategory, VoiceState } from './constants.js';
 
 /*
  * Messages the agent sends to browser clients. These are produced by trusted code,
@@ -148,6 +148,24 @@ export interface PermissionRequest {
   expiresAt?: number;
 }
 
+/** Disposable files on the PC and the automatic cleanup settings. */
+export interface StorageInfo {
+  categories: Array<{ category: StorageCategory; bytes: number; count: number }>;
+  totalBytes: number;
+  auto: boolean;
+  maxCacheMb: number;
+  lastCleanup?: CleanupResult;
+}
+
+export interface CleanupResult {
+  at: number;
+  trigger: 'manual' | 'auto';
+  freedBytes: number;
+  removed: number;
+  /** Files still in use (e.g. by another running agent) are skipped and counted here. */
+  failed: number;
+}
+
 export type ServerMessage =
   | {
       type: 'welcome';
@@ -217,6 +235,9 @@ export type ServerMessage =
       title?: string;
       isError: boolean;
     }
+
+  // --- Disposable files on the PC --------------------------------------------
+  | { type: 'storage.info'; storage: StorageInfo }
 
   // --- Claude sessions elsewhere on the PC (read-only) ----------------------
   | { type: 'pc.sessions'; sessions: PcSession[] }

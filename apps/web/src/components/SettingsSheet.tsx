@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import type { VoiceMicStatus } from '@voicecode/protocol';
+import type { StorageInfo, VoiceMicStatus } from '@voicecode/protocol';
+import type { Send } from '../hooks/useAgentSocket';
 import { notificationsSupported, requestNotificationPermission } from '../hooks/useApprovalAlerts';
 import { micCaptureSupported } from '../hooks/useMicStream';
 import type { Settings } from '../hooks/useSettings';
@@ -7,6 +8,7 @@ import { speechSynthesisSupported } from '../hooks/useSpeakReplies';
 import { api } from '../lib/api';
 import { MODEL_PRESETS } from '../lib/models';
 import { Sheet } from './Sheet';
+import { StorageSection } from './StorageSection';
 
 interface Props {
   settings: Settings;
@@ -15,6 +17,10 @@ interface Props {
   agentVersion?: string;
   /** The PC's virtual microphone, for the Claude Code dictation option. */
   voiceMic?: VoiceMicStatus;
+  /** The agent's disposable files on the PC (Storage section). */
+  storage?: StorageInfo;
+  send: Send;
+  connected: boolean;
   onClose: () => void;
   onUnpaired: () => void;
 }
@@ -120,6 +126,9 @@ export function SettingsSheet({
   device,
   agentVersion,
   voiceMic,
+  storage,
+  send,
+  connected,
   onClose,
   onUnpaired,
 }: Props) {
@@ -303,6 +312,8 @@ export function SettingsSheet({
         checked={settings.naturalScroll}
         onChange={(naturalScroll) => update({ naturalScroll })}
       />
+
+      <StorageSection storage={storage} send={send} disabled={!connected} />
 
       <h3>This device</h3>
       <p className="small muted">

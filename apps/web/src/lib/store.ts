@@ -10,6 +10,7 @@ import {
   type ProjectInfo,
   type ServerMessage,
   type SessionSummary,
+  type StorageInfo,
   type VoiceMicStatus,
 } from '@voicecode/protocol';
 
@@ -60,6 +61,8 @@ export interface AppState {
   /** Set while a PC session is on screen instead of a phone session. */
   activePcSessionId?: string;
   toasts: Toast[];
+  /** The agent's disposable files, once the settings sheet asked for them. */
+  storage?: StorageInfo;
   error?: { message: string; at: number };
   /** The agent speaks a different protocol version than this (cached) page. */
   protocolMismatch: boolean;
@@ -224,6 +227,8 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
     }
     case 'claude.sessions.history':
       return { ...state, history: { ...state.history, [msg.projectId]: msg.sessions } };
+    case 'storage.info':
+      return { ...state, storage: msg.storage };
     case 'claude.models': {
       const { type: _type, ...models } = msg;
       return { ...state, models };

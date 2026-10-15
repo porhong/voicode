@@ -8,6 +8,8 @@ import {
   type ErrorCode,
   type FolderListing,
   type ServerMessage,
+  type CleanupResult,
+  type StorageInfo,
 } from '@voicecode/protocol';
 import type { InputRouter, ClientIdentity, RouterResult } from '../mouse/input-router.js';
 import type { DeviceRegistry, PublicDevice } from '../pairing/device-registry.js';
@@ -63,6 +65,12 @@ export class WsGateway {
       pcSessions?: PcSessionWatcher;
       /** Adds a folder to the allow-list (after the user confirmed it on the phone). */
       allowFolder?: (dir: string, deviceName: string) => Promise<ProjectConfig>;
+      /** The agent's disposable files; omitted in tests that don't need them. */
+      storage?: {
+        info: () => Promise<StorageInfo>;
+        cleanNow: () => Promise<CleanupResult>;
+        configure: (settings: { auto: boolean; maxCacheMb: number }) => Promise<void>;
+      };
       /** Workspace roots a device may browse and open folders in; omitted in tests. */
       folders?: {
         roots: () => string[];
@@ -376,6 +384,22 @@ export class WsGateway {
         return sessions.rename(msg.sessionId, msg.title);
       case 'claude.model.set':
         return sessions.setModel(msg.sessionId, msg.model);
+      case 'storage.info':
+      case 'storage.cleanup':
+      case 'storage.settings': {
+        const storage = this.deps.storage;
+        if (!storage) throw new SessionError('not_found', 'Storage is not available');
+        if (msg.type === 'storage.cleanup') {
+          await storage.cleanNow();
+          this.deps.logger.info({ device: conn.device.name }, 'storage cleaned from device');
+        }
+        if (msg.type === 'storage.settings') {
+          await storage.configure({ auto: msg.auto, maxCacheMb: msg.maxCacheMb });
+        }
+        const info: ServerMessage = { type: 'storage.info', storage: await storage.info() };
+        // After a change, every device's settings sheet shows the new numbers.
+        return msg.type === 'storage.info' ? this.send(conn, info) : this.broadcast(info);
+      }
       case 'claude.models':
         return this.send(conn, {
           type: 'claude.models',

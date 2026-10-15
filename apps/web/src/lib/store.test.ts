@@ -52,6 +52,16 @@ describe('app state', () => {
     });
   });
 
+  it('keeps the latest storage report', () => {
+    const storage = {
+      categories: [{ category: 'logs' as const, bytes: 300, count: 1 }],
+      totalBytes: 300,
+      auto: true,
+      maxCacheMb: 250,
+    };
+    expect(apply(initialState, { type: 'storage.info', storage }).storage).toEqual(storage);
+  });
+
   it('replaces the project list when the agent reloads it', () => {
     const s = apply(apply(initialState, welcome()), {
       type: 'projects',

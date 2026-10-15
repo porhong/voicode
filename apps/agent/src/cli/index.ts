@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { VERSION } from '../util/version.js';
+import { registerCleanup } from './commands/cleanup.js';
 import { registerDevices, registerPair } from './commands/devices.js';
 import { registerHook } from './commands/hook.js';
 import { registerInit } from './commands/init.js';
@@ -27,6 +28,7 @@ registerProjects(program);
 registerRoots(program);
 registerTunnel(program);
 registerSystem(program);
+registerCleanup(program);
 registerHook(program);
 
 program.parseAsync().catch((err: unknown) => {

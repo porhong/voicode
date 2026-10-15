@@ -55,6 +55,12 @@ export function cacheDir(env: NodeJS.ProcessEnv = process.env): string {
 
 let runtimeRoot: string | undefined;
 
+/** The runtime directory name of this standalone build (undefined for the npm package). */
+export function runtimeBuildId(): string | undefined {
+  if (!isStandalone()) return undefined;
+  return (JSON.parse(sea.getAsset(MANIFEST_ASSET, 'utf8')) as RuntimeManifest).buildId;
+}
+
 /**
  * Directory holding the embedded assets, laid out like the npm package (`dist/web`,
  * `native-bin/...`). Extracted on first use; later runs of the same build reuse it.

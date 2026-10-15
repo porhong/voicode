@@ -668,6 +668,9 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
           device={state.device}
           agentVersion={state.agent?.version}
           voiceMic={state.voiceMic.status}
+          storage={state.storage}
+          send={send}
+          connected={connection === 'open'}
           onClose={() => setSettingsOpen(false)}
           onUnpaired={onUnpaired}
         />

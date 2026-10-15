@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { STORAGE_LIMIT_MB } from '@voicecode/protocol';
 import { z } from 'zod';
 import { readJsonFile, writeFileAtomic } from '../util/fs.js';
 
@@ -79,6 +80,22 @@ export const ConfigSchema = z.object({
         .default('voicecode_mic'),
       /** A microphone lease with no audio for this long is released. */
       leaseIdleMs: z.number().int().min(5_000).default(60_000),
+    })
+    .prefault({}),
+  /**
+   * Disposable files (old Claude Code downloads and runtimes, the rotated log, leftovers
+   * of interrupted writes) are removed automatically once together they pass
+   * `maxCacheMb`. Config, pairing, certificates and the versions in use are never touched.
+   */
+  cleanup: z
+    .object({
+      auto: z.boolean().default(true),
+      maxCacheMb: z
+        .number()
+        .int()
+        .min(STORAGE_LIMIT_MB.min)
+        .max(STORAGE_LIMIT_MB.max)
+        .default(STORAGE_LIMIT_MB.default),
     })
     .prefault({}),
   pairing: z

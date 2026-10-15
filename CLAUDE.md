@@ -18,7 +18,7 @@ through native input helpers. Shipped on npm as `@anantbot/voicecode-agent` (com
 packages/protocol   zod wire schemas + types shared by agent and web (PROTOCOL_VERSION)
 packages/security   pairing codes, secret hashing, local CA (@peculiar/x509)
 apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
-  src/cli/commands  init start (default) status pair devices sessions projects roots tunnel autostart firewall doctor stop
+  src/cli/commands  init start (default) status pair devices sessions projects roots tunnel autostart firewall doctor cleanup stop
   src/config        config schema, project allow-list, workspace roots (folders a device may open)
   src/server        Fastify app, origin/host guard, cookie auth, WebSocket gateway
   src/claude        ClaudeSession (SDK query), ApprovalBroker (canUseTool + hook asks),
@@ -31,6 +31,8 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/mouse         InputRouter (lease, coalescing), helper-process / command drivers
   src/voice         MicRouter (phone mic lease, PCM frames) → virtual microphone drivers
                     (Windows waveOut helper into VB-CABLE, Linux PipeWire null sink)
+  src/storage       disposable files (old runtimes/Claude Code downloads, agent.log.1, stale
+                    temp files): scan + cleanup, StorageJanitor (auto cleanup over a limit)
   src/util          standalone.ts (SEA assets), tar.ts, logger, network
   scripts           copy-web, prepack, build-sea, smoke-sea, ui-demo (fake Claude for UI work)
 apps/web            React PWA (Vite): Pair page, Claude tab, Trackpad tab, settings
@@ -174,6 +176,14 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
     `--set-default-capture` (undocumented `IPolicyConfig`) makes "CABLE Output" the
     default input while a phone streams and restores the previous device; verified on this
     Windows 11 PC by switching the built-in microphone to itself.
+
+- Cleanup (2026-10-15): Settings → Storage on the phone (`storage.info/cleanup/settings`)
+  and `voicecode-agent cleanup [--dry-run]` / `cleanup auto on|off --limit <MB>` remove
+  only an allow-list of file shapes (`storage/disposable.ts`); the versions in use are
+  kept (unknown in the npm build → the newest is kept). Auto cleanup (config `cleanup`,
+  default on, 250 MB) runs 2 min after start and every 6 h; the live log now rotates
+  every 5 min too. Verified with unit/integration tests, the built CLI on a temp home and
+  `ui-demo.ts` screenshots (dark and light); not on a real standalone install yet.
 
 Not verified yet:
 

@@ -1009,6 +1009,24 @@ a {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.storage-total {
+  margin: 0 0 0.25rem;
+}
+.storage-clean {
+  margin-bottom: 0.75rem;
+}
+.storage-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+.storage-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  font-variant-numeric: tabular-nums;
+}
 .switch {
   appearance: none;
   flex: none;

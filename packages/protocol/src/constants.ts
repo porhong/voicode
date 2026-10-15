@@ -68,3 +68,14 @@ export const SESSION_STATES = [
   'error',
 ] as const;
 export type SessionState = (typeof SESSION_STATES)[number];
+
+/**
+ * Disposable files the agent keeps on the PC, in the order cleanup removes them:
+ * leftovers of interrupted writes and downloads, Claude Code versions this build no
+ * longer uses, runtimes extracted by older standalone builds, and the rotated log.
+ */
+export const STORAGE_CATEGORIES = ['temp', 'downloads', 'runtime', 'logs'] as const;
+export type StorageCategory = (typeof STORAGE_CATEGORIES)[number];
+
+/** Bounds for the automatic cleanup limit, in MB. */
+export const STORAGE_LIMIT_MB = { min: 50, max: 100_000, default: 250 } as const;

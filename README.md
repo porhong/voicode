@@ -191,11 +191,22 @@ pairing code.
 | `voicecode-agent tunnel`               | Cloudflare Tunnel: `tunnel quick`, `tunnel setup <hostname>`, `tunnel token <hostname>`, `tunnel off`         |
 | `voicecode-agent firewall`             | Allow the agent's port through Windows Defender Firewall                                                      |
 | `voicecode-agent doctor`               | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                    |
+| `voicecode-agent cleanup`              | Remove caches, old versions and the old log (`--dry-run`); `cleanup auto on\|off [--limit <MB>]`              |
 | `voicecode-agent stop`                 | Stop the running agent                                                                                        |
 
 State lives in `%APPDATA%\voicecode-agent` (Windows) or `~/.config/voicecode-agent`
 (Linux); override with `VOICECODE_HOME`. Logs are JSON lines in `agent.log` there
-(rotated to `agent.log.1` when it passes 10 MB).
+(rotated to `agent.log.1` when it passes 10 MB, checked at start and every 5 minutes).
+
+**Cleanup.** Settings → Storage on the phone (or `voicecode-agent cleanup`) shows and
+removes what the agent can do without: Claude Code versions and standalone runtimes from
+older builds (in `%LOCALAPPDATA%oicecode-agent` or `~/.cache/voicecode-agent`,
+`VOICECODE_CACHE_DIR`), `agent.log.1`, and files left by interrupted writes and
+downloads (once they are an hour old). Config, paired devices, certificates, tunnel
+credentials, the live log and the versions in use are never touched. Automatic cleanup is
+on by default: every 6 hours (first 2 minutes after start) the agent checks, and once
+those files pass the limit (`cleanup.maxCacheMb`, default 250 MB) it removes them, oldest
+and least useful first, down to 80 % of the limit. The phone itself caches nothing.
 
 ## Using it
 
@@ -378,6 +389,7 @@ apps/agent/        CLI + server (TypeScript, bundled with tsup)
   src/tls/         local CA + server certificate lifecycle
   src/ipc/         local control channel used by pair/devices/sessions/stop
   src/doctor/      diagnostics
+  src/storage/     disposable files: scan, cleanup, automatic cleanup (janitor)
 apps/web/          React PWA (Vite)
 native/windows/    SendInput helper (C) + PowerShell fallback
 native/linux-x11/  XTest helper (C)
