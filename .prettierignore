@@ -4,3 +4,9 @@ package-lock.json
 native/**/build
 apps/agent/native-bin
 apps/agent/build
+.github
+.omc
+.remember
+.claude
+.impeccable
+**/.impeccable/hook.cache.json

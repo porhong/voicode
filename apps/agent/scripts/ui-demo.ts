@@ -74,7 +74,13 @@ const demoQuery = ((params: { prompt: AsyncIterable<SDKUserMessage>; options?: O
       await sleep(400);
       const decision = await options.canUseTool!(
         'Bash',
-        { command: 'npm test -- --run', description: 'Run the test suite' },
+        {
+          // A prompt mentioning "lines" gets a multi-line command, for the deck's "+N lines".
+          command: /lines/i.test(text)
+            ? 'cd apps/web\nnpm ci\nnpm test -- --run'
+            : 'npm test -- --run',
+          description: 'Run the test suite',
+        },
         { signal: new AbortController().signal, toolUseID: 't2', requestId: 'r1', suggestions: [] },
       );
       await sleep(600);
@@ -104,12 +110,60 @@ const demoQuery = ((params: { prompt: AsyncIterable<SDKUserMessage>; options?: O
     interrupt: async () => undefined,
     setPermissionMode: async () => undefined,
     setModel: async () => undefined,
+    applyFlagSettings: async () => undefined,
     supportedModels: async () => [
-      { value: 'default', displayName: 'Default (recommended)', description: 'Opus 5.5' },
-      { value: 'fable', displayName: 'Fable', description: 'Fable 5.1 · most capable' },
-      { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 5.5 · fast' },
-      { value: 'haiku', displayName: 'Haiku', description: 'Haiku 5.5 · fastest' },
+      {
+        value: 'default',
+        displayName: 'Default (recommended)',
+        description: 'Opus 5.5',
+        supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      },
+      {
+        value: 'fable',
+        displayName: 'Fable',
+        description: 'Fable 5.1 · most capable',
+        supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      },
+      {
+        value: 'sonnet',
+        displayName: 'Sonnet',
+        description: 'Sonnet 5.5 · fast',
+        supportedEffortLevels: ['low', 'medium', 'high'],
+      },
+      {
+        value: 'haiku',
+        displayName: 'Haiku',
+        description: 'Haiku 5.5 · fastest',
+        supportsEffort: false,
+      },
     ],
+    // Every kind of limit, at every level, so the usage rings can be checked at a glance.
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+      subscription_type: 'max',
+      rate_limits_available: true,
+      rate_limits: {
+        five_hour: {
+          utilization: 37,
+          resets_at: new Date(Date.now() + 134 * 60_000).toISOString(),
+        },
+        seven_day: {
+          utilization: 78,
+          resets_at: new Date(Date.now() + 2.3 * 86_400_000).toISOString(),
+        },
+        seven_day_opus: {
+          utilization: 93,
+          resets_at: new Date(Date.now() + 2.3 * 86_400_000).toISOString(),
+        },
+        model_scoped: [
+          {
+            display_name: 'Fable',
+            utilization: 12,
+            resets_at: new Date(Date.now() + 4 * 86_400_000).toISOString(),
+          },
+        ],
+        extra_usage: { is_enabled: true, utilization: 5 },
+      },
+    }),
     close: () => undefined,
   }) as unknown as Query;
 }) as unknown as typeof query;

@@ -4,6 +4,13 @@
  */
 export const PROTOCOL_VERSION = 4;
 
+/**
+ * Claude Code's reasoning effort levels, lowest first (`--effort`, the SDK's `effort`).
+ * Not every model takes every level; `max` is never saved, only used for a session.
+ */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
 /** WebSocket endpoint path served by the agent. */
 export const WS_PATH = '/ws';
 

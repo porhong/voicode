@@ -7,6 +7,7 @@ import type { Settings } from '../hooks/useSettings';
 import { speechSynthesisSupported } from '../hooks/useSpeakReplies';
 import { api } from '../lib/api';
 import { MODEL_PRESETS } from '../lib/models';
+import { playAlertSound } from '../lib/sound';
 import { Sheet } from './Sheet';
 import { StorageSection } from './StorageSection';
 
@@ -262,6 +263,35 @@ export function SettingsSheet({
         </select>
       </label>
       <p className="small muted">The model chip above a session switches the one on screen.</p>
+
+      <h3>Alerts & Sound</h3>
+      <Toggle
+        label="Alert sound effects"
+        hint="Play a chime when a task finishes and an alert on errors"
+        checked={settings.soundAlerts}
+        onChange={(soundAlerts) => {
+          update({ soundAlerts });
+          if (soundAlerts) playAlertSound('done', true);
+        }}
+      />
+      <div className="field-row" style={{ marginTop: '0.25rem', gap: '0.5rem' }}>
+        <button
+          type="button"
+          className="btn btn-ghost btn-small"
+          disabled={!settings.soundAlerts}
+          onClick={() => playAlertSound('done', true)}
+        >
+          Preview chime
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-small"
+          disabled={!settings.soundAlerts}
+          onClick={() => playAlertSound('error', true)}
+        >
+          Preview alert
+        </button>
+      </div>
 
       <h3>Approvals</h3>
       <Toggle

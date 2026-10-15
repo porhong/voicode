@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { PcSession, PcSessionStatus, ProjectInfo, SessionSummary } from '@voicecode/protocol';
+import type {
+  EffortLevel,
+  PcSession,
+  PcSessionStatus,
+  ProjectInfo,
+  SessionSummary,
+} from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
-import { modelLabel } from '../lib/models';
+import { EFFORT_SHORT, EFFORT_TEXT, modelLabel } from '../lib/models';
 import type { AppState } from '../lib/store';
 import { ChevronDownIcon, PlusIcon } from './Icons';
 import { Sheet } from './Sheet';
@@ -46,20 +52,28 @@ interface Props {
   start?: StartOptions;
   /** Opens the model picker for the session on screen. */
   onOpenModel?: () => void;
+  /**
+   * The state chip for the session on screen, when the page knows more than the session
+   * state (a finished turn is "Done", not "Ready"), so the chip and the deck agree.
+   */
+  status?: { label: string; chip: string };
 }
 
 interface StartOptions {
   voice?: boolean;
   /** '' or absent: the PC's default. */
   model?: string;
+  /** '' or absent: the model's default. */
+  effort?: EffortLevel | '';
 }
 
 /** The message that starts a session of the chosen kind. */
 function startMessage(start: StartOptions | undefined, projectId: string, resume?: string) {
   const model = start?.model || undefined;
+  const effort = start?.effort || undefined;
   return start?.voice
-    ? ({ type: 'voice.session.start', projectId, resume, model } as const)
-    : ({ type: 'claude.session.start', projectId, resume, model } as const);
+    ? ({ type: 'voice.session.start', projectId, resume, model, effort } as const)
+    : ({ type: 'claude.session.start', projectId, resume, model, effort } as const);
 }
 
 /**
@@ -77,6 +91,7 @@ export function SessionBar({
   onSheetOpenChange,
   start,
   onOpenModel,
+  status,
 }: Props) {
   const pc = state.activePcSessionId
     ? state.pcSessions.find((p) => p.sessionId === state.activePcSessionId)
@@ -149,14 +164,15 @@ export function SessionBar({
           <button
             className="chip chip-model"
             onClick={onOpenModel}
-            aria-label={`Model: ${modelLabel(active.model) ?? 'PC default'}. Change the model`}
+            aria-label={`Model: ${modelLabel(active.model) ?? 'PC default'}${active.effort ? `, ${EFFORT_TEXT[active.effort].name} effort` : ''}. Change the model or effort`}
           >
             {modelLabel(active.model) ?? 'Model'}
+            {active.effort && <span className="chip-effort">{EFFORT_SHORT[active.effort]}</span>}
           </button>
         )}
         {active && (
-          <span className={`chip chip-${active.state}`} role="status">
-            {STATE_LABEL[active.state]}
+          <span className={`chip chip-${status?.chip ?? active.state}`} role="status">
+            {status?.label ?? STATE_LABEL[active.state]}
           </span>
         )}
         <button

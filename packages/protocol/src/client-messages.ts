@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AUDIO, LIMITS, MOUSE_BUTTONS, STORAGE_LIMIT_MB } from './constants.js';
+import { AUDIO, EFFORT_LEVELS, LIMITS, MOUSE_BUTTONS, STORAGE_LIMIT_MB } from './constants.js';
 
 const delta = (max: number) => z.number().int().min(-max).max(max);
 const id = z.string().min(1).max(128);
@@ -12,6 +12,7 @@ export const ModelNameSchema = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:[\]-]{0,99}$/, 'not a model name');
 
 export const MouseButtonSchema = z.enum(MOUSE_BUTTONS);
+export const EffortSchema = z.enum(EFFORT_LEVELS);
 
 /**
  * Messages a browser client may send to the agent over the WebSocket.
@@ -60,6 +61,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     projectId: id,
     resume: id.optional(),
     model: ModelNameSchema.optional(),
+    effort: EffortSchema.optional(),
   }),
   /** Push-to-talk for a voice session: press taps the dictation key, release sends. */
   z.object({ type: z.literal('voice.ptt'), sessionId: id, pressed: z.boolean() }),
@@ -92,6 +94,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     resume: id.optional(),
     /** Model for this session; the PC's default when omitted. */
     model: ModelNameSchema.optional(),
+    /** Reasoning effort for this session; the model's default when omitted. */
+    effort: EffortSchema.optional(),
   }),
   z.object({ type: z.literal('claude.session.subscribe'), sessionId: id }),
   z.object({ type: z.literal('claude.session.close'), sessionId: id }),
@@ -108,8 +112,22 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     sessionId: id,
     model: ModelNameSchema.nullable(),
   }),
+  /**
+   * Change a session's reasoning effort for its next replies; `null` goes back to the
+   * model's default. Phone (SDK) sessions only: terminal sessions take it at start.
+   */
+  z.object({
+    type: z.literal('claude.effort.set'),
+    sessionId: id,
+    effort: EffortSchema.nullable(),
+  }),
   /** The models that can be picked (for a session when given, else the general list). */
   z.object({ type: z.literal('claude.models'), sessionId: id.optional() }),
+  /**
+   * The Claude plan's usage limits (session, weekly, per model, extra usage). The agent
+   * caches the answer for a minute; `refresh` asks Claude Code again.
+   */
+  z.object({ type: z.literal('claude.usage'), refresh: z.boolean().optional() }),
   /** Give a session the name shown on the phone (a controlled terminal session keeps Claude Code's otherwise). */
   z.object({
     type: z.literal('claude.session.rename'),

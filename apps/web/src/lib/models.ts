@@ -1,3 +1,5 @@
+import type { EffortLevel } from '@voicecode/protocol';
+
 /** Choices for "Model for new sessions" ('' leaves it to the PC). */
 export const MODEL_PRESETS: Array<[value: string, label: string]> = [
   ['', 'PC default'],
@@ -27,3 +29,24 @@ export function modelLabel(model: string | undefined): string | undefined {
   if (!version) return name;
   return version[2] ? `${name} ${version[1]}.${version[2]}` : `${name} ${version[1]}`;
 }
+
+/** Effort levels by name, with what each means for the replies. */
+export const EFFORT_TEXT: Record<EffortLevel, { name: string; hint: string }> = {
+  low: { name: 'Low', hint: 'Quick answers with light reasoning. Uses the least of your limits.' },
+  medium: { name: 'Medium', hint: 'Balances speed and depth.' },
+  high: { name: 'High', hint: 'Thinks problems through. Suits most coding work.' },
+  xhigh: { name: 'Extra high', hint: 'More depth for hard problems. Slower replies.' },
+  max: {
+    name: 'Max',
+    hint: 'The deepest reasoning, for this session only. Slowest, and uses the most of your limits.',
+  },
+};
+
+/** The effort as it fits on the model chip. */
+export const EFFORT_SHORT: Record<EffortLevel, string> = {
+  low: 'Low',
+  medium: 'Med',
+  high: 'High',
+  xhigh: 'XHigh',
+  max: 'Max',
+};

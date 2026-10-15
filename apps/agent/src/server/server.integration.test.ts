@@ -575,13 +575,15 @@ describe('WebSocket gateway', () => {
     client.ws.close();
   });
 
-  it('starts a session with a chosen model and switches it from the phone', async () => {
+  it('starts a session with a chosen model and effort and switches them from the phone', async () => {
     const client = new Client(tunnelCookie);
     await client.waitFor('welcome');
-    client.send({ type: 'claude.session.start', projectId: 'p1', model: 'sonnet' });
+    client.send({ type: 'claude.session.start', projectId: 'p1', model: 'sonnet', effort: 'high' });
     const snapshot = await client.waitFor('claude.session.snapshot');
     const sessionId = snapshot.session.id;
     expect(fake.control.options?.model).toBe('sonnet');
+    expect(fake.control.options?.effort).toBe('high');
+    expect(snapshot.session.effort).toBe('high');
 
     client.send({ type: 'claude.models', sessionId });
     const offer = await client.waitFor('claude.models', (m) => m.sessionId === sessionId);
@@ -600,6 +602,27 @@ describe('WebSocket gateway', () => {
       (m) => m.event.kind === 'status' && /back to the default/.test(m.event.message),
     );
     expect(fake.control.modelSets).toEqual(['opus', undefined]);
+    expect(offer.models[0]!.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(offer.models[1]!.efforts).toBeUndefined();
+
+    client.send({ type: 'claude.effort.set', sessionId, effort: 'xhigh' });
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.id === sessionId && m.session.effort === 'xhigh',
+    );
+    client.send({ type: 'claude.effort.set', sessionId, effort: null });
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.id === sessionId && m.session.effort === undefined,
+    );
+    expect(fake.control.flagSettings).toEqual([{ effortLevel: 'xhigh' }, { effortLevel: null }]);
+    client.send({ type: 'claude.effort.set', sessionId, effort: 'extreme' as 'max' });
+    await client.waitFor('error', (m) => m.code === 'bad_request');
+
+    // The plan's limits come from the live session, without starting another Claude Code.
+    client.send({ type: 'claude.usage' });
+    const usage = await client.waitFor('claude.usage');
+    expect(usage.usage.limits).toMatchObject([{ id: 'five_hour', utilization: 42 }]);
 
     // A model name is never free text: it is typed into terminal sessions.
     client.send({ type: 'claude.model.set', sessionId, model: 'opus\r/exit' });

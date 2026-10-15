@@ -71,12 +71,33 @@ export function DeckEditor({ deck, onChange, onClose }: Props) {
             className="deck-pack"
             onClick={() => {
               if (confirm(`Replace all keys and joystick pushes with the “${pack.name}” pack?`)) {
-                onChange(pack.config);
+                onChange({ ...pack.config, pad: deck.pad });
               }
             }}
           >
             <strong>{pack.name}</strong>
             <span className="small muted">{pack.description}</span>
+          </button>
+        ))}
+      </div>
+
+      <h3>Below the wheel</h3>
+      <div className="segmented" role="radiogroup" aria-label="Below the wheel">
+        {(
+          [
+            ['stick', 'Joystick', 'Four programmable pushes'],
+            ['usage', 'Usage limits', 'How much of your plan is used'],
+          ] as const
+        ).map(([pad, name, hint]) => (
+          <button
+            key={pad}
+            role="radio"
+            aria-checked={deck.pad === pad}
+            className={`segment ${deck.pad === pad ? 'active' : ''}`}
+            onClick={() => onChange({ ...deck, pad })}
+          >
+            <strong>{name}</strong>
+            <span className="small muted">{hint}</span>
           </button>
         ))}
       </div>

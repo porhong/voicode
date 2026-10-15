@@ -96,12 +96,13 @@ export function CollapseIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-/** A phone turning on its side: screen orientation. */
-export function RotateIcon({ size = 20 }: { size?: number }) {
+/** Three dots in a row: more options. */
+export function MoreIcon({ size = 20 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
-      <rect x="8" y="3" width="8" height="13" rx="1.6" {...stroke} />
-      <path d="M4 14a8 8 0 0 0 7 7M4 14l-1 3M4 14l3 1" {...stroke} />
+      <circle cx="5.5" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="18.5" cy="12" r="1.6" fill="currentColor" />
     </svg>
   );
 }

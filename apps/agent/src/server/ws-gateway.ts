@@ -329,7 +329,7 @@ export class WsGateway {
       case 'voice.mic.stop':
         return this.check(conn, mic.release(id));
       case 'voice.session.start': {
-        const session = await sessions.startVoice(msg.projectId, msg.resume, msg.model);
+        const session = await sessions.startVoice(msg.projectId, msg.resume, msg.model, msg.effort);
         return this.sendSnapshot(conn, session.id);
       }
       case 'voice.ptt':
@@ -363,7 +363,10 @@ export class WsGateway {
         return sessions.getVoice(msg.sessionId).resize(msg.cols, msg.rows);
 
       case 'claude.session.start': {
-        const session = sessions.start(msg.projectId, msg.resume, { model: msg.model });
+        const session = sessions.start(msg.projectId, msg.resume, {
+          model: msg.model,
+          effort: msg.effort,
+        });
         return this.sendSnapshot(conn, session.id);
       }
       case 'claude.session.subscribe':
@@ -384,6 +387,8 @@ export class WsGateway {
         return sessions.rename(msg.sessionId, msg.title);
       case 'claude.model.set':
         return sessions.setModel(msg.sessionId, msg.model);
+      case 'claude.effort.set':
+        return sessions.setEffort(msg.sessionId, msg.effort);
       case 'storage.info':
       case 'storage.cleanup':
       case 'storage.settings': {
@@ -405,6 +410,11 @@ export class WsGateway {
           type: 'claude.models',
           sessionId: msg.sessionId,
           ...(await sessions.models(msg.sessionId)),
+        });
+      case 'claude.usage':
+        return this.send(conn, {
+          type: 'claude.usage',
+          usage: await sessions.usage(msg.refresh),
         });
       case 'pc.session.subscribe': {
         const pc = this.deps.pcSessions;

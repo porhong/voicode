@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ServerMessage, SessionSummary } from '@voicecode/protocol';
 import { Composer, type ComposerHandle } from '../components/Composer';
-import { Deck, type DeckStatus } from '../components/Deck';
+import { Deck, type DeckApproval, type DeckStatus } from '../components/Deck';
 import { DeckEditor } from '../components/DeckEditor';
 import { FolderSheet } from '../components/FolderSheet';
 import { ModelSheet } from '../components/ModelSheet';
@@ -13,13 +13,16 @@ import { SettingsSheet } from '../components/SettingsSheet';
 import { TerminalView, type TerminalMessage } from '../components/TerminalView';
 import { Trackpad } from '../components/Trackpad';
 import { Transcript, type TranscriptHandle } from '../components/Transcript';
+import { UsageSheet } from '../components/UsageSheet';
 import { useAgentSocket } from '../hooks/useAgentSocket';
+import { useAlertSounds } from '../hooks/useAlertSounds';
 import { useApprovalAlerts } from '../hooks/useApprovalAlerts';
 import { useDeck, type Macro } from '../hooks/useDeck';
 import { useMicStream, type MicStream } from '../hooks/useMicStream';
 import { speechRecognitionSupported } from '../hooks/useSpeechRecognition';
 import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
+import { useUsage } from '../hooks/useUsage';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { initialState, reducer, type Toast } from '../lib/store';
 
@@ -77,6 +80,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [listening, setListening] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const deckMode = settings.claudeLayout === 'deck';
   /** The deck has the screen: the conversation is hidden, approvals still show. */
   const deckFull = deckMode && !settings.deckHistory;
@@ -212,14 +216,6 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     });
   };
 
-  // A light tap when a task finishes somewhere else.
-  const lastToast = useRef(state.toasts[0]?.id ?? 0);
-  useEffect(() => {
-    const newest = state.toasts[0]?.id ?? 0;
-    if (newest > lastToast.current) navigator.vibrate?.(20);
-    lastToast.current = Math.max(lastToast.current, newest);
-  }, [state.toasts]);
-
   const permissions = useMemo(
     () => Object.values(state.permissions).sort((a, b) => a.createdAt - b.createdAt),
     [state.permissions],
@@ -229,21 +225,39 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     () => (active ? (state.events[active.id] ?? []) : []),
     [active, state.events],
   );
+  useAlertSounds({
+    enabled: settings.soundAlerts,
+    activeSessionId: active?.id,
+    activeEvents,
+    activeState: active?.state,
+    pcSessionId: pcId,
+    pcEvents,
+    toasts: state.toasts,
+    error: state.error,
+    dictationError: remoteMic?.error,
+  });
   useSpeakReplies(active?.id, activeEvents, settings.speakReplies, settings.voiceLang);
   const activePermissions = permissions.filter((p) => p.sessionId === active?.id);
   const otherPermissions = permissions.length - activePermissions.length;
   const live = active && active.state !== 'closed' && active.state !== 'error';
+  useUsage(
+    send,
+    connection === 'open',
+    usageOpen || (tab === 'claude' && deckMode && deck.pad === 'usage'),
+    Object.values(state.sessions).some((s) => s.state === 'running'),
+  );
   const [startProjectId, setStartProjectId] = useProjectChoice(state.projects, active?.projectId);
   const openFolder = state.roots.length ? () => setFoldersOpen(true) : undefined;
   // With Claude Code dictation chosen and a virtual microphone on the PC, new sessions
   // run Claude Code in a terminal there so its own /voice can be used.
   const voiceSessions = settings.dictation === 'claude-code' && state.voiceMic.status.available;
   const startModel = settings.model || undefined;
+  const startEffort = settings.effort || undefined;
   const startSession = (projectId: string) =>
     send(
       voiceSessions
-        ? { type: 'voice.session.start', projectId, model: startModel }
-        : { type: 'claude.session.start', projectId, model: startModel },
+        ? { type: 'voice.session.start', projectId, model: startModel, effort: startEffort }
+        : { type: 'claude.session.start', projectId, model: startModel, effort: startEffort },
     );
 
   // A short buzz when a new approval arrives, so a phone in hand notices it.
@@ -292,8 +306,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     <div className="empty-card">
       <h2>What should Claude do?</h2>
       <p className="muted">
-        Press a key, push the joystick, or hold the mic key and speak. The sliders button on the
-        deck changes what each control does.
+        Press a key, or keep Hold to talk pressed while you speak. To change the keys, open Deck
+        options (⋯) and choose Customize deck.
       </p>
     </div>
   ) : (
@@ -334,15 +348,26 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
           : 'done'
         : active.state;
   const canPrompt = connection === 'open' && !!live;
-  const respond = (decision: 'allow' | 'deny') =>
-    approval &&
+  // The deck answers the request it showed, by id: never whichever happens to be first now.
+  const respond = (decision: 'allow' | 'deny', requestId: string) => {
+    const request = activePermissions.find((p) => p.requestId === requestId);
+    if (!request) return;
     send({
       type: 'claude.permission.respond',
-      sessionId: approval.sessionId,
-      requestId: approval.requestId,
+      sessionId: request.sessionId,
+      requestId: request.requestId,
       decision,
       rememberForSession: false,
     });
+  };
+  const deckApproval: DeckApproval | undefined = approval && {
+    requestId: approval.requestId,
+    toolName: approval.toolName,
+    detail: approval.detail,
+    complete: approval.complete,
+    position: 1,
+    total: activePermissions.length,
+  };
   const runMacro = (macro: Macro) => {
     if (!active || !canPrompt) return;
     if (macro.review) composerRef.current?.setDraft(macro.prompt);
@@ -362,6 +387,35 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   ]
     .filter(Boolean)
     .join(' ');
+
+  const banners = (
+    <>
+      {state.protocolMismatch && (
+        <button className="banner banner-action" onClick={() => location.reload()}>
+          The agent was updated. Tap to reload this page.
+        </button>
+      )}
+      {connection === 'reconnecting' && (
+        <div className="banner" role="status">
+          Reconnecting to the agent…
+        </div>
+      )}
+      {state.error && (
+        <div
+          className="banner banner-error"
+          role="alert"
+          onClick={() => dispatch({ type: 'dismissError' })}
+        >
+          {state.error.message}
+        </div>
+      )}
+    </>
+  );
+  /**
+   * With the deck, banners sit at the top of the conversation column: above the whole
+   * tab they pushed the deck down, and in landscape its bottom row off the screen.
+   */
+  const bannersInColumn = tab === 'claude' && deckMode;
 
   return (
     <div className="app">
@@ -413,29 +467,12 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
         </button>
       </header>
 
-      {state.protocolMismatch && (
-        <button className="banner banner-action" onClick={() => location.reload()}>
-          The agent was updated. Tap to reload this page.
-        </button>
-      )}
-      {connection === 'reconnecting' && (
-        <div className="banner" role="status">
-          Reconnecting to the agent…
-        </div>
-      )}
-      {state.error && (
-        <div
-          className="banner banner-error"
-          role="alert"
-          onClick={() => dispatch({ type: 'dismissError' })}
-        >
-          {state.error.message}
-        </div>
-      )}
+      {!bannersInColumn && banners}
 
       {tab === 'claude' ? (
         <main className={claudeClass}>
           <div className="claude-column">
+            {bannersInColumn && banners}
             <SessionBar
               disabled={connection !== 'open'}
               state={state}
@@ -445,8 +482,15 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               onSelect={openSession}
               onSelectPc={openPcSession}
               onOpenFolder={openFolder}
-              start={{ voice: voiceSessions, model: settings.model }}
+              start={{ voice: voiceSessions, model: settings.model, effort: settings.effort }}
               onOpenModel={() => setModelOpen(true)}
+              status={
+                deckStatus === 'done'
+                  ? { label: 'Done', chip: 'idle' }
+                  : deckStatus === 'error'
+                    ? { label: 'Error', chip: 'error' }
+                    : undefined
+              }
             />
             {pcId ? (
               <Transcript
@@ -478,12 +522,14 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
             {activePermissions.length > 0 && (
               // Scrolls on its own on short screens (landscape) so the composer stays visible.
               <div className="approvals">
-                {activePermissions.map((request) => (
+                {activePermissions.map((request, i) => (
                   <PermissionCard
                     key={request.requestId}
                     request={request}
                     send={send}
                     disabled={connection !== 'open'}
+                    onDeck={deckMode}
+                    queued={i > 0}
                   />
                 ))}
               </div>
@@ -598,15 +644,18 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               canPrompt={canPrompt}
               connected={connection === 'open'}
               running={active?.state === 'running' || active?.state === 'awaiting_permission'}
-              approval={approval}
+              approval={deckApproval}
               micSupported={remoteMic ? remoteMic.supported : speechRecognitionSupported()}
               listening={canPrompt && listening}
               full={deckFull}
               replies={replies}
+              usage={state.usage}
+              onPadChange={(pad) => saveDeck({ ...deck, pad })}
+              onUsage={() => setUsageOpen(true)}
               onToggleFull={() => updateSettings({ deckHistory: !settings.deckHistory })}
               onMacro={runMacro}
-              onAccept={() => respond('allow')}
-              onReject={() => respond('deny')}
+              onAccept={(id) => respond('allow', id)}
+              onReject={(id) => respond('deny', id)}
               onStop={() => active && send({ type: 'claude.interrupt', sessionId: active.id })}
               onNew={newSession}
               onType={() => composerRef.current?.focus()}
@@ -649,6 +698,15 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
         <DeckEditor deck={deck} onChange={saveDeck} onClose={() => setDeckEditorOpen(false)} />
       )}
 
+      {usageOpen && (
+        <UsageSheet
+          usage={state.usage}
+          send={send}
+          disabled={connection !== 'open'}
+          onClose={() => setUsageOpen(false)}
+        />
+      )}
+
       {modelOpen && (
         <ModelSheet
           state={state}
@@ -656,6 +714,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
           session={active}
           chosen={settings.model}
           onChoose={(model) => updateSettings({ model })}
+          effort={settings.effort}
+          onChooseEffort={(effort) => updateSettings({ effort })}
           disabled={connection !== 'open'}
           onClose={() => setModelOpen(false)}
         />

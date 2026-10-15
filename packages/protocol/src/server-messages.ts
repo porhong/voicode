@@ -1,4 +1,10 @@
-import type { MouseButton, SessionState, StorageCategory, VoiceState } from './constants.js';
+import type {
+  EffortLevel,
+  MouseButton,
+  SessionState,
+  StorageCategory,
+  VoiceState,
+} from './constants.js';
 
 /*
  * Messages the agent sends to browser clients. These are produced by trusted code,
@@ -42,6 +48,8 @@ export interface SessionSummary {
   createdAt: number;
   title?: string;
   model?: string;
+  /** The reasoning effort chosen for the session; absent means the model's default. */
+  effort?: EffortLevel;
   totalCostUsd?: number;
   /** Absent for a session driven through the Agent SDK. */
   kind?: 'voice';
@@ -57,6 +65,8 @@ export interface ModelChoice {
   value: string;
   label: string;
   description?: string;
+  /** Effort levels the model takes: `[]` none, undefined when not known. */
+  efforts?: EffortLevel[];
 }
 
 export interface HistoricSession {
@@ -148,6 +158,39 @@ export interface PermissionRequest {
   expiresAt?: number;
 }
 
+/**
+ * What a usage limit counts: the rolling 5-hour session, the whole week, one model or
+ * kind of use, or paid extra usage past the plan (its monthly spending cap).
+ */
+export type UsageScope = 'session' | 'week' | 'model' | 'apps' | 'extra';
+
+/** One of the Claude plan's usage limits, as `/usage` reports it. */
+export interface UsageLimit {
+  /** Stable key, e.g. `five_hour`, `seven_day`, `model:Fable`, `extra`. */
+  id: string;
+  /** What the limit is, e.g. "Current session" or "Weekly · Opus". */
+  label: string;
+  /** A word or two for a small gauge, e.g. "5h" or "Opus". */
+  short: string;
+  scope: UsageScope;
+  /** Percentage used, 0-100; null when Claude Code did not say. */
+  utilization: number | null;
+  /** When the window starts over (ms since epoch), if known. */
+  resetsAt: number | null;
+}
+
+/** The Claude plan's usage limits; `available` is false for API keys and cloud providers. */
+export interface UsageReport {
+  available: boolean;
+  /** 'pro', 'max', 'team', 'enterprise', or null. */
+  plan: string | null;
+  /** Tightest first is not implied: the order is session, weekly, per model, extra usage. */
+  limits: UsageLimit[];
+  fetchedAt: number;
+  /** Why the limits could not be read, when they could not. */
+  error?: string;
+}
+
 /** Disposable files on the PC and the automatic cleanup settings. */
 export interface StorageInfo {
   categories: Array<{ category: StorageCategory; bytes: number; count: number }>;
@@ -235,6 +278,7 @@ export type ServerMessage =
       title?: string;
       isError: boolean;
     }
+  | { type: 'claude.usage'; usage: UsageReport }
 
   // --- Disposable files on the PC --------------------------------------------
   | { type: 'storage.info'; storage: StorageInfo }

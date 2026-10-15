@@ -14,11 +14,15 @@ export interface Macro {
 export type Direction = 'up' | 'right' | 'down' | 'left';
 export const DIRECTIONS: Direction[] = ['up', 'right', 'down', 'left'];
 
+/** What sits below the wheel: the four-way joystick, or the plan's usage rings. */
+export type DeckPad = 'stick' | 'usage';
+
 export interface DeckConfig {
   /** The six translucent keys, top row first. */
   keys: Macro[];
-  /** The joystick's four pushes. */
+  /** The joystick's four pushes (kept while the usage rings are shown). */
   stick: Record<Direction, Macro>;
+  pad: DeckPad;
 }
 
 export const KEY_COUNT = 6;
@@ -68,6 +72,7 @@ export const DECK_PACKS: Array<{ name: string; description: string; config: Deck
         down: preset('Shorter'),
         left: preset('Undo'),
       },
+      pad: 'stick',
     },
   },
   {
@@ -81,6 +86,7 @@ export const DECK_PACKS: Array<{ name: string; description: string; config: Deck
         down: preset('Shorter'),
         left: preset('Undo'),
       },
+      pad: 'stick',
     },
   },
   {
@@ -94,6 +100,7 @@ export const DECK_PACKS: Array<{ name: string; description: string; config: Deck
         down: preset('Shorter'),
         left: preset('Undo'),
       },
+      pad: 'stick',
     },
   },
 ];
@@ -126,6 +133,7 @@ export function parseDeck(raw: unknown): DeckConfig {
     stick: Object.fromEntries(
       DIRECTIONS.map((d) => [d, cleanMacro(stick[d], DEFAULT_DECK.stick[d])]),
     ) as Record<Direction, Macro>,
+    pad: v.pad === 'usage' ? 'usage' : 'stick',
   };
 }
 

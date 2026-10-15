@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { DECK_PACKS, DEFAULT_DECK, KEY_COUNT, parseDeck } from './useDeck';
 
 describe('parseDeck', () => {
+  it('keeps the usage pad choice and falls back to the joystick', () => {
+    expect(parseDeck({ pad: 'usage' }).pad).toBe('usage');
+    expect(parseDeck({ pad: 'pie' }).pad).toBe('stick');
+    expect(parseDeck({}).pad).toBe('stick');
+  });
+
   it('falls back to the default layout for missing or broken data', () => {
     expect(parseDeck(undefined)).toEqual(DEFAULT_DECK);
     expect(parseDeck('nonsense')).toEqual(DEFAULT_DECK);

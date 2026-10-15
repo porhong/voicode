@@ -4,17 +4,20 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { listSessions, type query } from '@anthropic-ai/claude-agent-sdk';
 import type {
+  EffortLevel,
   HistoricSession,
   ModelChoice,
   PcSession,
   PermissionRequest,
   SessionSummary,
+  UsageReport,
 } from '@voicecode/protocol';
 import { MODEL_ALIASES } from '../claude/models.js';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
 import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
 import { ClaudeSession, type SessionEventRecord } from '../claude/claude-session.js';
+import { UsageMeter } from '../claude/usage.js';
 import { HookServer, type HookDecision, type PreToolUseEvent } from '../claude/hook-server.js';
 import { attachConsole, consoleAttachStatus } from '../claude/console-attach.js';
 import {
@@ -72,6 +75,7 @@ export class SessionManager extends EventEmitter<{
   terminalExit: [sessionId: string, code: number];
 }> {
   readonly broker: ApprovalBroker;
+  private readonly usageMeter: UsageMeter;
   private readonly sessions = new Map<string, ManagedSession>();
   private hooks: HookServer | undefined;
   private hooksStarting: Promise<HookServer> | undefined;
@@ -89,6 +93,16 @@ export class SessionManager extends EventEmitter<{
     } = {},
   ) {
     super();
+    this.usageMeter = new UsageMeter({
+      liveQuery: () => {
+        for (const s of this.sessions.values()) {
+          if (s instanceof ClaudeSession && s.liveQuery) return s.liveQuery;
+        }
+        return undefined;
+      },
+      logger,
+      queryFn,
+    });
     this.broker = new ApprovalBroker({ timeoutMs: config.claude.approvalTimeoutMs });
     this.broker.on('request', (request) => {
       this.sessions.get(request.sessionId)?.setAwaitingPermission(true);
@@ -157,7 +171,12 @@ export class SessionManager extends EventEmitter<{
    * An interactive Claude Code in a pseudo-terminal, for dictation through Claude Code's
    * own `/voice`. Its tool calls come back through the hook server for phone approval.
    */
-  async startVoice(projectId: string, resume?: string, model?: string): Promise<VoiceSession> {
+  async startVoice(
+    projectId: string,
+    resume?: string,
+    model?: string,
+    effort?: EffortLevel,
+  ): Promise<VoiceSession> {
     const project = this.project(projectId);
     this.checkCapacity(resume);
     const hooks = await this.ensureHooks();
@@ -170,6 +189,7 @@ export class SessionManager extends EventEmitter<{
       logger: this.logger.child({ session: project.name, kind: 'voice' }),
       hook: { url: hooks.url, token: hooks.token, command: hookCommandLine() },
       model,
+      effort,
       spawn: this.voiceDeps.spawn,
       claudePath: this.voiceDeps.claudePath,
       claudeDir: this.voiceDeps.claudeDir,
@@ -269,7 +289,7 @@ export class SessionManager extends EventEmitter<{
   start(
     projectId: string,
     resume?: string,
-    opts: { fork?: boolean; model?: string } = {},
+    opts: { fork?: boolean; model?: string; effort?: EffortLevel } = {},
   ): ClaudeSession {
     const project = this.project(projectId);
     this.checkCapacity(resume, opts.fork);
@@ -280,6 +300,7 @@ export class SessionManager extends EventEmitter<{
       resume,
       fork: opts.fork,
       model: opts.model,
+      effort: opts.effort,
       config: this.config.claude,
       broker: this.broker,
       logger: this.logger.child({ session: project.name }),
@@ -340,12 +361,33 @@ export class SessionManager extends EventEmitter<{
     }
   }
 
+  /** Phone (SDK) sessions only: a terminal's `/effort` would also rewrite the PC's settings. */
+  async setEffort(sessionId: string, effort: EffortLevel | null): Promise<void> {
+    const session = this.get(sessionId);
+    if (session instanceof VoiceSession) {
+      throw new SessionError(
+        'bad_request',
+        'Terminal sessions take the effort when they start; start a new one to change it.',
+      );
+    }
+    try {
+      await session.setEffort(effort);
+    } catch (err) {
+      throw new SessionError('bad_request', (err as Error).message);
+    }
+  }
+
   /** What the phone's model picker offers, for a session or in general. */
   async models(sessionId?: string): Promise<{ models: ModelChoice[]; persistsDefault: boolean }> {
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
     if (session instanceof VoiceSession) return { models: session.models(), persistsDefault: true };
     if (session) return { models: await session.models(), persistsDefault: false };
     return { models: MODEL_ALIASES, persistsDefault: false };
+  }
+
+  /** The Claude plan's usage limits (shared by every session on this PC). */
+  usage(refresh = false): Promise<UsageReport> {
+    return this.usageMeter.get(refresh);
   }
 
   close(sessionId: string): void {
@@ -387,6 +429,7 @@ export class SessionManager extends EventEmitter<{
 
   closeAll(): void {
     this.broker.cancelAll('shutdown');
+    this.usageMeter.close();
     for (const session of this.sessions.values()) session.close();
     this.sessions.clear();
     void this.hooks?.stop();

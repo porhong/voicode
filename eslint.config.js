@@ -8,6 +8,11 @@ export default tseslint.config(
     ignores: [
       '**/dist/**',
       '**/node_modules/**',
+      '.github/**',
+      '.claude/**',
+      '.impeccable/**',
+      '.omc/**',
+      '.remember/**',
       'native/**/build/**',
       'apps/agent/native-bin/**',
       'apps/agent/build/**',

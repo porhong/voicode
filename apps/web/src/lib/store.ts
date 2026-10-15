@@ -11,6 +11,7 @@ import {
   type ServerMessage,
   type SessionSummary,
   type StorageInfo,
+  type UsageReport,
   type VoiceMicStatus,
 } from '@voicecode/protocol';
 
@@ -61,6 +62,8 @@ export interface AppState {
   /** Set while a PC session is on screen instead of a phone session. */
   activePcSessionId?: string;
   toasts: Toast[];
+  /** The Claude plan's usage limits, once the deck or the usage sheet asked for them. */
+  usage?: UsageReport;
   /** The agent's disposable files, once the settings sheet asked for them. */
   storage?: StorageInfo;
   error?: { message: string; at: number };
@@ -229,6 +232,8 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
       return { ...state, history: { ...state.history, [msg.projectId]: msg.sessions } };
     case 'storage.info':
       return { ...state, storage: msg.storage };
+    case 'claude.usage':
+      return { ...state, usage: msg.usage };
     case 'claude.models': {
       const { type: _type, ...models } = msg;
       return { ...state, models };

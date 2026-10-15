@@ -7,6 +7,7 @@ import { SerializeAddon } from '@xterm/addon-serialize/lib/addon-serialize.mjs';
 import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.mjs';
 import type {
   ClaudeEvent,
+  EffortLevel,
   ModelChoice,
   SessionState,
   SessionSummary,
@@ -131,6 +132,8 @@ export interface VoiceSessionOptions {
   };
   /** Model chosen on the phone for a new hosted session. */
   model?: string;
+  /** Reasoning effort for a new hosted session (`--effort`). */
+  effort?: EffortLevel;
   /** Injection points for tests. */
   spawn?: PtySpawn;
   claudePath?: string;
@@ -161,6 +164,7 @@ export class VoiceSession extends EventEmitter<{
   private readonly claudeSessionId: string;
   private title: string | undefined;
   private model: string | undefined;
+  private effort: EffortLevel | undefined;
   /** Where the title came from: Claude Code's own name wins unless the user renamed here. */
   private titleSource: 'prompt' | 'registry' | 'user' | undefined;
   private readonly history: SessionEventRecord[] = [];
@@ -257,6 +261,7 @@ export class VoiceSession extends EventEmitter<{
       ...(startModel(opts.model, config.model)
         ? ['--model', startModel(opts.model, config.model)!]
         : []),
+      ...(opts.effort ? ['--effort', opts.effort] : []),
     ];
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -284,6 +289,7 @@ export class VoiceSession extends EventEmitter<{
       return;
     }
     this.model = startModel(opts.model, config.model);
+    this.effort = opts.effort;
     opts.logger.info(
       { session: this.id, pid: this.pty.pid, claude, resume: opts.resume },
       'claude code started in a pty',
@@ -340,6 +346,7 @@ export class VoiceSession extends EventEmitter<{
       title: this.title,
       kind: 'voice',
       model: this.model,
+      effort: this.effort,
       attached: this.attached || undefined,
       voice: { state: this.voice, detail: this.voiceDetail },
     };

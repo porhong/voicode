@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { EFFORT_LEVELS, type EffortLevel } from '@voicecode/protocol';
 
 export interface Settings {
   /** Claude tab style: a chat thread, or a macro pad (deck) under a shorter thread. */
@@ -16,6 +17,8 @@ export interface Settings {
   autoSendVoice: boolean;
   /** Read Claude's reply aloud when a turn finishes. */
   speakReplies: boolean;
+  /** Play an alert sound when a task finishes or when an error occurs. */
+  soundAlerts: boolean;
   /** Show a system notification for approvals while the app is in the background. */
   notifyApprovals: boolean;
   /** BCP 47 language tag for speech recognition. */
@@ -27,6 +30,8 @@ export interface Settings {
   dictation: 'browser' | 'claude-code';
   /** Model for the sessions this phone starts ('' = the PC's default). */
   model: string;
+  /** Reasoning effort for the sessions this phone starts ('' = the model's default). */
+  effort: EffortLevel | '';
 }
 
 const KEY = 'voicecode.settings.v1';
@@ -39,16 +44,22 @@ const defaults: Settings = {
   naturalScroll: true,
   scrollSpeed: 3,
   autoSendVoice: false,
+  soundAlerts: true,
   notifyApprovals: false,
   speakReplies: false,
   voiceLang: typeof navigator !== 'undefined' ? navigator.language : 'en-US',
   dictation: 'browser',
   model: '',
+  effort: '',
 };
 
 function load(): Settings {
   try {
-    return { ...defaults, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>) };
+    const stored = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>;
+    const settings = { ...defaults, ...stored };
+    // The agent refuses an unknown level, so an old or hand-edited one falls back here.
+    if (settings.effort && !EFFORT_LEVELS.includes(settings.effort)) settings.effort = '';
+    return settings;
   } catch {
     return defaults;
   }

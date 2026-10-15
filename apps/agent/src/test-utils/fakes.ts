@@ -75,6 +75,7 @@ export interface FakeQueryControl {
   options?: Options;
   permissionModeSets: string[];
   modelSets: Array<string | undefined>;
+  flagSettings: Array<Record<string, unknown>>;
   interrupted: number;
   closed: boolean;
 }
@@ -91,6 +92,7 @@ export function createFakeQuery(init: { permissionMode?: string } = {}): {
   const control: FakeQueryControl = {
     permissionModeSets: [],
     modelSets: [],
+    flagSettings: [],
     interrupted: 0,
     closed: false,
   };
@@ -182,10 +184,24 @@ export function createFakeQuery(init: { permissionMode?: string } = {}): {
       setModel: async (model?: string) => {
         control.modelSets.push(model);
       },
+      applyFlagSettings: async (settings: Record<string, unknown>) => {
+        control.flagSettings.push(settings);
+      },
       supportedModels: async () => [
-        { value: 'default', displayName: 'Default (recommended)', description: 'Opus 5.5' },
+        {
+          value: 'default',
+          displayName: 'Default (recommended)',
+          description: 'Opus 5.5',
+          supportsEffort: true,
+          supportedEffortLevels: ['max', 'low', 'high', 'medium', 'xhigh'],
+        },
         { value: 'sonnet', displayName: 'Sonnet', description: 'Sonnet 5.5' },
       ],
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+        subscription_type: 'max',
+        rate_limits_available: true,
+        rate_limits: { five_hour: { utilization: 42, resets_at: '2026-10-15T06:50:00Z' } },
+      }),
       close: () => {
         control.closed = true;
       },

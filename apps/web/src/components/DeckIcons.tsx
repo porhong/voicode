@@ -31,6 +31,10 @@ const PATHS = {
     'M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10',
   layers: 'M12 3 2 8l10 5 10-5zM2 13l10 5 10-5',
   sliders: 'M4 7h10M18 7h2M4 17h4M12 17h8M16 4v6M10 14v6',
+  // The pad switch: usage rings, and the joystick.
+  gauge: 'M12 3a9 9 0 1 0 9 9M12 7a5 5 0 1 0 5 5',
+  stick:
+    'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM12 5v1M12 18v1M5 12h1M18 12h1',
 } as const;
 
 export type DeckIconName = keyof typeof PATHS;
@@ -43,6 +47,8 @@ const COMMAND_ICONS = new Set([
   'keyboard',
   'layers',
   'sliders',
+  'gauge',
+  'stick',
 ]);
 
 /** Icons offered for programmable keys (the command-key glyphs are reserved). */

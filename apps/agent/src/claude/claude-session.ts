@@ -6,7 +6,14 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { ClaudeEvent, ModelChoice, SessionState, SessionSummary } from '@voicecode/protocol';
+import {
+  EFFORT_LEVELS,
+  type ClaudeEvent,
+  type EffortLevel,
+  type ModelChoice,
+  type SessionState,
+  type SessionSummary,
+} from '@voicecode/protocol';
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import {
   describeAutoApprovals,
@@ -40,6 +47,8 @@ export interface ClaudeSessionOptions {
   fork?: boolean;
   /** Model chosen on the phone for this session; overrides the configured one. */
   model?: string;
+  /** Reasoning effort chosen on the phone; the model's default when absent. */
+  effort?: EffortLevel;
   config: AgentConfig['claude'];
   broker: ApprovalBroker;
   logger: Logger;
@@ -64,6 +73,7 @@ export class ClaudeSession extends EventEmitter<{
   private state: SessionState = 'starting';
   private claudeSessionId: string | undefined;
   private model: string | undefined;
+  private effort: EffortLevel | undefined;
   private title: string | undefined;
   private totalCostUsd: number | undefined;
   private readonly history: SessionEventRecord[] = [];
@@ -80,6 +90,7 @@ export class ClaudeSession extends EventEmitter<{
     this.project = opts.project;
     // A fork gets its own id from the init message.
     this.claudeSessionId = opts.fork ? undefined : opts.resume;
+    this.effort = opts.effort;
   }
 
   start(): void {
@@ -99,6 +110,7 @@ export class ClaudeSession extends EventEmitter<{
       stderr: (data) => this.opts.logger.debug({ session: this.id, data }, 'claude stderr'),
       ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
       ...(this.startModel ? { model: this.startModel } : {}),
+      ...(this.effort ? { effort: this.effort } : {}),
       ...(config.maxBudgetUsd ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       ...(this.opts.resume ? { resume: this.opts.resume } : {}),
       ...(this.opts.resume && this.opts.fork ? { forkSession: true } : {}),
@@ -142,6 +154,24 @@ export class ClaudeSession extends EventEmitter<{
     this.emitState();
   }
 
+  /**
+   * Changes the reasoning effort for the following replies. It goes into the session's
+   * flag settings layer, so nothing is written to the settings files on the PC; `max`
+   * runs as `high` on a model without it.
+   */
+  async setEffort(effort: EffortLevel | null): Promise<void> {
+    if (this.isClosed || !this.q) throw new Error('This session is closed');
+    await this.q.applyFlagSettings({ effortLevel: effort });
+    this.effort = effort ?? undefined;
+    this.record({
+      kind: 'status',
+      message: effort
+        ? `Effort set to ${effort} for the next replies.`
+        : 'Effort back to the model default for the next replies.',
+    });
+    this.emitState();
+  }
+
   /** The models this Claude Code offers, as the SDK reports them. */
   async models(): Promise<ModelChoice[]> {
     if (this.isClosed || !this.q) return MODEL_ALIASES;
@@ -152,10 +182,16 @@ export class ClaudeSession extends EventEmitter<{
         value: m.value,
         label: m.displayName,
         description: m.description,
+        ...effortsOf(m),
       }));
     } catch {
       return MODEL_ALIASES;
     }
+  }
+
+  /** The live SDK query, while the session runs (the usage meter asks it for limits). */
+  get liveQuery(): Query | undefined {
+    return this.isClosed ? undefined : this.q;
   }
 
   summary(): SessionSummary {
@@ -167,6 +203,7 @@ export class ClaudeSession extends EventEmitter<{
       createdAt: this.createdAt,
       title: this.title,
       model: this.model,
+      effort: this.effort,
       totalCostUsd: this.totalCostUsd,
     };
   }
@@ -359,4 +396,14 @@ export class ClaudeSession extends EventEmitter<{
   private emitState(): void {
     this.emit('state', this.summary());
   }
+}
+
+/** A model's effort levels as the SDK lists them, in order; unknown levels are dropped. */
+function effortsOf(m: { supportsEffort?: boolean; supportedEffortLevels?: readonly string[] }): {
+  efforts?: EffortLevel[];
+} {
+  if (m.supportsEffort === false) return { efforts: [] };
+  if (!Array.isArray(m.supportedEffortLevels)) return {};
+  const levels = new Set(m.supportedEffortLevels);
+  return { efforts: EFFORT_LEVELS.filter((level) => levels.has(level)) };
 }
