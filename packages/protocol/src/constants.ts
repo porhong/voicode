@@ -55,6 +55,10 @@ export const LIMITS = {
   maxAudioBytesPerSecond: 64_000,
   /** Max characters of raw terminal input per message. */
   maxTerminalInput: 4096,
+  /** Max size of one image uploaded for Claude (the phone shrinks photos well below it). */
+  maxAttachmentBytes: 10 * 1024 * 1024,
+  /** Max images sent with one prompt. */
+  maxAttachments: 4,
 } as const;
 
 /**
@@ -101,7 +105,7 @@ export type SessionState = (typeof SESSION_STATES)[number];
  * leftovers of interrupted writes and downloads, Claude Code versions this build no
  * longer uses, runtimes extracted by older standalone builds, and the rotated log.
  */
-export const STORAGE_CATEGORIES = ['temp', 'downloads', 'runtime', 'logs'] as const;
+export const STORAGE_CATEGORIES = ['temp', 'attachments', 'downloads', 'runtime', 'logs'] as const;
 export type StorageCategory = (typeof STORAGE_CATEGORIES)[number];
 
 /** Bounds for the automatic cleanup limit, in MB. */

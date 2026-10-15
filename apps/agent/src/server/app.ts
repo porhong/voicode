@@ -14,7 +14,9 @@ import {
   WS_PATH,
   type AgentInfoResponse,
   type PairResponse,
+  type AttachmentResponse,
 } from '@voicecode/protocol';
+import { AttachmentError, type AttachmentStore } from '../storage/attachments.js';
 import type { DeviceRegistry, PublicDevice } from '../pairing/device-registry.js';
 import type { PairingService } from '../pairing/pairing-service.js';
 import type { TlsMaterial } from '../tls/certificates.js';
@@ -47,6 +49,8 @@ export interface ServerDeps {
   extraOrigins?: string[];
   /** Public host names of the Cloudflare Tunnel, if any (kept up to date by the agent). */
   tunnelHosts?: ReadonlySet<string>;
+  /** Where images sent from the phone are kept; uploads are refused without it. */
+  attachments?: AttachmentStore;
 }
 
 export async function buildServer(deps: ServerDeps) {
@@ -77,7 +81,8 @@ export async function buildServer(deps: ServerDeps) {
         styleSrcAttr: ["'unsafe-inline'"],
         // xterm.js (the terminal view) injects its theme as a <style> element.
         styleSrcElem: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:'],
+        // blob: previews of photos picked on the phone before they are sent.
+        imgSrc: ["'self'", 'data:', 'blob:'],
         connectSrc: ["'self'"],
         manifestSrc: ["'self'"],
         workerSrc: ["'self'"],
@@ -138,6 +143,48 @@ export async function buildServer(deps: ServerDeps) {
         deviceName: outcome.device.name,
       };
       return response;
+    },
+  );
+
+  // Images for Claude, sent as the raw request body (the phone shrinks them first). Only
+  // paired devices, from an allowed origin; the bytes must really be an image.
+  app.addContentTypeParser(
+    /^image\/[a-z0-9.+-]+$/i,
+    { parseAs: 'buffer', bodyLimit: LIMITS.maxAttachmentBytes },
+    (_request, body, done) => done(null, body),
+  );
+  app.post(
+    '/api/attachments',
+    {
+      bodyLimit: LIMITS.maxAttachmentBytes,
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+    },
+    async (request, reply) => {
+      if (!guard.originAllowed(request)) return reply.code(403).send({ error: 'bad_origin' });
+      if (!request.device) return reply.code(401).send({ error: 'unauthorized' });
+      const store = deps.attachments;
+      if (!store) return reply.code(503).send({ error: 'unavailable' });
+      if (!Buffer.isBuffer(request.body)) {
+        return reply.code(415).send({ error: 'unsupported_media_type' });
+      }
+      try {
+        const saved = await store.save(request.body);
+        deps.logger.info(
+          { device: request.device.name, bytes: saved.bytes, type: saved.mediaType },
+          'image attached',
+        );
+        const response: AttachmentResponse = {
+          id: saved.id,
+          mediaType: saved.mediaType,
+          bytes: saved.bytes,
+        };
+        return response;
+      } catch (err) {
+        if (err instanceof AttachmentError) {
+          return reply.code(err.status).send({ error: err.message });
+        }
+        throw err;
+      }
     },
   );
 

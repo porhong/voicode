@@ -200,9 +200,9 @@ State lives in `%APPDATA%\voicecode-agent` (Windows) or `~/.config/voicecode-age
 
 **Cleanup.** Settings → Storage on the phone (or `voicecode-agent cleanup`) shows and
 removes what the agent can do without: Claude Code versions and standalone runtimes from
-older builds (in `%LOCALAPPDATA%oicecode-agent` or `~/.cache/voicecode-agent`,
-`VOICECODE_CACHE_DIR`), `agent.log.1`, and files left by interrupted writes and
-downloads (once they are an hour old). Config, paired devices, certificates, tunnel
+older builds (in `%LOCALAPPDATA%\voicecode-agent` or `~/.cache/voicecode-agent`,
+`VOICECODE_CACHE_DIR`), `agent.log.1`, and images sent from the phone and files left by interrupted writes
+and downloads (once they are an hour old). Config, paired devices, certificates, tunnel
 credentials, the live log and the versions in use are never touched. Automatic cleanup is
 on by default: every 6 hours (first 2 minutes after start) the agent checks, and once
 those files pass the limit (`cleanup.maxCacheMb`, default 250 MB) it removes them, oldest
@@ -227,6 +227,15 @@ following replies only. In a Claude Code terminal session (hosted or taken over)
 agent types `/model <name>` once the prompt is free, so Claude Code on the PC also saves
 it as its default for new sessions; the picker says so. Unknown or unavailable models
 are reported back by Claude Code.
+
+**Images.** The paperclip next to the text box attaches up to four photos or screenshots
+to the next prompt; phones offer the camera and the photo library. Each image is shrunk on
+the phone to at most 1568 px on the long side (photos become JPEG, which also drops their
+location metadata; screenshots stay PNG) and uploaded as soon as it's picked, so **Send**
+is instant. The text is optional. Agent SDK sessions pass the images to Claude directly;
+in a Claude Code terminal session the agent pastes their file paths, which Claude Code
+reads itself (it shows them as `[Image #1]`). Uploads are PNG, JPEG, GIF or WebP checked
+by their content, up to 10 MB, stored in the agent's cache folder for at most 24 hours.
 
 **Permission mode.** The same sheet switches the session between **Manual** (asks for
 everything), **Accept edits** and **Plan**; the chip shows the mode when it isn't
@@ -290,6 +299,7 @@ or is idle for two minutes, and any held buttons are released automatically.
 | Claude running tools without consent                  | `permissionMode: "default"`: anything Claude Code would ask about is routed to `canUseTool` and shown on the phone; `bypassPermissions`/`auto`/`dontAsk` are off unless you run `voicecode-agent modes allow-unsafe` on the PC (a phone can never turn them on, and `modes safe-only` puts running sessions back to manual), and are always reverted if project settings set them; approvals are tap-only (never by voice); unanswered approvals are denied after 15 minutes; "always allow" is limited to session-scoped allow rules or session-scoped `acceptEdits` |
 | A hidden tail in an approved command                  | Approval details are never silently shortened: invisible and bidi characters are shown as `⟨U+…⟩`, and input too long to display in full (60k characters) can only be rejected — enforced by the agent, not just the UI                                                                                                                                                                                                                                                                                                                                               |
 | A project's own settings pre-approving tools          | Like the CLI, sessions load the project's `.claude/settings*.json` (needed for CLAUDE.md). Its `permissions.allow` rules and hooks are listed when the project is added (the equivalent of Claude Code's folder-trust prompt), in `doctor`, and at the top of every session on the phone                                                                                                                                                                                                                                                                              |
+| Images uploaded from the phone                        | Paired devices only, same origin check; the type is read from the file's bytes (PNG, JPEG, GIF, WebP, nothing else), 10 MB and 30 uploads a minute; stored under random 128-bit ids in a private folder (`0700`/`0600`), deleted after 24 hours; a prompt can only refer to them by id. Terminal sessions get read access to that folder only                                                                                                                                                                                                                         |
 | Claude working outside intended directories           | Sessions can only start in an allow-list of canonical (realpath) project directories managed from the PC                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Stuck mouse buttons                                   | Buttons pressed under a lease are released when it ends, on disconnect, on driver exit and by the helper on EOF                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Other local users driving the agent                   | Control channel is a named pipe / `0600` Unix socket plus a per-install secret                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

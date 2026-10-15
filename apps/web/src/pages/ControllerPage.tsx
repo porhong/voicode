@@ -616,7 +616,14 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 compact={deckMode}
                 remoteMic={remoteMic}
                 onListeningChange={setListening}
-                onSend={(text) => send({ type: 'claude.prompt', sessionId: active.id, text })}
+                onSend={(text, attachments) =>
+                  send({
+                    type: 'claude.prompt',
+                    sessionId: active.id,
+                    text,
+                    ...(attachments.length ? { attachments } : {}),
+                  })
+                }
                 onInterrupt={() => send({ type: 'claude.interrupt', sessionId: active.id })}
               />
             )}

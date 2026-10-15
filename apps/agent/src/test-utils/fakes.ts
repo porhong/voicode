@@ -76,6 +76,8 @@ export interface FakeQueryControl {
   permissionModeSets: string[];
   modelSets: Array<string | undefined>;
   flagSettings: Array<Record<string, unknown>>;
+  /** The content of every user message received, as sent (string or content blocks). */
+  prompts: unknown[];
   interrupted: number;
   closed: boolean;
 }
@@ -93,6 +95,7 @@ export function createFakeQuery(init: { permissionMode?: string } = {}): {
     permissionModeSets: [],
     modelSets: [],
     flagSettings: [],
+    prompts: [],
     interrupted: 0,
     closed: false,
   };
@@ -115,7 +118,11 @@ export function createFakeQuery(init: { permissionMode?: string } = {}): {
       } as unknown as SDKMessage;
 
       for await (const message of params.prompt as AsyncIterable<SDKUserMessage>) {
-        const text = String(message.message.content);
+        control.prompts.push(message.message.content);
+        const content = message.message.content;
+        const text = Array.isArray(content)
+          ? content.map((b) => ('text' in b ? b.text : `[${b.type}]`)).join(' ')
+          : String(content);
         const decision = await options.canUseTool!(
           'Bash',
           { command: 'npm test', description: text },

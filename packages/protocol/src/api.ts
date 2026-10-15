@@ -36,3 +36,10 @@ export interface AgentInfoResponse {
 export function normalizePairingCode(code: string): string {
   return code.replace(/[\s-]/g, '');
 }
+
+/** `POST /api/attachments` (raw image body, cookie auth): the stored image's id. */
+export interface AttachmentResponse {
+  id: string;
+  mediaType: string;
+  bytes: number;
+}

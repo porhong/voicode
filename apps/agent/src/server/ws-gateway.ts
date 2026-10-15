@@ -19,6 +19,7 @@ import { SessionError, type SessionManager } from '../sessions/session-manager.j
 import type { Logger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
 import type { MicRouter } from '../voice/mic-router.js';
+import type { AttachmentStore } from '../storage/attachments.js';
 import { TokenBucket } from './token-bucket.js';
 
 const HEARTBEAT_MS = 15_000;
@@ -71,6 +72,8 @@ export class WsGateway {
         cleanNow: () => Promise<CleanupResult>;
         configure: (settings: { auto: boolean; maxCacheMb: number }) => Promise<void>;
       };
+      /** Images uploaded from the phone; omitted in tests that don't send any. */
+      attachments?: AttachmentStore;
       /** Workspace roots a device may browse and open folders in; omitted in tests. */
       folders?: {
         roots: () => string[];
@@ -379,8 +382,20 @@ export class WsGateway {
           projectId: msg.projectId,
           sessions: await sessions.history(msg.projectId),
         });
-      case 'claude.prompt':
-        return sessions.prompt(msg.sessionId, msg.text, conn.device.name);
+      case 'claude.prompt': {
+        const ids = msg.attachments ?? [];
+        const store = this.deps.attachments;
+        if (ids.length && !store) throw new SessionError('bad_request', 'Images are not available');
+        const images = [];
+        for (const attachmentId of ids) {
+          const found = await store!.get(attachmentId);
+          if (!found) {
+            throw new SessionError('bad_request', 'An attached image has expired; attach it again');
+          }
+          images.push(found);
+        }
+        return sessions.prompt(msg.sessionId, msg.text, conn.device.name, images);
+      }
       case 'claude.interrupt':
         return sessions.interrupt(msg.sessionId);
       case 'claude.session.rename':

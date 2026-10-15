@@ -70,6 +70,17 @@ export async function scanDisposable(
   }
   await add('logs', `${loc.log}.1`);
 
+  // Images sent from the phone: kept a day anyway; disposable once an hour old (a session
+  // that is still looking at one has long read it by then).
+  const attachments = path.join(loc.cache, 'attachments');
+  for (const name of await list(attachments)) {
+    const file = path.join(attachments, name);
+    const size = await sizeOf(file);
+    if (size && now - size.mtimeMs > TEMP_GRACE_MS) {
+      items.push({ category: 'attachments', path: file, ...size });
+    }
+  }
+
   // Standalone runtimes: one directory per build.
   await versioned(path.join(loc.cache, 'runtime'), loc.runtimeInUse, 'runtime', add, addTemp);
   // Claude Code downloads: one directory per version, holding the binary.

@@ -1,4 +1,9 @@
-import type { AgentInfoResponse, PairRequest, PairResponse } from '@voicecode/protocol';
+import type {
+  AgentInfoResponse,
+  AttachmentResponse,
+  PairRequest,
+  PairResponse,
+} from '@voicecode/protocol';
 
 export class ApiError extends Error {
   constructor(
@@ -25,6 +30,13 @@ export const api = {
   pair: (body: PairRequest) =>
     request<PairResponse>('/api/pair', { method: 'POST', body: JSON.stringify(body) }),
   unpair: () => request<{ ok: true }>('/api/unpair', { method: 'POST', body: '{}' }),
+  /** An image for Claude, sent as the raw body (the agent checks it really is one). */
+  uploadAttachment: (image: Blob) =>
+    request<AttachmentResponse>('/api/attachments', {
+      method: 'POST',
+      body: image,
+      headers: { 'content-type': image.type || 'image/jpeg' },
+    }),
 };
 
 export function pairingErrorMessage(err: unknown): string {

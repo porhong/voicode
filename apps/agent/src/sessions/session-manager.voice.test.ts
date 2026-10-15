@@ -66,18 +66,24 @@ beforeAll(async () => {
   pty = new FakePty();
   attached = new FakePty();
   attached.pid = 5151;
-  manager = new SessionManager(config, silentLogger(), undefined, {
-    claudeDir,
-    claudePath: 'C:/fake/claude.exe',
-    spawn: (file, args, options) => {
-      spawned = { file, args, env: options.env };
-      return pty;
+  manager = new SessionManager(
+    config,
+    silentLogger(),
+    undefined,
+    {
+      claudeDir,
+      claudePath: 'C:/fake/claude.exe',
+      spawn: (file, args, options) => {
+        spawned = { file, args, env: options.env };
+        return pty;
+      },
+      attach: async (pid) => {
+        attachedPid = pid;
+        return attached;
+      },
     },
-    attach: async (pid) => {
-      attachedPid = pid;
-      return attached;
-    },
-  });
+    path.join(home, 'attachments'),
+  );
   manager.on('session', (s) => summaries.push(s));
   manager.on('permissionRequest', (r) => requests.push(r));
 });
@@ -368,6 +374,26 @@ describe('voice sessions', () => {
     expect(await ask('bypassPermissions')).toBeUndefined();
     await manager.setUnsafeModesAllowed(false);
 
+    manager.close(session.id);
+    pty.exit(0);
+    pty = first;
+  });
+
+  it('names attached images by path for Claude Code to read, and labels them in the transcript', async () => {
+    const first = pty;
+    pty = new FakePty();
+    pty.pid = 8282;
+    const session = await manager.startVoice('p1');
+    expect(spawned!.args.join(' ')).toContain(`--add-dir ${path.join(home, 'attachments')}`);
+    pty.show('❯ ');
+    await until(() => session.summary().state === 'idle');
+    const image = path.join(home, 'attachments', 'abc.jpg');
+    pty.written = '';
+    await manager.prompt(session.id, 'what is this?', 'Phone', [
+      { id: 'abc', mediaType: 'image/jpeg', path: image, bytes: 3 },
+    ]);
+    await until(() => pty.written.includes('\r'));
+    expect(pty.written).toBe(`\x1b[200~what is this?\n\nAttached image: ${image}\x1b[201~\r`);
     manager.close(session.id);
     pty.exit(0);
     pty = first;

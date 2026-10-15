@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import WebSocket from 'ws';
-import type { ServerMessage } from '@voicecode/protocol';
+import { LIMITS, type ServerMessage } from '@voicecode/protocol';
 import { addProject, ConfigSchema } from '../config/config.js';
 import { resolvePaths } from '../config/paths.js';
 import { listRootFolder, resolveRootFolder } from '../config/workspace-roots.js';
@@ -19,6 +19,7 @@ import { createFakeQuery, FakeMicDriver, FakeMouseDriver } from '../test-utils/f
 import { ensureTls, type TlsMaterial } from '../tls/certificates.js';
 import { silentLogger } from '../util/logger.js';
 import { MicRouter } from '../voice/mic-router.js';
+import { AttachmentStore } from '../storage/attachments.js';
 import { buildServer } from './app.js';
 import { CLOSE_REVOKED, WsGateway } from './ws-gateway.js';
 
@@ -31,6 +32,7 @@ let registry: DeviceRegistry;
 let router: InputRouter;
 let mic: MicRouter;
 let sessions: SessionManager;
+let attachments: AttachmentStore;
 const tunnelHosts = new Set<string>();
 // A Claude session running in a terminal, in a folder that is not allow-listed.
 let pcWatcher: PcSessionWatcher;
@@ -82,6 +84,46 @@ function request(
     req.end(payload);
   });
 }
+
+/** Uploads raw bytes to POST /api/attachments, as the phone does. */
+function upload(
+  body: Buffer,
+  opts: { cookie?: string; type?: string; origin?: string } = {},
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = {
+      'content-type': opts.type ?? 'image/png',
+      origin: opts.origin ?? base,
+    };
+    if (opts.cookie) headers.cookie = opts.cookie;
+    const req = https.request(
+      `${base}/api/attachments`,
+      { method: 'POST', ca: tls.caCert, headers },
+      (res) => {
+        let text = '';
+        res.on('data', (c) => (text += c));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: text ? JSON.parse(text) : {} }),
+        );
+      },
+    );
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+const PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+const until = async (pred: () => boolean, ms = 5_000) => {
+  const deadline = Date.now() + ms;
+  while (!pred()) {
+    if (Date.now() > deadline) throw new Error('condition not met in time');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+};
 
 async function pairDevice(name: string): Promise<string> {
   const { code } = pairing.issueCode();
@@ -204,7 +246,10 @@ beforeAll(async () => {
     logger,
   });
 
+  attachments = new AttachmentStore(path.join(home, 'attachments'), logger);
+  await attachments.start();
   const gateway = new WsGateway({
+    attachments,
     storage: {
       info: () => janitor.info(),
       cleanNow: () => janitor.cleanNow(),
@@ -223,7 +268,7 @@ beforeAll(async () => {
       open: async (dir) => addProject(config, await resolveRootFolder(dir, config.roots)),
     },
   });
-  app = await buildServer({ tls, logger, registry, pairing, gateway, tunnelHosts });
+  app = await buildServer({ tls, logger, registry, pairing, gateway, tunnelHosts, attachments });
   await app.listen({ host: '127.0.0.1', port: 0 });
   base = `https://127.0.0.1:${(app.server.address() as { port: number }).port}`;
 });
@@ -627,6 +672,76 @@ describe('WebSocket gateway', () => {
     );
     expect(fake.control.permissionModeSets.at(-1)).toBe('default');
     client.send({ type: 'claude.session.close', sessionId: second.session.id });
+    client.ws.close();
+  });
+
+  it('accepts images only from paired devices, only real images, within the limit', async () => {
+    expect((await upload(PNG_BYTES)).status).toBe(401);
+    expect(
+      (await upload(PNG_BYTES, { cookie: tunnelCookie, origin: 'https://evil.example' })).status,
+    ).toBe(403);
+    expect((await upload(Buffer.from('<svg/>'), { cookie: tunnelCookie })).status).toBe(415);
+    expect((await upload(PNG_BYTES, { cookie: tunnelCookie, type: 'text/plain' })).status).toBe(
+      415,
+    );
+    const big = Buffer.concat([PNG_BYTES, Buffer.alloc(LIMITS.maxAttachmentBytes)]);
+    // Refused before it is all read: the server answers 413 and may close the connection
+    // while the rest is still being sent, which the client then sees as a reset.
+    const tooBig = await upload(big, { cookie: tunnelCookie }).then(
+      (r) => r.status,
+      (err: NodeJS.ErrnoException) => err.code,
+    );
+    expect([413, 'ECONNRESET', 'EPIPE']).toContain(tooBig);
+    const ok = await upload(PNG_BYTES, { cookie: tunnelCookie });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ mediaType: 'image/png', bytes: PNG_BYTES.length });
+    expect(ok.body.id).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('sends attached images to Claude as image blocks before the text', async () => {
+    const { body } = await upload(PNG_BYTES, { cookie: tunnelCookie });
+    const client = new Client(tunnelCookie);
+    await client.waitFor('welcome');
+    client.send({ type: 'claude.session.start', projectId: 'p1' });
+    const { session } = await client.waitFor('claude.session.snapshot');
+
+    fake.control.prompts.length = 0;
+    client.send({
+      type: 'claude.prompt',
+      sessionId: session.id,
+      text: 'what is wrong here?',
+      attachments: [body.id],
+    });
+    await client.waitFor(
+      'claude.event',
+      (m) => m.sessionId === session.id && m.event.kind === 'user_prompt' && m.event.images === 1,
+    );
+    await until(() => fake.control.prompts.length === 1);
+    expect(fake.control.prompts[0]).toEqual([
+      {
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: PNG_BYTES.toString('base64') },
+      },
+      { type: 'text', text: 'what is wrong here?' },
+    ]);
+
+    // An image alone is a prompt too; an unknown or expired id is refused.
+    client.send({
+      type: 'claude.prompt',
+      sessionId: session.id,
+      text: '',
+      attachments: ['f'.repeat(32)],
+    });
+    expect((await client.waitFor('error', (m) => /expired/.test(m.message))).code).toBe(
+      'bad_request',
+    );
+    // Errors of one code are sent at most once a second per connection: ask on another.
+    const other = new Client(tunnelCookie);
+    await other.waitFor('welcome');
+    other.send({ type: 'claude.prompt', sessionId: session.id, text: '' });
+    await other.waitFor('error', (m) => /text or an image/.test(m.message));
+    other.ws.close();
+    client.send({ type: 'claude.session.close', sessionId: session.id });
     client.ws.close();
   });
 

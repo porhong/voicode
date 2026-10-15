@@ -62,6 +62,8 @@ describe('scanDisposable', () => {
     file('cache/claude-code/1.0.0/claude', 1000);
     file('cache/claude-code/2.0.0/claude', 2000);
     file('cache/claude-code/2.0.0/download-42.tgz', 30, old);
+    file('cache/attachments/0123456789abcdef0123456789abcdef.jpg', 4, old);
+    file('cache/attachments/fedcba9876543210fedcba9876543210.png', 4);
 
     const items = await scanDisposable({
       ...loc,
@@ -78,9 +80,14 @@ describe('scanDisposable', () => {
         ['temp', path.join('cache', 'runtime', 'build-b.tmp-123'), 50],
         ['downloads', path.join('cache', 'claude-code', '1.0.0'), 1000],
         ['temp', path.join('cache', 'claude-code', '2.0.0', 'download-42.tgz'), 30],
+        [
+          'attachments',
+          path.join('cache', 'attachments', '0123456789abcdef0123456789abcdef.jpg'),
+          4,
+        ],
       ].sort(),
     );
-    expect(summarize(items).totalBytes).toBe(1494);
+    expect(summarize(items).totalBytes).toBe(1498);
   });
 
   it('leaves recent temp files alone: a write or download may be in progress', async () => {

@@ -21,7 +21,10 @@ function EventRow({ item }: { item: EventItem }) {
     case 'user_prompt':
       return (
         <div className="msg msg-user">
-          <div className="msg-meta">{e.deviceName}</div>
+          <div className="msg-meta">
+            {e.deviceName}
+            {e.images ? ` · ${e.images === 1 ? '1 image' : `${e.images} images`}` : ''}
+          </div>
           {e.text}
         </div>
       );

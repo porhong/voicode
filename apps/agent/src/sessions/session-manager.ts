@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
@@ -13,6 +14,7 @@ import type {
   UsageReport,
 } from '@voicecode/protocol';
 import { MODEL_ALIASES } from '../claude/models.js';
+import type { Attachment } from '../storage/attachments.js';
 import { UNSAFE_PERMISSION_MODES, type PermissionModeName } from '@voicecode/protocol';
 
 const UNSAFE_MODE_SET = new Set<string>(UNSAFE_PERMISSION_MODES);
@@ -94,6 +96,8 @@ export class SessionManager extends EventEmitter<{
       claudeDir?: string;
       attach?: (pid: number) => Promise<PtyHandle>;
     } = {},
+    /** Folder of images from the phone; hosted terminal sessions may read it. */
+    private readonly attachmentsDir?: string,
   ) {
     super();
     this.usageMeter = new UsageMeter({
@@ -194,6 +198,7 @@ export class SessionManager extends EventEmitter<{
       hook: { url: hooks.url, token: hooks.token, command: hookCommandLine() },
       model,
       effort,
+      readDirs: this.attachmentsDir ? [this.attachmentsDir] : [],
       spawn: this.voiceDeps.spawn,
       claudePath: this.voiceDeps.claudePath,
       claudeDir: this.voiceDeps.claudeDir,
@@ -346,8 +351,30 @@ export class SessionManager extends EventEmitter<{
     return this.config.projects.find((p) => norm(p.path) === wanted);
   }
 
-  prompt(sessionId: string, text: string, deviceName: string): void {
-    this.get(sessionId).sendPrompt(text, deviceName);
+  /** A prompt from the phone, with any images it attached (already stored). */
+  async prompt(
+    sessionId: string,
+    text: string,
+    deviceName: string,
+    images: Attachment[] = [],
+  ): Promise<void> {
+    const session = this.get(sessionId);
+    if (session instanceof VoiceSession) {
+      // Claude Code in a terminal is told where the files are and reads them itself.
+      session.sendPrompt(
+        text,
+        deviceName,
+        images.map((i) => i.path),
+      );
+      return;
+    }
+    const blocks = await Promise.all(
+      images.map(async (image) => ({
+        mediaType: image.mediaType,
+        data: (await readFile(image.path)).toString('base64'),
+      })),
+    );
+    session.sendPrompt(text, deviceName, blocks);
   }
 
   async interrupt(sessionId: string): Promise<void> {

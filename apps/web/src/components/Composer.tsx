@@ -1,10 +1,11 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { LIMITS } from '@voicecode/protocol';
+import { useAttachments } from '../hooks/useAttachments';
 import type { MicStream } from '../hooks/useMicStream';
 import { stopSpeaking } from '../hooks/useSpeakReplies';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import type { Settings } from '../hooks/useSettings';
-import { MicIcon, SendIcon, StopIcon } from './Icons';
+import { AttachIcon, MicIcon, SendIcon, StopIcon } from './Icons';
 
 export interface ComposerHandle {
   /** Replaces the draft (e.g. with a suggested prompt) and focuses the input. */
@@ -32,7 +33,8 @@ interface Props {
   remoteMic?: MicStream;
   /** Reports dictation starting and stopping (the deck lights its mic key). */
   onListeningChange?: (listening: boolean) => void;
-  onSend: (text: string) => void;
+  /** The prompt, with the ids of the images uploaded for it. */
+  onSend: (text: string, attachments: string[]) => void;
   onInterrupt: () => void;
 }
 
@@ -66,11 +68,22 @@ export function Composer({
     setText(next);
   };
 
+  const images = useAttachments();
+  const fileRef = useRef<HTMLInputElement>(null);
+  // Read by speech callbacks too (auto-send after dictation includes the images).
+  const imagesRef = useRef(images);
+  useEffect(() => {
+    imagesRef.current = images;
+  });
+
   const submit = (value = textRef.current) => {
     const trimmed = value.trim();
-    if (!trimmed || disabled) return;
-    onSend(trimmed.slice(0, LIMITS.maxPromptLength));
+    const { readyIds, uploading } = imagesRef.current;
+    // An upload still running would be left behind; wait for it (the button says so).
+    if (disabled || uploading || (!trimmed && !readyIds.length)) return;
+    onSend(trimmed.slice(0, LIMITS.maxPromptLength), readyIds);
     updateText('');
+    imagesRef.current.clear();
   };
 
   const suppressAutoSendRef = useRef(false);
@@ -127,12 +140,15 @@ export function Composer({
   }, [preview, approvalShown, typing]);
 
   const hasText = text.trim().length > 0;
-  const rowHidden = approvalShown || (compact && !typing && !hasText && !dictation.listening);
+  const hasImages = images.items.length > 0;
+  const rowHidden =
+    approvalShown || (compact && !typing && !hasText && !hasImages && !dictation.listening);
   const action: 'stop-dictation' | 'send' | 'dictate' = dictation.listening
     ? 'stop-dictation'
-    : hasText || !dictation.supported
+    : hasText || hasImages || !dictation.supported
       ? 'send'
       : 'dictate';
+  const canSend = (hasText || images.readyIds.length > 0) && !images.uploading;
 
   const dictate = () => {
     // Don't let a reply being read aloud leak into the microphone.
@@ -200,7 +216,66 @@ export function Composer({
       </span>
       {/* While an approval is pending the card needs the room (landscape especially),
           and a new prompt could not be acted on until it is answered anyway. */}
+      {hasImages && !approvalShown && (
+        <>
+          <ul className="composer-images" aria-label="Images to send">
+            {images.items.map((item) => (
+              <li key={item.key} className={`composer-image ${item.status}`}>
+                {/* A file the browser cannot decode has no preview: hide the broken icon. */}
+                <img
+                  src={item.preview}
+                  alt=""
+                  onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+                />
+                {item.status === 'uploading' && (
+                  <span className="composer-image-state" role="status">
+                    Uploading…
+                  </span>
+                )}
+                {item.status === 'error' && (
+                  <span className="composer-image-state error">Failed</span>
+                )}
+                <button
+                  className="composer-image-remove"
+                  aria-label="Remove image"
+                  onClick={() => images.remove(item.key)}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          {/* The thumbnail is too small for the reason: say it once, in full, below. */}
+          {images.items.some((i) => i.status === 'error') && (
+            <p className="composer-images-error" role="alert">
+              {images.items.find((i) => i.status === 'error')?.error} It won’t be sent.
+            </p>
+          )}
+        </>
+      )}
       <div className="composer-row" hidden={rowHidden}>
+        {/* One button: phones offer the camera and the photo library for image/*. */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files?.length) images.add(e.target.files);
+            e.target.value = '';
+          }}
+        />
+        {!dictation.listening && (
+          <button
+            className="composer-mini"
+            onClick={() => fileRef.current?.click()}
+            disabled={disabled || images.full}
+            aria-label={images.full ? 'Image limit reached' : 'Attach a photo or image'}
+          >
+            <AttachIcon />
+          </button>
+        )}
         {dictation.supported && hasText && !dictation.listening && (
           // Keep dictating after typing or a first phrase; the main button sends.
           <button
@@ -244,9 +319,15 @@ export function Composer({
         <button
           className={`composer-action composer-action-${action}`}
           onClick={onAction}
-          disabled={disabled || (action === 'send' && !hasText)}
+          disabled={disabled || (action === 'send' && !canSend)}
           aria-label={
-            action === 'stop-dictation' ? 'Stop dictation' : action === 'send' ? 'Send' : 'Dictate'
+            action === 'stop-dictation'
+              ? 'Stop dictation'
+              : action === 'send'
+                ? images.uploading
+                  ? 'Send (waiting for the image to upload)'
+                  : 'Send'
+                : 'Dictate'
           }
         >
           {action === 'stop-dictation' ? (

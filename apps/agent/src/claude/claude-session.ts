@@ -269,13 +269,41 @@ export class ClaudeSession extends EventEmitter<{
     return this.state === 'closed' || this.state === 'error';
   }
 
-  sendPrompt(text: string, deviceName: string): void {
+  /**
+   * A prompt from the phone. Images go in as image blocks ahead of the text, which is how
+   * the Messages API expects a question about them; text alone stays a plain string.
+   */
+  sendPrompt(
+    text: string,
+    deviceName: string,
+    images: Array<{ mediaType: string; data: string }> = [],
+  ): void {
     if (this.isClosed) throw new Error('session is closed');
-    this.title ??= text.slice(0, 80);
-    this.record({ kind: 'user_prompt', text, deviceName });
+    const shown = text || (images.length === 1 ? 'Image' : `${images.length} images`);
+    this.title ??= shown.slice(0, 80);
+    this.record({
+      kind: 'user_prompt',
+      text,
+      deviceName,
+      ...(images.length ? { images: images.length } : {}),
+    });
+    const content = images.length
+      ? [
+          ...images.map((image) => ({
+            type: 'image' as const,
+            source: {
+              type: 'base64' as const,
+              media_type: image.mediaType as
+                'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
+              data: image.data,
+            },
+          })),
+          ...(text ? [{ type: 'text' as const, text }] : []),
+        ]
+      : text;
     this.input.push({
       type: 'user',
-      message: { role: 'user', content: text },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
     });
     this.setState('running');

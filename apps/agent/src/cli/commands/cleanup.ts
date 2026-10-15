@@ -16,6 +16,7 @@ import { ok, out, row, warn } from '../ui.js';
 
 const LABELS: Record<StorageCategory, string> = {
   temp: 'Temp files',
+  attachments: 'Phone images',
   downloads: 'Old Claude Code',
   runtime: 'Old runtimes',
   logs: 'Old log',

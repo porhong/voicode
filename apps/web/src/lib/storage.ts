@@ -2,6 +2,7 @@ import type { StorageCategory } from '@voicecode/protocol';
 
 export const CATEGORY_LABELS: Record<StorageCategory, string> = {
   temp: 'Unfinished downloads and temp files',
+  attachments: 'Images sent from the phone',
   downloads: 'Old Claude Code versions',
   runtime: 'Old agent versions',
   logs: 'Old log',

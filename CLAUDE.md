@@ -32,7 +32,8 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/voice         MicRouter (phone mic lease, PCM frames) → virtual microphone drivers
                     (Windows waveOut helper into VB-CABLE, Linux PipeWire null sink)
   src/storage       disposable files (old runtimes/Claude Code downloads, agent.log.1, stale
-                    temp files): scan + cleanup, StorageJanitor (auto cleanup over a limit)
+                    temp files): scan + cleanup, StorageJanitor (auto cleanup over a limit); AttachmentStore
+                    (images uploaded from the phone, 24 h)
   src/util          standalone.ts (SEA assets), tar.ts, logger, network
   scripts           copy-web, prepack, build-sea, smoke-sea, ui-demo (fake Claude for UI work)
 apps/web            React PWA (Vite): Pair page, Claude tab, Trackpad tab, settings
@@ -196,6 +197,19 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   default on, 250 MB) runs 2 min after start and every 6 h; the live log now rotates
   every 5 min too. Verified with unit/integration tests, the built CLI on a temp home and
   `ui-demo.ts` screenshots (dark and light); not on a real standalone install yet.
+
+- Images from the phone (2026-10-16): the composer's paperclip picks photos (camera or
+  library), `lib/image.ts` shrinks them to 1568 px (JPEG 0.85, small PNGs kept), and
+  `useAttachments` uploads each on pick to `POST /api/attachments` (raw body, type
+  sniffed from the bytes, 10 MB, `storage/attachments.ts`: random ids, 24 h, category
+  `attachments` in cleanup). `claude.prompt.attachments` carries the ids. SDK sessions
+  get base64 image blocks before the text; terminal sessions get `Attached image: <path>`
+  lines (not `@path`: its menu swallows Enter) and `--add-dir <attachments>`. Claude Code
+  2.1.299 turns the path into `[Image #1]`; `withoutImageMentions()` cleans the
+  transcript. Verified: unit + integration tests, headless Chrome against `ui-demo.ts`
+  (6 MB photo → 156 KB JPEG, error state, image-only prompt, dark and light), and a real
+  Haiku terminal session that read the image without a permission prompt. Not verified:
+  a real phone's camera and HEIC photos (decoding is left to the browser).
 
 Not verified yet:
 

@@ -124,7 +124,13 @@ export interface VoiceMicStatus {
 }
 
 export type ClaudeEvent =
-  | { kind: 'user_prompt'; text: string; deviceName: string }
+  | {
+      kind: 'user_prompt';
+      text: string;
+      deviceName: string;
+      /** How many images came with the prompt. */
+      images?: number;
+    }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'assistant_text_delta'; text: string }
   | { kind: 'thinking'; text: string }

@@ -107,11 +107,20 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('claude.session.subscribe'), sessionId: id }),
   z.object({ type: z.literal('claude.session.close'), sessionId: id }),
   z.object({ type: z.literal('claude.sessions.history'), projectId: id }),
-  z.object({
-    type: z.literal('claude.prompt'),
-    sessionId: id,
-    text: z.string().trim().min(1).max(LIMITS.maxPromptLength),
-  }),
+  z
+    .object({
+      type: z.literal('claude.prompt'),
+      sessionId: id,
+      text: z.string().trim().max(LIMITS.maxPromptLength),
+      /** Images uploaded with `POST /api/attachments`, by the ids it returned. */
+      attachments: z
+        .array(z.string().regex(/^[0-9a-f]{32}$/))
+        .max(LIMITS.maxAttachments)
+        .optional(),
+    })
+    .refine((m) => m.text.length > 0 || (m.attachments?.length ?? 0) > 0, {
+      message: 'A prompt needs text or an image',
+    }),
   z.object({ type: z.literal('claude.interrupt'), sessionId: id }),
   /** Switch the model of a session; `null` goes back to the PC's default. */
   z.object({

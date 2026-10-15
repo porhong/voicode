@@ -21,6 +21,7 @@ import { resolvePaths } from '../src/config/paths.js';
 import { listRootFolder, resolveRootFolder } from '../src/config/workspace-roots.js';
 import { InputRouter } from '../src/mouse/input-router.js';
 import { DeviceRegistry } from '../src/pairing/device-registry.js';
+import { AttachmentStore } from '../src/storage/attachments.js';
 import { StorageJanitor } from '../src/storage/janitor.js';
 import { PairingService } from '../src/pairing/pairing-service.js';
 import { buildServer } from '../src/server/app.js';
@@ -60,13 +61,22 @@ const demoQuery = ((params: { prompt: AsyncIterable<SDKUserMessage>; options?: O
       cwd: options.cwd,
     } as unknown as SDKMessage;
     for await (const message of params.prompt) {
-      const text = String(message.message.content);
+      // Prompts with images arrive as content blocks: the images first, then the text.
+      const content = message.message.content;
+      const blocks = Array.isArray(content) ? content : [{ type: 'text', text: String(content) }];
+      const images = blocks.filter((b) => b.type === 'image').length;
+      const text = blocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join(' ');
       yield {
         type: 'assistant',
         parent_tool_use_id: null,
         message: {
           content: [
-            { type: 'text', text: `I'll take care of that: “${text.slice(0, 60)}”.` },
+            {
+              type: 'text',
+              text: images
+                ? `I can see ${images === 1 ? 'the image' : `${images} images`}. ${text.slice(0, 60)}`
+                : `I'll take care of that: “${text.slice(0, 60)}”.`,
+            },
             { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'package.json' } },
           ],
         },
@@ -247,11 +257,19 @@ class DemoPty implements PtyHandle {
   }
 }
 
-const sessions = new SessionManager(config, logger, demoQuery, {
-  claudeDir: path.join(home, 'claude'),
-  claudePath: 'demo-claude',
-  spawn: () => new DemoPty(),
-});
+const attachments = new AttachmentStore(path.join(home, 'attachments'), logger);
+await attachments.start();
+const sessions = new SessionManager(
+  config,
+  logger,
+  demoQuery,
+  {
+    claudeDir: path.join(home, 'claude'),
+    claudePath: 'demo-claude',
+    spawn: () => new DemoPty(),
+  },
+  attachments.dir,
+);
 
 // A pretend Claude session in a terminal, in a folder that is not allow-listed. It
 // alternates between working and idle so the PC list and "done" toasts can be seen.
@@ -332,6 +350,7 @@ const janitor = new StorageJanitor({
 });
 
 const gateway = new WsGateway({
+  attachments,
   storage: {
     info: () => janitor.info(),
     cleanNow: () => janitor.cleanNow(),
@@ -364,6 +383,7 @@ const app = await buildServer({
   registry,
   pairing,
   gateway,
+  attachments,
   webRoot: path.join(packageRoot(), 'dist', 'web'),
 });
 app.get('/demo/pair-code', async () => ({ code: pairing.issueCode().code }));
@@ -373,6 +393,7 @@ console.log(`UI demo on https://127.0.0.1:${port}  pairing code ${code.display}`
 
 const shutdown = async () => {
   await pcSessions.stop();
+  attachments.stop();
   sessions.closeAll();
   await app.close();
   await registry.close();

@@ -133,6 +133,8 @@ export interface VoiceSessionOptions {
   };
   /** Model chosen on the phone for a new hosted session. */
   model?: string;
+  /** Folders Claude Code may read without asking (`--add-dir`), e.g. phone images. */
+  readDirs?: string[];
   /** Reasoning effort for a new hosted session (`--effort`). */
   effort?: EffortLevel;
   /** Injection points for tests. */
@@ -265,6 +267,7 @@ export class VoiceSession extends EventEmitter<{
         ? ['--model', startModel(opts.model, config.model)!]
         : []),
       ...(opts.effort ? ['--effort', opts.effort] : []),
+      ...(opts.readDirs ?? []).flatMap((dir) => ['--add-dir', dir]),
       // Only puts bypass into the Shift+Tab cycle; the session still starts in the
       // configured mode, and the hook keeps asking the phone unless unsafe modes are on.
       ...(config.allowUnsafeModes ? ['--allow-dangerously-skip-permissions'] : []),
@@ -391,13 +394,26 @@ export class VoiceSession extends EventEmitter<{
     this.pty?.write(data);
   }
 
-  /** Typed text: pasted into the prompt (so newlines don't submit early), then Enter. */
-  sendPrompt(text: string, deviceName: string): void {
+  /**
+   * Typed text: pasted into the prompt (so newlines don't submit early), then Enter.
+   * Images are named by their file path, which Claude Code reads itself ("Provide an
+   * image path" in its docs); not as `@path`, whose suggestion menu would take the Enter.
+   * If the Enter was still taken by a menu (a typed `@` or `/`), it is pressed once more.
+   */
+  sendPrompt(text: string, deviceName: string, imagePaths: string[] = []): void {
     if (this.isClosed || !this.pty) throw new Error('session is closed');
-    this.title ??= text.slice(0, 80);
-    this.lastTyped = { text, deviceName };
-    this.pty.write(`\x1b[200~${text}\x1b[201~`);
+    const files = imagePaths.map((p) => `Attached image: ${p}`).join('\n');
+    const full = [text || (imagePaths.length ? 'Look at the attached image.' : ''), files]
+      .filter(Boolean)
+      .join('\n\n');
+    this.title ??= (text || 'Image').slice(0, 80);
+    this.lastTyped = { text: full, deviceName };
+    this.pty.write(`\x1b[200~${full}\x1b[201~`);
     setTimeout(() => this.pty?.write('\r'), 50);
+    setTimeout(() => {
+      if (this.isClosed || !this.pty || this.lastScreen.dialog) return;
+      if (!promptIsEmpty(this.screenLines()) && this.state !== 'running') this.pty.write('\r');
+    }, 900);
   }
 
   async interrupt(): Promise<void> {
@@ -800,7 +816,12 @@ export class VoiceSession extends EventEmitter<{
     for (const item of result.items) {
       let event: ClaudeEvent = item.event;
       if (event.kind === 'user_prompt') {
-        const typed = this.lastTyped?.text === event.text ? this.lastTyped.deviceName : undefined;
+        const prompt = withoutImageMentions(event.text);
+        const typed =
+          this.lastTyped && withoutImageMentions(this.lastTyped.text).text === prompt.text
+            ? this.lastTyped.deviceName
+            : undefined;
+        if (prompt.images) event = { ...event, text: prompt.text, images: prompt.images };
         event = { ...event, deviceName: typed ?? this.lastSpeaker ?? 'voice' };
         if (!this.title) {
           this.title = event.text.slice(0, 80);
@@ -860,6 +881,23 @@ function startModel(
  * Whether Claude Code's input line shows nothing typed (so a tap starts dictation). The
  * prompt is `❯` (or `>` in older versions); a `Try "…"` suggestion is placeholder text.
  */
+/**
+ * The prompt as the phone should show it, without the image references `sendPrompt`
+ * added. Claude Code turns a pasted image path into an `[Image #N]` token and keeps
+ * the rest of the line, so a transcript has "[Image #1]text\nAttached image:".
+ */
+export function withoutImageMentions(text: string): { text: string; images: number } {
+  const paths = (text.match(/^Attached image:/gm) ?? []).length;
+  const tokens = (text.match(/\[Image #\d+\]/g) ?? []).length;
+  return {
+    text: text
+      .replace(/\[Image #\d+\] ?/g, '')
+      .replace(/^Attached image:.*$/gm, '')
+      .trim(),
+    images: Math.max(paths, tokens),
+  };
+}
+
 export function promptIsEmpty(lines: string[]): boolean {
   // Earlier prompts stay on screen as `❯ …` history; the input line is the last one.
   const prompt = lines.findLast((l) => /^[\s│|]*[>❯](\s|$)/.test(l));

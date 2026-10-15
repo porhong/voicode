@@ -20,6 +20,7 @@ import { buildServer } from './server/app.js';
 import { WsGateway } from './server/ws-gateway.js';
 import { PcSessionWatcher } from './sessions/pc-sessions.js';
 import { SessionManager } from './sessions/session-manager.js';
+import { AttachmentStore } from './storage/attachments.js';
 import { StorageJanitor, storageLocations } from './storage/janitor.js';
 import { ensureTls, type TlsMaterial } from './tls/certificates.js';
 import {
@@ -30,6 +31,7 @@ import {
 } from './tunnel/cloudflared.js';
 import type { Logger } from './util/logger.js';
 import { formatUrl, rankedLanAddresses } from './util/network.js';
+import { cacheDir } from './util/standalone.js';
 import { packageRoot, VERSION } from './util/version.js';
 import { MicRouter } from './voice/mic-router.js';
 import { micDriverCandidates } from './voice/resolve-driver.js';
@@ -70,6 +72,7 @@ export class Agent extends EventEmitter<{
   private router!: InputRouter;
   private mic!: MicRouter;
   private sessions!: SessionManager;
+  private attachments: AttachmentStore | undefined;
   private pcSessions: PcSessionWatcher | undefined;
   private gateway!: WsGateway;
   private janitor!: StorageJanitor;
@@ -133,7 +136,18 @@ export class Agent extends EventEmitter<{
     const mic = micDriverCandidates(config, logger.child({ component: 'mic' }));
     await this.mic.start(mic.candidates, mic.unavailableReason);
 
-    this.sessions = new SessionManager(config, logger.child({ component: 'claude' }));
+    this.attachments = new AttachmentStore(
+      path.join(cacheDir(), 'attachments'),
+      logger.child({ component: 'attachments' }),
+    );
+    await this.attachments.start();
+    this.sessions = new SessionManager(
+      config,
+      logger.child({ component: 'claude' }),
+      undefined,
+      {},
+      this.attachments.dir,
+    );
     const sessions = this.sessions;
     this.pcSessions = new PcSessionWatcher({
       logger: logger.child({ component: 'pc-sessions' }),
@@ -148,6 +162,7 @@ export class Agent extends EventEmitter<{
     });
     this.janitor.start();
     this.gateway = new WsGateway({
+      attachments: this.attachments,
       pcSessions: this.pcSessions,
       allowFolder: (dir, deviceName) => this.allowFolder(dir, deviceName),
       folders: {
@@ -185,6 +200,7 @@ export class Agent extends EventEmitter<{
         .map((s) => s.trim())
         .filter(Boolean),
       tunnelHosts: config.tunnel.mode === 'off' ? undefined : this.tunnelHosts,
+      attachments: this.attachments,
     });
     await this.app.listen({ host: config.server.host, port: config.server.port });
 
@@ -279,6 +295,7 @@ export class Agent extends EventEmitter<{
     this.stopping ??= (async () => {
       this.logger.info('agent stopping');
       this.janitor?.stop();
+      this.attachments?.stop();
       this.sessions?.closeAll();
       this.gateway?.closeAll();
       await this.tunnel?.stop();
