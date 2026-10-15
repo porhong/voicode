@@ -30,6 +30,8 @@ export function consoleAttachStatus(): { available: boolean; reason?: string } {
 export type ConsoleCommand = { kind: 'key'; key: string } | { kind: 'text'; text: string };
 
 const KEY_SEQUENCES: Array<[sequence: string, key: string]> = [
+  // Shift+Tab (cycles Claude Code's permission modes) before the bare Esc below.
+  ['\x1b[Z', 'shift-tab'],
   ['\x1b[A', 'up'],
   ['\x1b[B', 'down'],
   ['\x1b[C', 'right'],

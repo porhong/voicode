@@ -4,6 +4,7 @@ import type {
   SessionState,
   StorageCategory,
   VoiceState,
+  PermissionModeName,
 } from './constants.js';
 
 /*
@@ -50,6 +51,10 @@ export interface SessionSummary {
   model?: string;
   /** The reasoning effort chosen for the session; absent means the model's default. */
   effort?: EffortLevel;
+  /** Claude Code's current permission mode, when known. */
+  permissionMode?: PermissionModeName;
+  /** The modes the phone may switch this session to, in display order. */
+  modes?: PermissionModeName[];
   totalCostUsd?: number;
   /** Absent for a session driven through the Agent SDK. */
   kind?: 'voice';

@@ -3,8 +3,10 @@ import {
   EFFORT_LEVELS,
   type EffortLevel,
   type ModelChoice,
+  type PermissionModeName,
   type SessionSummary,
 } from '@voicecode/protocol';
+import { MODE_TEXT } from '../lib/modes';
 import type { Send } from '../hooks/useAgentSocket';
 import type { AppState } from '../lib/store';
 import { EFFORT_SHORT, EFFORT_TEXT, modelLabel } from '../lib/models';
@@ -179,8 +181,57 @@ export function ModelSheet({
       send({ type: 'claude.effort.set', sessionId, effort: next || null });
   };
 
+  const modes = live ? (session.modes ?? []) : [];
+  const unsafeOff = live && !modes.some((m) => MODE_TEXT[m].risk !== 'safe');
+  const pickMode = (mode: PermissionModeName) => {
+    if (!sessionId || mode === session?.permissionMode) return;
+    if (
+      MODE_TEXT[mode].risk === 'danger' &&
+      !confirm(
+        'Bypass permissions: Claude will run every edit and command on the PC without asking you. Continue?',
+      )
+    ) {
+      return;
+    }
+    send({ type: 'claude.mode.set', sessionId, mode });
+  };
+
   return (
-    <Sheet title="Model and effort" onClose={onClose}>
+    <Sheet title="Mode, model and effort" onClose={onClose}>
+      {modes.length > 0 && (
+        <>
+          <h3>Permission mode</h3>
+          <ul className="list mode-list">
+            {modes.map((mode) => {
+              const current = session?.permissionMode === mode;
+              return (
+                <li
+                  key={mode}
+                  className={current ? 'list-row current' : 'list-row'}
+                  data-risk={MODE_TEXT[mode].risk}
+                >
+                  <button
+                    className="list-main"
+                    aria-pressed={current}
+                    disabled={disabled}
+                    onClick={() => pickMode(mode)}
+                  >
+                    <span className="list-title">{MODE_TEXT[mode].name}</span>
+                    <span className="small muted">{MODE_TEXT[mode].hint}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {unsafeOff && (
+            <p className="small muted">
+              Bypass permissions and auto are off on this PC. To allow them, run{' '}
+              <code>voicecode-agent modes allow-unsafe</code> there.
+            </p>
+          )}
+          <h3>Model</h3>
+        </>
+      )}
       <p className="small muted">
         {sessionId
           ? `This session uses ${modelLabel(session?.model) ?? 'the PC’s default'}. Your choice applies to it now and to new sessions from this phone.`

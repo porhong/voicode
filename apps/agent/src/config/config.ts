@@ -46,6 +46,11 @@ export const ConfigSchema = z.object({
     .object({
       model: z.string().optional(),
       permissionMode: z.enum(['default', 'acceptEdits', 'plan']).default('default'),
+      /**
+       * Lets phones switch sessions to the modes that skip approvals (bypass permissions,
+       * auto, don't ask). Set only by `voicecode-agent modes allow-unsafe` on the PC.
+       */
+      allowUnsafeModes: z.boolean().default(false),
       /** Pending approvals are denied after this long without an answer. */
       approvalTimeoutMs: z
         .number()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readVoiceScreen } from './voice-screen.js';
+import { readPermissionMode, readVoiceScreen } from './voice-screen.js';
 
 describe('readVoiceScreen', () => {
   it('sees recording, the enabled hint and errors', () => {
@@ -47,5 +47,26 @@ describe('readVoiceScreen', () => {
       readVoiceScreen(['Do you trust the files in this folder?', '❯ Yes, proceed']),
     ).toMatchObject({ dialog: 'Do you trust the files in this folder?' });
     expect(readVoiceScreen(['> hello']).dialog).toBeUndefined();
+  });
+});
+
+describe('readPermissionMode', () => {
+  it('reads each mode from the footer Claude Code prints', () => {
+    const footer = (text: string) => ['❯ ', '────', `  ${text} · ← for agents`];
+    expect(readPermissionMode(footer('⏸ manual mode on · ? for shortcuts'))).toBe('default');
+    expect(readPermissionMode(footer('⏵⏵ accept edits on (shift+tab to cycle)'))).toBe(
+      'acceptEdits',
+    );
+    expect(readPermissionMode(footer('⏸ plan mode on (shift+tab to cycle)'))).toBe('plan');
+    expect(readPermissionMode(footer('⏵⏵ auto mode on (shift+tab to cycle)'))).toBe('auto');
+    expect(readPermissionMode(footer('⏵⏵ bypass permissions on (shift+tab to cycle)'))).toBe(
+      'bypassPermissions',
+    );
+  });
+
+  it('only reads the footer, not earlier output that mentions a mode', () => {
+    expect(
+      readPermissionMode(['Turn plan mode on with shift+tab', '', 'x', 'y', 'z']),
+    ).toBeUndefined();
   });
 });

@@ -1,3 +1,5 @@
+import type { PermissionModeName } from '@voicecode/protocol';
+
 /**
  * Reads Claude Code's dictation state off its terminal screen. The strings are what
  * the CLI prints in its input footer (`● REC · tap to send`, `listening…`, the
@@ -34,4 +36,25 @@ export function readVoiceScreen(lines: string[]): VoiceScreen {
     error: error || undefined,
     dialog: dialog || undefined,
   };
+}
+
+/** Claude Code's footer per permission mode (checked on Claude Code 2.1.299). */
+const MODE_FOOTERS: Array<[RegExp, PermissionModeName]> = [
+  [/bypass permissions on/i, 'bypassPermissions'],
+  [/accept edits on/i, 'acceptEdits'],
+  [/plan mode on/i, 'plan'],
+  [/auto mode on/i, 'auto'],
+  [/manual mode on/i, 'default'],
+];
+
+/**
+ * The permission mode the footer shows. The footer is the last lines of the screen;
+ * earlier output could mention a mode in passing, so only the bottom is read.
+ */
+export function readPermissionMode(lines: string[]): PermissionModeName | undefined {
+  const footer = lines
+    .filter((l) => l.trim())
+    .slice(-3)
+    .join('\n');
+  return MODE_FOOTERS.find(([re]) => re.test(footer))?.[1];
 }

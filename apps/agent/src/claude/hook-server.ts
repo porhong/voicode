@@ -9,6 +9,8 @@ export interface PreToolUseEvent {
   tool_input: Record<string, unknown>;
   tool_use_id?: string;
   cwd?: string;
+  /** Claude Code's permission mode at the time of the call. */
+  permission_mode?: string;
 }
 
 export interface HookDecision {
@@ -115,6 +117,7 @@ function parseEvent(raw: unknown): PreToolUseEvent {
     tool_input: input && typeof input === 'object' ? (input as Record<string, unknown>) : {},
     tool_use_id: typeof e.tool_use_id === 'string' ? e.tool_use_id : undefined,
     cwd: typeof e.cwd === 'string' ? e.cwd : undefined,
+    permission_mode: typeof e.permission_mode === 'string' ? e.permission_mode : undefined,
   };
 }
 

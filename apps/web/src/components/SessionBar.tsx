@@ -8,6 +8,7 @@ import type {
 } from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
 import { EFFORT_SHORT, EFFORT_TEXT, modelLabel } from '../lib/models';
+import { MODE_TEXT } from '../lib/modes';
 import type { AppState } from '../lib/store';
 import { ChevronDownIcon, PlusIcon } from './Icons';
 import { Sheet } from './Sheet';
@@ -164,10 +165,18 @@ export function SessionBar({
           <button
             className="chip chip-model"
             onClick={onOpenModel}
-            aria-label={`Model: ${modelLabel(active.model) ?? 'PC default'}${active.effort ? `, ${EFFORT_TEXT[active.effort].name} effort` : ''}. Change the model or effort`}
+            aria-label={`Model: ${modelLabel(active.model) ?? 'PC default'}${active.effort ? `, ${EFFORT_TEXT[active.effort].name} effort` : ''}${active.permissionMode ? `, ${MODE_TEXT[active.permissionMode].name} mode` : ''}. Change the mode, model or effort`}
           >
             {modelLabel(active.model) ?? 'Model'}
             {active.effort && <span className="chip-effort">{EFFORT_SHORT[active.effort]}</span>}
+            {active.permissionMode && active.permissionMode !== 'default' && (
+              <span
+                className="chip-effort chip-mode"
+                data-risk={MODE_TEXT[active.permissionMode].risk}
+              >
+                {MODE_TEXT[active.permissionMode].short}
+              </span>
+            )}
           </button>
         )}
         {active && (

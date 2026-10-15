@@ -575,6 +575,61 @@ describe('WebSocket gateway', () => {
     client.ws.close();
   });
 
+  it('switches permission modes from the phone, unsafe ones only when the PC allows', async () => {
+    const client = new Client(tunnelCookie);
+    await client.waitFor('welcome');
+    client.send({ type: 'claude.session.start', projectId: 'p1' });
+    const { session } = await client.waitFor('claude.session.snapshot');
+    expect(session.permissionMode).toBe('default');
+    expect(session.modes).toEqual(['default', 'acceptEdits', 'plan']);
+    expect(fake.control.options?.allowDangerouslySkipPermissions).toBeUndefined();
+
+    fake.control.permissionModeSets.length = 0;
+    client.send({ type: 'claude.mode.set', sessionId: session.id, mode: 'plan' });
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.id === session.id && m.session.permissionMode === 'plan',
+    );
+    expect(fake.control.permissionModeSets).toEqual(['plan']);
+
+    // Not allowed on this PC: refused, and the mode stays.
+    client.send({ type: 'claude.mode.set', sessionId: session.id, mode: 'bypassPermissions' });
+    expect((await client.waitFor('error', (m) => /off on this PC/.test(m.message))).code).toBe(
+      'bad_request',
+    );
+    expect(fake.control.permissionModeSets).toEqual(['plan']);
+    client.send({ type: 'claude.session.close', sessionId: session.id });
+
+    // Allowed (as `voicecode-agent modes allow-unsafe` does): new sessions can bypass.
+    await sessions.setUnsafeModesAllowed(true);
+    client.send({ type: 'claude.session.start', projectId: 'p1' });
+    const second = await client.waitFor(
+      'claude.session.snapshot',
+      (m) => m.session.id !== session.id,
+    );
+    expect(fake.control.options?.allowDangerouslySkipPermissions).toBe(true);
+    expect(second.session.modes).toContain('bypassPermissions');
+    client.send({
+      type: 'claude.mode.set',
+      sessionId: second.session.id,
+      mode: 'bypassPermissions',
+    });
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.id === second.session.id && m.session.permissionMode === 'bypassPermissions',
+    );
+
+    // Turning it off again moves the session back to manual.
+    await sessions.setUnsafeModesAllowed(false);
+    await client.waitFor(
+      'claude.session',
+      (m) => m.session.id === second.session.id && m.session.permissionMode === 'default',
+    );
+    expect(fake.control.permissionModeSets.at(-1)).toBe('default');
+    client.send({ type: 'claude.session.close', sessionId: second.session.id });
+    client.ws.close();
+  });
+
   it('starts a session with a chosen model and effort and switches them from the phone', async () => {
     const client = new Client(tunnelCookie);
     await client.waitFor('welcome');

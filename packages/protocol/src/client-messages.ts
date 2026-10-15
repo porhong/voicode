@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { AUDIO, EFFORT_LEVELS, LIMITS, MOUSE_BUTTONS, STORAGE_LIMIT_MB } from './constants.js';
+import {
+  AUDIO,
+  EFFORT_LEVELS,
+  LIMITS,
+  MOUSE_BUTTONS,
+  PERMISSION_MODES,
+  STORAGE_LIMIT_MB,
+} from './constants.js';
 
 const delta = (max: number) => z.number().int().min(-max).max(max);
 const id = z.string().min(1).max(128);
@@ -120,6 +127,15 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('claude.effort.set'),
     sessionId: id,
     effort: EffortSchema.nullable(),
+  }),
+  /**
+   * Switch a session's permission mode (one of `SessionSummary.modes`). The modes that
+   * skip approvals are refused unless the PC allows them.
+   */
+  z.object({
+    type: z.literal('claude.mode.set'),
+    sessionId: id,
+    mode: z.enum(PERMISSION_MODES),
   }),
   /** The models that can be picked (for a session when given, else the general list). */
   z.object({ type: z.literal('claude.models'), sessionId: id.optional() }),

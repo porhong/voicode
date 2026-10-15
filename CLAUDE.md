@@ -63,7 +63,11 @@ npm run e2e -- <url> <code>      # real browser + real Claude against a running 
 - Real Claude runs cost money. Use the fake `queryFn` in tests; use `npm run e2e` or small
   real prompts only to verify behaviour the fakes can't, and keep them short.
 - Security invariants (don't weaken without a deliberate decision):
-  - Never use `bypassPermissions`; unsafe modes from settings are reverted.
+  - Modes that skip approvals (`bypassPermissions`, `auto`, `dontAsk`) are off unless the
+    owner runs `voicecode-agent modes allow-unsafe` on the PC (a deliberate decision of
+    2026-10-15); a phone can never enable them, `modes safe-only` drops running sessions
+    back to manual, and unsafe modes from project settings are always reverted. While
+    off, the PreToolUse hook keeps asking the phone even if a terminal is put in bypass.
   - Approvals show complete tool input; incomplete details can only be rejected.
   - Pairing codes are single use, expire after 10 minutes and allow 5 attempts.
   - Device secrets are stored hashed; HttpOnly `__Host-` cookie.
@@ -169,6 +173,14 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
     …" or "Model '…' not found" back. Note: Claude Code's `/model` persists the choice to
     `~/.claude/settings.json` (the picker warns); probes on the dev PC must leave the
     owner's `"model": "opus"` in place. Verified on Claude Code 2.1.299 (Haiku → Opus).
+  - Permission modes (2026-10-15): `claude.mode.set`; sessions report `permissionMode`
+    and the `modes` they may switch to. SDK sessions use `setPermissionMode` (bypass needs
+    `allowDangerouslySkipPermissions`, given only when unsafe modes are allowed at start)
+    and follow `system/status` mode changes. Terminal sessions press Shift+Tab until the
+    footer shows the mode (`readPermissionMode`; strings checked on Claude Code 2.1.299,
+    "don't ask" is not in the cycle); taken-over terminals get Shift+Tab through the
+    console helper. Verified on a real hosted Claude Code: plan, bypass, accept edits,
+    manual.
   - Phase 3: the standalone build embeds the `@lydell/node-pty-<target>` package under
     `node-pty/` and `loadPtySpawn()` loads it from the extracted runtime (`doctor` row
     "Claude Code terminal", asserted by `smoke-sea.mjs`); the xterm packages are imported

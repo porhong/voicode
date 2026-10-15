@@ -10,6 +10,7 @@ import {
   EFFORT_LEVELS,
   type ClaudeEvent,
   type EffortLevel,
+  type PermissionModeName,
   type ModelChoice,
   type SessionState,
   type SessionSummary,
@@ -32,6 +33,7 @@ const HISTORY_LIMIT = 500;
 
 /** Modes that would let tools run without an approval reaching the user. */
 const UNSAFE_MODES = new Set(['bypassPermissions', 'auto', 'dontAsk']);
+const SAFE_MODE_LIST: PermissionModeName[] = ['default', 'acceptEdits', 'plan'];
 
 export interface SessionEventRecord {
   seq: number;
@@ -74,6 +76,9 @@ export class ClaudeSession extends EventEmitter<{
   private claudeSessionId: string | undefined;
   private model: string | undefined;
   private effort: EffortLevel | undefined;
+  private permissionMode: PermissionModeName | undefined;
+  /** Started with `allowDangerouslySkipPermissions`, which bypass mode needs. */
+  private bypassCapable = false;
   private title: string | undefined;
   private totalCostUsd: number | undefined;
   private readonly history: SessionEventRecord[] = [];
@@ -100,6 +105,8 @@ export class ClaudeSession extends EventEmitter<{
       cwd: this.project.path,
       abortController: this.abort,
       permissionMode: config.permissionMode,
+      // Bypass mode can only be entered later when the session starts able to.
+      ...(config.allowUnsafeModes ? { allowDangerouslySkipPermissions: true } : {}),
       canUseTool: broker.forSession(this.id),
       includePartialMessages: true,
       // Load CLAUDE.md and project/user settings, like the interactive CLI does.
@@ -116,6 +123,8 @@ export class ClaudeSession extends EventEmitter<{
       ...(this.opts.resume && this.opts.fork ? { forkSession: true } : {}),
     };
 
+    this.bypassCapable = config.allowUnsafeModes === true;
+    this.permissionMode = config.permissionMode;
     this.q = (this.opts.queryFn ?? query)({ prompt: this.input, options });
     void this.consume(this.q);
     this.setState('idle');
@@ -194,6 +203,48 @@ export class ClaudeSession extends EventEmitter<{
     return this.isClosed ? undefined : this.q;
   }
 
+  /** The modes the phone may pick: the safe ones, plus the others when the PC allows. */
+  modes(): PermissionModeName[] {
+    if (!this.opts.config.allowUnsafeModes) return [...SAFE_MODE_LIST];
+    return [
+      ...SAFE_MODE_LIST,
+      'auto',
+      'dontAsk',
+      ...(this.bypassCapable ? (['bypassPermissions'] as const) : []),
+    ];
+  }
+
+  /** Switches the permission mode (the SDK's `setPermissionMode`, takes effect at once). */
+  async setMode(mode: PermissionModeName): Promise<void> {
+    if (this.isClosed || !this.q) throw new Error('This session is closed');
+    if (!this.modes().includes(mode)) {
+      throw new Error(
+        UNSAFE_MODES.has(mode) && !this.opts.config.allowUnsafeModes
+          ? 'Modes that skip approvals are off on this PC (voicecode-agent modes allow-unsafe).'
+          : 'Bypass permissions needs a session started after unsafe modes were allowed.',
+      );
+    }
+    await this.q.setPermissionMode(mode);
+    this.observeMode(mode, true);
+  }
+
+  /** The mode changed (by the phone, an approval or Claude leaving plan mode). */
+  observeMode(mode: PermissionModeName, announce = false): void {
+    if (mode === this.permissionMode) return;
+    this.permissionMode = mode;
+    if (announce) this.record({ kind: 'status', message: `Permission mode: ${MODE_NAMES[mode]}.` });
+    this.emitState();
+  }
+
+  /** Re-sends the summary (the PC changed which modes are allowed). */
+  touch(): void {
+    this.emitState();
+  }
+
+  get currentMode(): PermissionModeName | undefined {
+    return this.permissionMode;
+  }
+
   summary(): SessionSummary {
     return {
       id: this.id,
@@ -204,6 +255,8 @@ export class ClaudeSession extends EventEmitter<{
       title: this.title,
       model: this.model,
       effort: this.effort,
+      permissionMode: this.permissionMode,
+      modes: this.modes(),
       totalCostUsd: this.totalCostUsd,
     };
   }
@@ -287,13 +340,19 @@ export class ClaudeSession extends EventEmitter<{
           this.model = message.model;
           if (UNSAFE_MODES.has(message.permissionMode)) {
             // Project settings can set a default mode; never let one skip approvals.
+            // (Only the phone may choose such a mode, and only when the PC allows it.)
             void this.q?.setPermissionMode(this.opts.config.permissionMode);
             this.record({
               kind: 'status',
               message: `Ignored permission mode "${message.permissionMode}" from settings; using "${this.opts.config.permissionMode}".`,
             });
+            this.permissionMode = this.opts.config.permissionMode;
+          } else if (isModeName(message.permissionMode)) {
+            this.permissionMode = message.permissionMode;
           }
           this.emitState();
+        } else if (message.subtype === 'status') {
+          if (isModeName(message.permissionMode)) this.observeMode(message.permissionMode);
         } else if (message.subtype === 'api_retry') {
           this.record({
             kind: 'status',
@@ -406,4 +465,17 @@ function effortsOf(m: { supportsEffort?: boolean; supportedEffortLevels?: readon
   if (!Array.isArray(m.supportedEffortLevels)) return {};
   const levels = new Set(m.supportedEffortLevels);
   return { efforts: EFFORT_LEVELS.filter((level) => levels.has(level)) };
+}
+
+const MODE_NAMES: Record<PermissionModeName, string> = {
+  default: 'manual (asks before each tool)',
+  acceptEdits: 'accept edits',
+  plan: 'plan',
+  auto: 'auto',
+  dontAsk: "don't ask",
+  bypassPermissions: 'bypass permissions (no approvals)',
+};
+
+function isModeName(value: unknown): value is PermissionModeName {
+  return typeof value === 'string' && value in MODE_NAMES;
 }

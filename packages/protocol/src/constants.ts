@@ -11,6 +11,26 @@ export const PROTOCOL_VERSION = 4;
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type EffortLevel = (typeof EFFORT_LEVELS)[number];
 
+/**
+ * Claude Code's permission modes. `default` asks for every tool that needs permission
+ * (the CLI calls it "manual"). The last three skip approvals and are only offered when
+ * the PC allows them (`voicecode-agent modes allow-unsafe`).
+ */
+export const PERMISSION_MODES = [
+  'default',
+  'acceptEdits',
+  'plan',
+  'auto',
+  'dontAsk',
+  'bypassPermissions',
+] as const;
+export type PermissionModeName = (typeof PERMISSION_MODES)[number];
+export const UNSAFE_PERMISSION_MODES: readonly PermissionModeName[] = [
+  'auto',
+  'dontAsk',
+  'bypassPermissions',
+];
+
 /** WebSocket endpoint path served by the agent. */
 export const WS_PATH = '/ws';
 

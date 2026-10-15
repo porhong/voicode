@@ -2758,3 +2758,15 @@ a {
   position: absolute;
   inset: -10px -2px;
 }
+
+/* Permission mode: on the model chip when not manual, and in the sheet's list. */
+.chip-mode[data-risk='caution'] {
+  color: var(--warn);
+}
+.chip-mode[data-risk='danger'] {
+  color: var(--danger);
+  font-weight: 800;
+}
+.mode-list .list-row[data-risk='danger'] .list-title {
+  color: var(--danger);
+}

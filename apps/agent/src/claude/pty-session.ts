@@ -8,6 +8,7 @@ import { Terminal } from '@xterm/headless/lib-headless/xterm-headless.mjs';
 import type {
   ClaudeEvent,
   EffortLevel,
+  PermissionModeName,
   ModelChoice,
   SessionState,
   SessionSummary,
@@ -23,7 +24,7 @@ import type { ApprovalBroker } from './approval-broker.js';
 import { interactiveClaudePath } from './claude-binary.js';
 import { isDefaultModel, MODEL_ALIASES } from './models.js';
 import type { SessionEventRecord } from './claude-session.js';
-import { readVoiceScreen, type VoiceScreen } from './voice-screen.js';
+import { readPermissionMode, readVoiceScreen, type VoiceScreen } from './voice-screen.js';
 
 const HISTORY_LIMIT = 500;
 const DEFAULT_COLS = 100;
@@ -165,6 +166,8 @@ export class VoiceSession extends EventEmitter<{
   private title: string | undefined;
   private model: string | undefined;
   private effort: EffortLevel | undefined;
+  private permissionMode: PermissionModeName | undefined;
+  private bypassCapable = false;
   /** Where the title came from: Claude Code's own name wins unless the user renamed here. */
   private titleSource: 'prompt' | 'registry' | 'user' | undefined;
   private readonly history: SessionEventRecord[] = [];
@@ -262,7 +265,12 @@ export class VoiceSession extends EventEmitter<{
         ? ['--model', startModel(opts.model, config.model)!]
         : []),
       ...(opts.effort ? ['--effort', opts.effort] : []),
+      // Only puts bypass into the Shift+Tab cycle; the session still starts in the
+      // configured mode, and the hook keeps asking the phone unless unsafe modes are on.
+      ...(config.allowUnsafeModes ? ['--allow-dangerously-skip-permissions'] : []),
     ];
+    this.bypassCapable = config.allowUnsafeModes === true;
+    this.permissionMode = config.permissionMode;
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       TERM: 'xterm-256color',
@@ -350,6 +358,8 @@ export class VoiceSession extends EventEmitter<{
       kind: 'voice',
       model: this.model,
       effort: this.effort,
+      permissionMode: this.permissionMode,
+      modes: this.modes(),
       attached: this.attached || undefined,
       voice: { state: this.voice, detail: this.voiceDetail },
     };
@@ -483,6 +493,72 @@ export class VoiceSession extends EventEmitter<{
     this.emitState();
   }
 
+  /**
+   * The modes reachable with Shift+Tab: the safe ones, auto when the PC allows unsafe
+   * modes, and bypass when Claude Code also started with it in the cycle (an agent-hosted
+   * session after `modes allow-unsafe`; a taken-over terminal is tried, it may refuse).
+   * "Don't ask" can only be chosen when Claude Code starts, so it is not offered here.
+   */
+  modes(): PermissionModeName[] {
+    const safe: PermissionModeName[] = ['default', 'acceptEdits', 'plan'];
+    if (!this.opts.config.allowUnsafeModes) return safe;
+    return [
+      ...safe,
+      'auto',
+      ...(this.bypassCapable || this.attached ? (['bypassPermissions'] as const) : []),
+    ];
+  }
+
+  /** Re-sends the summary (the PC changed which modes are allowed). */
+  touch(): void {
+    this.emitState();
+  }
+
+  get currentMode(): PermissionModeName | undefined {
+    return this.permissionMode;
+  }
+
+  /**
+   * Cycles Claude Code's permission mode with Shift+Tab until the footer shows the one
+   * asked for. The cycle has at most five stops, so a mode not reached in six presses is
+   * not available in this Claude Code.
+   */
+  async setMode(mode: PermissionModeName): Promise<void> {
+    if (this.isClosed || !this.pty) throw new Error('This session is closed');
+    if (!this.modes().includes(mode)) {
+      throw new Error(
+        mode === 'dontAsk'
+          ? "Don't ask can only be chosen when Claude Code starts."
+          : 'Modes that skip approvals are off on this PC (voicecode-agent modes allow-unsafe).',
+      );
+    }
+    if (this.lastScreen.dialog)
+      throw new Error('Claude Code is asking something; answer it first.');
+    this.scan();
+    for (let press = 0; press < 6 && this.permissionMode !== mode; press++) {
+      const before = this.permissionMode;
+      this.pty?.write('\x1b[Z');
+      await this.waitFor(() => this.permissionMode !== before, 1_500);
+    }
+    if (this.permissionMode !== mode) {
+      throw new Error(
+        mode === 'bypassPermissions'
+          ? 'This Claude Code was not started with bypass permissions available (--allow-dangerously-skip-permissions).'
+          : `Claude Code did not switch to ${mode}.`,
+      );
+    }
+    this.record({ kind: 'status', message: `Permission mode: ${mode}.` });
+    this.emitState();
+  }
+
+  private async waitFor(pred: () => boolean, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!pred() && Date.now() < deadline && !this.isClosed) {
+      await sleep(100);
+      this.scan();
+    }
+  }
+
   /** The aliases Claude Code accepts; terminal sessions have no live list. */
   models(): ModelChoice[] {
     return MODEL_ALIASES;
@@ -595,6 +671,11 @@ export class VoiceSession extends EventEmitter<{
       this.setState('idle');
     this.trackDialog(screen);
     this.trackError(screen);
+    const mode = readPermissionMode(lines);
+    if (mode && mode !== this.permissionMode && !screen.dialog) {
+      this.permissionMode = mode;
+      this.emitState();
+    }
     // Claude Code's banner names the model ("Haiku 5.5 · Claude Max"); replies refine it.
     if (!this.model) {
       const banner = lines

@@ -13,6 +13,9 @@ import type {
   UsageReport,
 } from '@voicecode/protocol';
 import { MODEL_ALIASES } from '../claude/models.js';
+import { UNSAFE_PERMISSION_MODES, type PermissionModeName } from '@voicecode/protocol';
+
+const UNSAFE_MODE_SET = new Set<string>(UNSAFE_PERMISSION_MODES);
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
 import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
@@ -112,6 +115,7 @@ export class SessionManager extends EventEmitter<{
       const session = this.sessions.get(event.sessionId);
       if (event.interrupted) session?.markRejected();
       if (event.remembered.some((u) => u.type === 'setMode' && u.mode === 'acceptEdits')) {
+        if (session && 'observeMode' in session) session.observeMode('acceptEdits');
         session?.noteStatus(
           'File edits will be accepted automatically for the rest of this session.',
         );
@@ -275,9 +279,11 @@ export class SessionManager extends EventEmitter<{
     );
     if (!session || session.isClosed) return undefined;
     if (PASSTHROUGH_TOOLS.has(event.tool_name)) return undefined;
-    if (this.config.claude.permissionMode === 'acceptEdits' && EDIT_TOOLS.has(event.tool_name)) {
-      return undefined;
-    }
+    const mode = event.permission_mode ?? session.currentMode ?? this.config.claude.permissionMode;
+    if (mode === 'acceptEdits' && EDIT_TOOLS.has(event.tool_name)) return undefined;
+    // Modes that skip approvals are left to Claude Code only when the PC allows them;
+    // otherwise the phone still decides, whatever mode the terminal was put in.
+    if (this.config.claude.allowUnsafeModes && UNSAFE_MODE_SET.has(mode)) return undefined;
     return this.broker.ask(session.id, event.tool_name, event.tool_input);
   }
 
@@ -362,6 +368,35 @@ export class SessionManager extends EventEmitter<{
   }
 
   /** Phone (SDK) sessions only: a terminal's `/effort` would also rewrite the PC's settings. */
+  async setMode(sessionId: string, mode: PermissionModeName): Promise<void> {
+    const session = this.get(sessionId);
+    try {
+      await session.setMode(mode);
+    } catch (err) {
+      throw new SessionError('bad_request', (err as Error).message);
+    }
+    this.logger.info({ session: sessionId, mode }, 'permission mode changed from the phone');
+  }
+
+  /**
+   * Applies `modes allow-unsafe` / `safe-only` from the PC. Turning unsafe modes off
+   * moves every session that is in one back to manual (default) mode.
+   */
+  async setUnsafeModesAllowed(allowed: boolean): Promise<void> {
+    this.config.claude.allowUnsafeModes = allowed;
+    for (const session of this.sessions.values()) {
+      if (session.isClosed) continue;
+      const mode = session.currentMode;
+      if (!allowed && mode && UNSAFE_MODE_SET.has(mode)) {
+        await session.setMode('default').catch((err: unknown) => {
+          this.logger.warn({ err, session: session.id }, 'could not leave an unsafe mode');
+        });
+      }
+      session.touch();
+    }
+    this.logger.info({ allowed }, 'unsafe permission modes setting changed');
+  }
+
   async setEffort(sessionId: string, effort: EffortLevel | null): Promise<void> {
     const session = this.get(sessionId);
     if (session instanceof VoiceSession) {

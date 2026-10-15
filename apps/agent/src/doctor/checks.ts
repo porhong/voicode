@@ -129,6 +129,14 @@ export async function runChecks(
         });
       }
     }
+    if (config.claude.allowUnsafeModes) {
+      add({
+        name: 'Unsafe modes',
+        status: 'warn',
+        detail: 'phones may switch Claude to bypass permissions, auto or don’t ask',
+        fix: 'Turn off with `voicecode-agent modes safe-only`',
+      });
+    }
     if (config.claude.permissionMode !== 'default') {
       add({
         name: 'Permission mode',

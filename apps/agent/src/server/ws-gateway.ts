@@ -389,6 +389,8 @@ export class WsGateway {
         return sessions.setModel(msg.sessionId, msg.model);
       case 'claude.effort.set':
         return sessions.setEffort(msg.sessionId, msg.effort);
+      case 'claude.mode.set':
+        return sessions.setMode(msg.sessionId, msg.mode);
       case 'storage.info':
       case 'storage.cleanup':
       case 'storage.settings': {

@@ -5,6 +5,7 @@ import { registerCleanup } from './commands/cleanup.js';
 import { registerDevices, registerPair } from './commands/devices.js';
 import { registerHook } from './commands/hook.js';
 import { registerInit } from './commands/init.js';
+import { registerModes } from './commands/modes.js';
 import { registerProjects, registerRoots } from './commands/projects.js';
 import { registerStart } from './commands/start.js';
 import { registerStatus } from './commands/status.js';
@@ -30,6 +31,7 @@ registerTunnel(program);
 registerSystem(program);
 registerCleanup(program);
 registerHook(program);
+registerModes(program);
 
 program.parseAsync().catch((err: unknown) => {
   out(fail((err as Error).message));

@@ -346,6 +346,13 @@ export class Agent extends EventEmitter<{
         );
         return { projects: fresh.projects };
       },
+      // Re-reads `claude.allowUnsafeModes` after `voicecode-agent modes …`.
+      'POST /modes/reload': async () => {
+        const fresh = await loadConfig(this.paths.config);
+        if (!fresh) throw new Error('config file is missing');
+        await this.sessions.setUnsafeModesAllowed(fresh.claude.allowUnsafeModes);
+        return { allowUnsafeModes: fresh.claude.allowUnsafeModes };
+      },
       'GET /storage': () => this.janitor.info(),
       'POST /storage/cleanup': async () => ({
         result: await this.janitor.cleanNow(),

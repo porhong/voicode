@@ -6,7 +6,7 @@
  *   voicecode-console <pid>
  *
  * Reads one command per line on stdin:
- *   k <key>       press a key: space enter esc tab up down left right c-c, or one character
+ *   k <key>       press a key: space enter esc tab shift-tab up down left right c-c, or one character
  *   t <base64>    type UTF-8 text (newlines press Enter)
  *   s             print the visible screen: "screen <rows> <cols> <cursorRow> <cursorCol> <base64 utf8>"
  *   q             detach and exit (EOF does the same)
@@ -129,6 +129,7 @@ static int send_named_key(const char *name) {
     if (strcmp(name, "enter") == 0) return send_key(VK_RETURN, L'\r', 0);
     if (strcmp(name, "esc") == 0) return send_key(VK_ESCAPE, 27, 0);
     if (strcmp(name, "tab") == 0) return send_key(VK_TAB, L'\t', 0);
+    if (strcmp(name, "shift-tab") == 0) return send_key(VK_TAB, L'\t', SHIFT_PRESSED);
     if (strcmp(name, "up") == 0) return send_key(VK_UP, 0, ENHANCED_KEY);
     if (strcmp(name, "down") == 0) return send_key(VK_DOWN, 0, ENHANCED_KEY);
     if (strcmp(name, "left") == 0) return send_key(VK_LEFT, 0, ENHANCED_KEY);

@@ -7,6 +7,7 @@ describe('translateInput', () => {
     expect(translateInput('\r')).toEqual([{ kind: 'key', key: 'enter' }]);
     expect(translateInput('\x1b')).toEqual([{ kind: 'key', key: 'esc' }]);
     expect(translateInput('\x1b[A')).toEqual([{ kind: 'key', key: 'up' }]);
+    expect(translateInput('\x1b[Z')).toEqual([{ kind: 'key', key: 'shift-tab' }]);
     expect(translateInput('\x03')).toEqual([{ kind: 'key', key: 'c-c' }]);
     expect(translateInput('y')).toEqual([{ kind: 'text', text: 'y' }]);
     expect(translateInput('\x1b[200~run the\ntests\x1b[201~')).toEqual([

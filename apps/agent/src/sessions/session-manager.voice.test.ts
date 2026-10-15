@@ -315,6 +315,64 @@ describe('voice sessions', () => {
     pty = first;
   });
 
+  it('cycles the terminal mode with Shift+Tab until the footer shows the chosen one', async () => {
+    const first = pty;
+    pty = new FakePty();
+    pty.pid = 7272;
+    const session = await manager.startVoice('p1');
+    expect(spawned!.args).not.toContain('--allow-dangerously-skip-permissions');
+    // Each Shift+Tab moves the fake's footer one step, as Claude Code does.
+    const cycle = ['manual mode on', 'accept edits on', 'plan mode on', 'auto mode on'];
+    let at = 0;
+    const show = () => pty.show(`❯ \n  ⏸ ${cycle[at]} · ? for shortcuts`);
+    const write = pty.write.bind(pty);
+    pty.write = (data: string) => {
+      write(data);
+      if (data === '\x1b[Z') {
+        at = (at + 1) % cycle.length;
+        setTimeout(show, 30);
+      }
+    };
+    show();
+    await until(() => session.summary().permissionMode === 'default');
+    expect(session.summary().modes).toEqual(['default', 'acceptEdits', 'plan']);
+
+    await manager.setMode(session.id, 'plan');
+    expect(session.summary().permissionMode).toBe('plan');
+    expect(pty.written.split('\x1b[Z').length - 1).toBe(2);
+    await expect(manager.setMode(session.id, 'bypassPermissions')).rejects.toThrow(
+      /off on this PC/,
+    );
+
+    // While unsafe modes are off, the phone still decides even if the terminal bypasses.
+    const { VOICECODE_HOOK_URL: url, VOICECODE_HOOK_TOKEN: token } = spawned!.env;
+    const claudeId = session.summary().claudeSessionId!;
+    const ask = (permission_mode: string) =>
+      forwardPreToolUse(
+        url!,
+        token!,
+        JSON.stringify({
+          session_id: claudeId,
+          tool_name: 'Bash',
+          tool_input: { command: 'ls' },
+          permission_mode,
+        }),
+      );
+    const asked = ask('bypassPermissions');
+    await until(() => requests.some((r) => r.sessionId === session.id));
+    const request = requests.find((r) => r.sessionId === session.id)!;
+    manager.respond(session.id, request.requestId, 'deny', { deviceName: 'Phone', message: 'no' });
+    expect(await asked).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    // Allowed: Claude Code's own mode decides.
+    await manager.setUnsafeModesAllowed(true);
+    expect(await ask('bypassPermissions')).toBeUndefined();
+    await manager.setUnsafeModesAllowed(false);
+
+    manager.close(session.id);
+    pty.exit(0);
+    pty = first;
+  });
+
   it('types prompts as a paste and closes with /exit', async () => {
     pty.written = '';
     manager.prompt(id, 'run the tests', 'Phone');
