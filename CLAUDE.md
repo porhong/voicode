@@ -100,9 +100,12 @@ Done and verified:
 - CI is green on all jobs.
 - The release workflow dry run passes, with all 5 native helpers and 3 standalone
   binaries.
-- v0.1.0 is released: `@anantbot/voicecode-agent@0.1.0` is on npm (`latest`), and the
-  GitHub release has the Windows x64 and Linux x64/arm64 standalone archives with
-  `SHA256SUMS.txt` and build attestations.
+- v0.1.0 is released: `@anantbot/voicecode-agent@0.1.0` was published by hand.
+- v0.1.1 (2026-10-15) was released entirely by the tag-triggered workflow: npm trusted
+  publishing with a provenance statement (`latest`), 7 native helpers, and the GitHub
+  release with the Windows x64 and Linux x64/arm64 standalone archives, `SHA256SUMS.txt`
+  and build attestations. Cut it with `npm run release -- <version>` from a clean tree
+  (the script refuses untracked files too).
 - Real Claude flows were checked in headless Chrome.
 - Mouse movement was checked pixel-exact on Windows.
 - Mobile UX pass on the web client (compact session header + sheet, one-button composer,
@@ -176,8 +179,6 @@ Not verified yet:
 
 - A real phone: certificate install, microphone, touch.
 - The Wayland helper on a real desktop (it is only compile-checked).
-- A tag-triggered `npm publish --provenance` from CI: 0.1.0 was published by hand, so
-  that path (trusted publishing) runs for the first time on the next release.
 - PC session discovery reads Claude Code internals (`~/.claude/sessions/<pid>.json`,
   transcript JSONL); checked against Claude Code 2.1.299 only. Parsing is lenient.
 - Cloudflare Tunnel: quick mode was checked end to end through Cloudflare (pairing,
