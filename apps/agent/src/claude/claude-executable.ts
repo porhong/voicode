@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { chmod, mkdir, readdir, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable, Transform } from 'node:stream';
@@ -73,12 +74,35 @@ export function findClaudeOnPath(env: NodeJS.ProcessEnv = process.env): string |
   return undefined;
 }
 
+/**
+ * The Claude Code binary inside the SDK's platform package (npm installs), if present.
+ * It can go missing: a Claude Code run interactively from there auto-updates by renaming
+ * itself away (`claude.exe.old.<time>`), which is why agent-hosted terminals now set
+ * DISABLE_AUTOUPDATER and prefer the user's own `claude`.
+ */
+export function sdkPlatformBinary(): string | undefined {
+  const name = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`;
+  try {
+    const require = createRequire(import.meta.url);
+    const dir = path.dirname(require.resolve(`${name}/package.json`));
+    const exe = path.join(dir, binaryName());
+    return existsSync(exe) ? exe : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Synchronous lookup used when a session starts; never downloads. */
 export function resolveClaudeExecutable(): ClaudeExecutable {
   if (process.env.VOICECODE_CLAUDE_PATH) {
     return { source: 'env', path: path.resolve(process.env.VOICECODE_CLAUDE_PATH) };
   }
-  if (!isStandalone()) return { source: 'sdk' };
+  if (!isStandalone()) {
+    if (sdkPlatformBinary()) return { source: 'sdk' };
+    // The SDK's copy is missing (see sdkPlatformBinary); the user's own install still works.
+    const onPath = findClaudeOnPath();
+    return onPath ? { source: 'path', path: onPath } : { source: 'missing' };
+  }
   const pkg = bundledClaudePackage();
   if (pkg && existsSync(managedClaudePath(pkg))) {
     return { source: 'managed', path: managedClaudePath(pkg) };
@@ -92,8 +116,11 @@ export function claudeExecutablePath(): string | undefined {
   const exe = resolveClaudeExecutable();
   if (exe.source === 'missing') {
     throw new Error(
-      'Claude Code is not installed for this agent yet. Restart it with `voicecode-agent start` ' +
-        'to download it, or set VOICECODE_CLAUDE_PATH to a claude executable.',
+      isStandalone()
+        ? 'Claude Code is not installed for this agent yet. Restart it with `voicecode-agent start` ' +
+            'to download it, or set VOICECODE_CLAUDE_PATH to a claude executable.'
+        : 'Claude Code was not found: the Agent SDK has no binary and there is no `claude` on ' +
+            'PATH. Reinstall voicecode-agent, install Claude Code, or set VOICECODE_CLAUDE_PATH.',
     );
   }
   return exe.path;

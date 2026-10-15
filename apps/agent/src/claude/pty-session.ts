@@ -266,6 +266,9 @@ export class VoiceSession extends EventEmitter<{
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       TERM: 'xterm-256color',
+      // Claude Code updates itself by renaming its own executable; when that is a copy
+      // the agent depends on (the SDK's), the agent loses its Claude Code.
+      DISABLE_AUTOUPDATER: '1',
       VOICECODE_HOOK_URL: hook.url,
       VOICECODE_HOOK_TOKEN: hook.token,
     };

@@ -242,12 +242,19 @@ function checkClaudeExecutable(): CheckResult | undefined {
     case 'managed':
       return { name: 'Claude Code', status: 'ok', detail: `${version} (managed)` };
     case 'path':
-      return {
-        name: 'Claude Code',
-        status: 'warn',
-        detail: `using ${exe.path}; its version may not match ${version || 'this build'}`,
-        fix: 'Run `voicecode-agent start` with internet access to download the matching version',
-      };
+      return isStandalone()
+        ? {
+            name: 'Claude Code',
+            status: 'warn',
+            detail: `using ${exe.path}; its version may not match ${version || 'this build'}`,
+            fix: 'Run `voicecode-agent start` with internet access to download the matching version',
+          }
+        : {
+            name: 'Claude Code',
+            status: 'warn',
+            detail: `the Agent SDK's own Claude Code is missing; using ${exe.path}`,
+            fix: 'Reinstall voicecode-agent (npm install -g @anantbot/voicecode-agent) to restore it',
+          };
     case 'missing':
       return {
         name: 'Claude Code',

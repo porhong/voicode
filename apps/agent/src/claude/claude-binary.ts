@@ -1,29 +1,24 @@
-import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import path from 'node:path';
-import { findClaudeOnPath, resolveClaudeExecutable } from './claude-executable.js';
+import {
+  bundledClaudePackage,
+  findClaudeOnPath,
+  managedClaudePath,
+  sdkPlatformBinary,
+} from './claude-executable.js';
+import { existsSync } from 'node:fs';
 
 /**
- * The Claude Code executable to run interactively (in a pseudo-terminal). The SDK path
- * leaves resolution to the SDK, which is no help here, so the SDK's platform package is
- * looked up directly; the order otherwise matches `resolveClaudeExecutable`.
+ * The Claude Code executable to run interactively (in a pseudo-terminal). The user's own
+ * `claude` comes first: it is the one they keep signed in and up to date. The copies the
+ * agent depends on (the SDK's platform package, the standalone build's managed download)
+ * come last, and the session is started with auto-update off so Claude Code cannot
+ * rename them away (see `sdkPlatformBinary`).
  */
 export function interactiveClaudePath(): string | undefined {
-  const resolved = resolveClaudeExecutable();
-  if (resolved.path && resolved.source !== 'path') return resolved.path;
-  const fromSdk = sdkPlatformBinary();
-  if (fromSdk) return fromSdk;
-  return resolved.path ?? findClaudeOnPath();
-}
-
-function sdkPlatformBinary(): string | undefined {
-  const name = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`;
-  try {
-    const require = createRequire(import.meta.url);
-    const dir = path.dirname(require.resolve(`${name}/package.json`));
-    const exe = path.join(dir, process.platform === 'win32' ? 'claude.exe' : 'claude');
-    return existsSync(exe) ? exe : undefined;
-  } catch {
-    return undefined;
-  }
+  if (process.env.VOICECODE_CLAUDE_PATH) return path.resolve(process.env.VOICECODE_CLAUDE_PATH);
+  const onPath = findClaudeOnPath();
+  if (onPath) return onPath;
+  const pkg = bundledClaudePackage();
+  if (pkg && existsSync(managedClaudePath(pkg))) return managedClaudePath(pkg);
+  return sdkPlatformBinary();
 }
