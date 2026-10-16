@@ -7,6 +7,7 @@ import { FolderSheet } from '../components/FolderSheet';
 import { ModelSheet } from '../components/ModelSheet';
 import { ChatIcon, DeckPadIcon, GearIcon } from '../components/Icons';
 import { PermissionCard } from '../components/PermissionCard';
+import { QuestionCard } from '../components/QuestionCard';
 import { SessionBar, StartSession, useProjectChoice } from '../components/SessionBar';
 import { Toasts } from '../components/Toasts';
 import { SettingsSheet } from '../components/SettingsSheet';
@@ -147,7 +148,13 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   );
 
   // A controlled terminal session that waits for an answer shows its screen on its own.
-  const attachedWaiting = active?.attached === true && active.state === 'awaiting_permission';
+  // A menu read off the terminal gets buttons; the terminal opens by itself only for
+  // what couldn't be read (the user answers that with its keys).
+  const attachedWaiting =
+    active?.attached === true &&
+    active.kind === 'voice' &&
+    active.state === 'awaiting_permission' &&
+    !active.question;
   const showTerminal = terminalOpen || attachedWaiting;
 
   // In a voice session the agent also presses Claude Code's dictation key for us, so a
@@ -246,6 +253,9 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const activePermissions = permissions.filter((p) => p.sessionId === active?.id);
   const otherPermissions = permissions.length - activePermissions.length;
   const live = active && active.state !== 'closed' && active.state !== 'error';
+  const question = live ? active.question : undefined;
+  /** Something on screen waits for an answer: an approval or a terminal menu. */
+  const asking = activePermissions.length > 0 || question !== undefined;
   useUsage(
     send,
     connection === 'open',
@@ -396,7 +406,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     'claude',
     deckMode && 'claude-deck',
     deckFull && 'claude-deck-full',
-    deckMode && activePermissions.length > 0 && 'claude-deck-approval',
+    deckMode && asking && 'claude-deck-approval',
   ]
     .filter(Boolean)
     .join(' ');
@@ -532,7 +542,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 session →
               </button>
             )}
-            {activePermissions.length > 0 && (
+            {asking && (
               // Scrolls on its own on short screens (landscape) so the composer stays visible.
               <div className="approvals">
                 {activePermissions.map((request, i) => (
@@ -545,6 +555,15 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                     queued={i > 0}
                   />
                 ))}
+                {question && active && (
+                  <QuestionCard
+                    sessionId={active.id}
+                    question={question}
+                    send={send}
+                    disabled={connection !== 'open'}
+                    onShowTerminal={showTerminal ? undefined : () => setTerminalOpen(true)}
+                  />
+                )}
               </div>
             )}
             {pcId && (
@@ -595,7 +614,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 )}
               </div>
             )}
-            {voiceSession && live && (
+            {voiceSession && live && (!question || showTerminal) && (
               // One small floating toggle instead of a banner: errors already show under
               // the input, and the terminal opens by itself when Claude asks something.
               <div className="terminal-toggle-anchor">
@@ -630,7 +649,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                     ? active.state
                     : undefined
                 }
-                approvalShown={activePermissions.length > 0}
+                approvalShown={asking}
                 settings={settings}
                 compact={deckMode}
                 remoteMic={remoteMic}
@@ -672,6 +691,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               connected={connection === 'open'}
               running={active?.state === 'running' || active?.state === 'awaiting_permission'}
               approval={deckApproval}
+              question={question?.text}
               micSupported={remoteMic ? remoteMic.supported : speechRecognitionSupported()}
               listening={canPrompt && listening}
               full={deckFull}

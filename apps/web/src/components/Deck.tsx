@@ -59,6 +59,8 @@ interface Props {
   running: boolean;
   /** The approval Accept and Reject answer: the first one waiting in this session. */
   approval?: DeckApproval;
+  /** A terminal menu waits for an answer on the card above the deck. */
+  question?: string;
   micSupported: boolean;
   listening: boolean;
   /** The conversation is hidden and the deck has the screen to itself. */
@@ -666,7 +668,9 @@ export function Deck(props: Props) {
     ? approval.complete
       ? 'Hold Accept to allow'
       : 'Too long to review: reject only'
-    : undefined;
+    : props.question
+      ? 'Choose an answer above'
+      : undefined;
   /** What the session is doing: it stays the same while keys are pressed. */
   const stateText = props.listening
     ? 'Listening… release to send'

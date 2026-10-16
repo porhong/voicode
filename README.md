@@ -279,6 +279,13 @@ when a task finishes in any other session, on the phone or the PC; tap it to jum
 only reads Claude Code's own session files (`~/.claude/sessions` and `~/.claude/projects`, or
 `CLAUDE_CONFIG_DIR`) for this.
 
+**Questions in a terminal session.** When Claude Code in a terminal session (hosted, or
+one you took control of) shows a menu of its own — the folder trust check, its permission
+prompt, a question with options — the phone shows it as a card: the question, what the
+terminal shows above it, and a button per option, in the chat and above the deck. The
+answer is only applied if the same menu is still open; **Open the terminal** shows the
+whole screen.
+
 **Claude Desktop sessions (Windows).** Sessions of the Claude Desktop app's Code tab are in
 the same list, marked "Claude Desktop". After `voicecode-agent desktop enable` on the PC,
 **Take control** lets the phone drive one:

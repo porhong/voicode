@@ -399,6 +399,55 @@ describe('voice sessions', () => {
     pty = first;
   });
 
+  it('shows a Claude Code menu as a question and answers it by its option', async () => {
+    const before = summaries.length;
+    pty.show(
+      [
+        '────────────────────────────────────────────────────────────────────────────────────────────────────',
+        ' PowerShell command',
+        ' Set-Content -Path menu.txt -Value hi',
+        ' Do you want to proceed?',
+        ' ❯ 1. Yes',
+        '   2. Yes, and always allow access to C:\\work from this project',
+        '   3. No',
+        '',
+        ' Esc to cancel · Tab to amend',
+      ].join('\r\n'),
+    );
+    await until(() => summaries.slice(before).some((s) => s.id === id && s.question));
+    expect(manager.get(id).summary()).toMatchObject({
+      state: 'awaiting_permission',
+      question: {
+        text: 'Do you want to proceed?',
+        detail: ['PowerShell command', 'Set-Content -Path menu.txt -Value hi'],
+        options: ['Yes', 'Yes, and always allow access to C:\\work from this project', 'No'],
+      },
+    });
+    // An answer for an option the menu no longer has is refused.
+    await expect(manager.answerQuestion(id, 2, 'Maybe')).rejects.toThrow(/no longer showing/);
+    pty.written = '';
+    const answered = manager.answerQuestion(id, 2, 'No');
+    await until(() => pty.written.endsWith('\r'));
+    expect(pty.written).toBe('\x1b[B\x1b[B\r');
+    pty.show('❯ ');
+    await answered;
+    await until(() => manager.get(id).summary().question === undefined);
+  });
+
+  it('never presses its second Enter into a menu that opened after a prompt', async () => {
+    pty.show('❯ ');
+    pty.written = '';
+    await manager.prompt(id, 'deploy it', 'Phone');
+    await until(() => pty.written.endsWith('\r'));
+    // A menu opens before the 900 ms check that re-presses Enter for a stuck prompt.
+    pty.show(
+      [' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', '', ' Esc to cancel'].join('\r\n'),
+    );
+    await sleep(1_200);
+    expect(pty.written).toBe('\x1b[200~deploy it\x1b[201~\r');
+    pty.show('❯ ');
+  });
+
   it('types prompts as a paste and closes with /exit', async () => {
     pty.written = '';
     manager.prompt(id, 'run the tests', 'Phone');

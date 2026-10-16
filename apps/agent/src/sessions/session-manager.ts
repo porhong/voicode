@@ -395,6 +395,16 @@ export class SessionManager extends EventEmitter<{
     return session.askPermission(event.tool_name, event.tool_input);
   }
 
+  /** Picks an option of the menu a terminal session shows. */
+  async answerQuestion(sessionId: string, index: number, option: string): Promise<void> {
+    try {
+      await this.getVoice(sessionId).answerQuestion(index, option);
+    } catch (err) {
+      if (err instanceof SessionError) throw err;
+      throw new SessionError('bad_request', (err as Error).message);
+    }
+  }
+
   /** Push-to-talk for a voice session. */
   ptt(sessionId: string, pressed: boolean, deviceName: string): void {
     void this.getVoice(sessionId).pressPtt(pressed, deviceName);

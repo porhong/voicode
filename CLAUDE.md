@@ -236,6 +236,18 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   model?" dialog. Hooks reload in running sessions. Not verified: the phone UI against a
   real Desktop session (only typecheck + unit tests), Desktop v2.x labels.
 
+- Terminal menus as questions (2026-10-17): `readMenu()` (`voice-screen.ts`) reads Claude
+  Code's own menus off the screen — the cursor `❯` is indented (the input prompt's isn't),
+  options are numbered or followed by "Enter to confirm / Esc to cancel", the question is
+  the last line ending in "?" (else the asking sentence of a paragraph). `VoiceSession`
+  publishes it as `SessionSummary.question`; `claude.question.answer {index, option}`
+  moves the cursor and presses Enter only if that option is still there. Each question is
+  announced once (repaints no longer repeat it). The second Enter after a typed prompt is
+  never pressed while a menu is open (it would pick "Yes"). Parser checked against
+  screens captured from Claude Code 2.1.299 (trust check, permission prompt); the card in
+  headless Chrome against `ui-demo.ts` (whose fake terminal opens a menu for "deploy"),
+  chat and deck, dark and light. Not tried on a real phone or with AskUserQuestion.
+
 Not verified yet:
 
 - A real phone: certificate install, microphone, touch.

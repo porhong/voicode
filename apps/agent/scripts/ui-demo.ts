@@ -212,6 +212,8 @@ class DemoPty implements PtyHandle {
   private recording = false;
   private typed = '';
   private lines: string[] = ['▐ Welcome back! This is the UI demo, not a real Claude Code.'];
+  /** A permission menu like Claude Code's own (a prompt mentioning "deploy" opens it). */
+  private menu: { options: string[]; selected: number } | undefined;
   onData(listener: (data: string) => void): void {
     this.dataListener = listener;
     setTimeout(() => this.render(), 100);
@@ -220,6 +222,32 @@ class DemoPty implements PtyHandle {
     this.exitListener = listener;
   }
   write(data: string): void {
+    // Typed text and its Enter can arrive in one write (`/voice tap\r`).
+    if (!this.menu && data.length > 1 && data.endsWith('\r')) {
+      this.write(data.slice(0, -1));
+      this.write('\r');
+      return;
+    }
+    if (this.menu) {
+      const menu = this.menu;
+      // eslint-disable-next-line no-control-regex -- terminal key sequences
+      for (const key of data.match(/\x1b\[[AB]|\r|\x1b/g) ?? []) {
+        if (key === '\x1b[A') menu.selected = Math.max(0, menu.selected - 1);
+        else if (key === '\x1b[B')
+          menu.selected = Math.min(menu.options.length - 1, menu.selected + 1);
+        else if (key === '\r') {
+          this.lines.push(`  ⎿  You chose: ${menu.options[menu.selected]}`);
+          this.menu = undefined;
+          break;
+        } else {
+          this.lines.push('  ⎿  Cancelled');
+          this.menu = undefined;
+          break;
+        }
+      }
+      this.render();
+      return;
+    }
     if (data === ' ') {
       this.recording = !this.recording;
       if (!this.recording) this.typed += 'refactor the auth middleware ';
@@ -231,6 +259,12 @@ class DemoPty implements PtyHandle {
       const model = /^\/model (\S+)$/.exec(typed)?.[1];
       if (model) {
         this.lines.push(`> ${typed}`, `  ⎿  Set model to ${model} and saved as your default`);
+      } else if (/deploy/i.test(typed)) {
+        this.lines.push(`> ${typed}`);
+        this.menu = {
+          options: ['Yes', "Yes, and don't ask again for npm run deploy commands", 'No'],
+          selected: 0,
+        };
       } else if (typed) {
         this.lines.push(`> ${typed}`, '  (demo: nothing happens)');
       }
@@ -251,6 +285,25 @@ class DemoPty implements PtyHandle {
   private render(): void {
     const footer = this.recording ? '● REC · tap to send' : 'hold space to speak';
     const body = this.lines.slice(-12).join('\r\n');
+    if (this.menu) {
+      const { options, selected } = this.menu;
+      const menu = [
+        '─'.repeat(60),
+        ' Bash command',
+        ' Deploy the app to production',
+        '╌'.repeat(60),
+        ' npm run deploy -- --prod',
+        '╌'.repeat(60),
+        ' Do you want to proceed?',
+        ...options.map((o, i) => `${i === selected ? ' ❯ ' : '   '}${i + 1}. ${o}`),
+        '',
+        ' Esc to cancel · Tab to amend',
+      ];
+      this.dataListener?.(
+        `\x1b[2J\x1b[H\x1b[1m Claude Code\x1b[0m  demo\r\n\r\n${body}\r\n\r\n${menu.join('\r\n')}\r\n`,
+      );
+      return;
+    }
     this.dataListener?.(
       `\x1b[2J\x1b[H\x1b[1m Claude Code\x1b[0m  demo\r\n\r\n${body}\r\n\r\n╭──────────────────────────────╮\r\n│ > ${this.typed}\r\n╰──────────────────────────────╯\r\n  ${footer}\r\n`,
     );

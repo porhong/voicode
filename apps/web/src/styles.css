@@ -2880,3 +2880,25 @@ a {
   position: absolute;
   inset: -11px;
 }
+
+/* A terminal menu: one full-width button per option, the cursor's first. */
+.question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.question-option {
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-height: 44px;
+}
+.question-option[aria-busy='true'] {
+  border-color: var(--accent);
+}
+.question-terminal {
+  margin-top: 0.75rem;
+  min-height: 44px;
+}

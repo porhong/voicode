@@ -24,7 +24,13 @@ import type { ApprovalBroker } from './approval-broker.js';
 import { interactiveClaudePath } from './claude-binary.js';
 import { isDefaultModel, MODEL_ALIASES } from './models.js';
 import type { SessionEventRecord } from './claude-session.js';
-import { readPermissionMode, readVoiceScreen, type VoiceScreen } from './voice-screen.js';
+import {
+  readMenu,
+  readPermissionMode,
+  readVoiceScreen,
+  type ScreenMenu,
+  type VoiceScreen,
+} from './voice-screen.js';
 
 const HISTORY_LIMIT = 500;
 const DEFAULT_COLS = 100;
@@ -196,6 +202,10 @@ export class VoiceSession extends EventEmitter<{
   private registryAwaiting = false;
   /** A dialog on the screen (folder safety check, a menu) is what the session waits on. */
   private dialogAwaiting: string | undefined;
+  /** The menu Claude Code shows, if any: the phone shows it with a button per option. */
+  private menu: ScreenMenu | undefined;
+  /** The last question announced in the transcript, so a repainted one isn't repeated. */
+  private announcedDialog: string | undefined;
   private lastTyped: { text: string; deviceName: string } | undefined;
   private pendingRelease = false;
   private exitCode: number | undefined;
@@ -367,7 +377,33 @@ export class VoiceSession extends EventEmitter<{
       modes: this.modes(),
       attached: this.attached || undefined,
       voice: { state: this.voice, detail: this.voiceDetail },
+      question: this.menu
+        ? {
+            text: this.menu.question,
+            ...(this.menu.detail.length ? { detail: this.menu.detail } : {}),
+            options: this.menu.options,
+          }
+        : undefined,
     };
+  }
+
+  /**
+   * Picks option `index` of the menu on screen: the cursor is moved there and Enter
+   * pressed. Only if that menu still offers `option` there, so an answer meant for one
+   * question never lands on the next.
+   */
+  async answerQuestion(index: number, option: string): Promise<void> {
+    if (this.isClosed || !this.pty) throw new Error('This session is closed');
+    const menu = readMenu(this.screenLines());
+    if (!menu || menu.options[index] !== option) {
+      throw new Error('That question is no longer showing in the terminal.');
+    }
+    const moves = index - menu.selected;
+    this.pty.write((moves > 0 ? '\x1b[B' : '\x1b[A').repeat(Math.abs(moves)));
+    await sleep(150);
+    this.pty?.write('\r');
+    const asked = menu.question;
+    await this.waitFor(() => readMenu(this.screenLines())?.question !== asked, 3_000);
   }
 
   events(): SessionEventRecord[] {
@@ -414,7 +450,10 @@ export class VoiceSession extends EventEmitter<{
     setTimeout(() => this.pty?.write('\r'), 50);
     setTimeout(() => {
       if (this.isClosed || !this.pty || this.lastScreen.dialog) return;
-      if (!promptIsEmpty(this.screenLines()) && this.state !== 'running') this.pty.write('\r');
+      const lines = this.screenLines();
+      // Never into a menu that opened meanwhile: Enter would pick its option (a "Yes").
+      if (readMenu(lines)) return;
+      if (!promptIsEmpty(lines) && this.state !== 'running') this.pty.write('\r');
     }, 900);
   }
 
@@ -687,6 +726,7 @@ export class VoiceSession extends EventEmitter<{
     if (this.voice === 'off' && screen.enabled) this.setVoice('idle');
     if (this.state === 'starting' && (screen.enabled || promptIsEmpty(lines)))
       this.setState('idle');
+    this.trackMenu(lines);
     this.trackDialog(screen);
     this.trackError(screen);
     const mode = readPermissionMode(lines);
@@ -716,16 +756,31 @@ export class VoiceSession extends EventEmitter<{
    * a new project, and its default answer is "No, exit") put the session into
    * `awaiting_permission` so the phone opens the terminal view; they are answered there.
    */
+  private trackMenu(lines: string[]): void {
+    const menu = readMenu(lines);
+    const key = (m: ScreenMenu | undefined) => (m ? JSON.stringify([m.question, m.options]) : '');
+    const changed = key(menu) !== key(this.menu);
+    this.menu = menu;
+    if (changed) this.emitState();
+  }
+
   private trackDialog(screen: VoiceScreen): void {
     if (this.isClosed) return;
-    if (screen.dialog && this.dialogAwaiting !== screen.dialog) {
-      this.dialogAwaiting = screen.dialog;
-      this.record({
-        kind: 'status',
-        message: `Claude Code is asking in the terminal: "${screen.dialog}". Answer it from the terminal view (↓ and Enter pick an option).`,
-      });
+    const dialog = this.menu?.question ?? screen.dialog;
+    if (dialog && this.dialogAwaiting !== dialog) {
+      this.dialogAwaiting = dialog;
+      // A menu repainted (or reopened) says the same thing; it's announced once.
+      if (this.announcedDialog !== dialog) {
+        this.announcedDialog = dialog;
+        this.record({
+          kind: 'status',
+          message: this.menu
+            ? `Claude Code is asking: "${dialog}" Answer it here.`
+            : `Claude Code is asking in the terminal: "${dialog}". Answer it from the terminal view (↓ and Enter pick an option).`,
+        });
+      }
       this.setState('awaiting_permission');
-    } else if (!screen.dialog && this.dialogAwaiting) {
+    } else if (!dialog && this.dialogAwaiting) {
       this.dialogAwaiting = undefined;
       if (this.state === 'awaiting_permission') this.setState('idle');
     }

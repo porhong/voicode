@@ -471,6 +471,9 @@ export class WsGateway {
         return this.sendSnapshot(conn, session.id);
       }
 
+      case 'claude.question.answer':
+        return sessions.answerQuestion(msg.sessionId, msg.index, msg.option);
+
       case 'pc.session.control': {
         const pc = this.deps.pcSessions?.get(msg.sessionId);
         if (!pc) throw new SessionError('not_found', 'That session is no longer running on the PC');

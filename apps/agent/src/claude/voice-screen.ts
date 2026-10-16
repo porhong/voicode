@@ -58,3 +58,109 @@ export function readPermissionMode(lines: string[]): PermissionModeName | undefi
     .join('\n');
   return MODE_FOOTERS.find(([re]) => re.test(footer))?.[1];
 }
+
+/**
+ * A menu Claude Code shows in the terminal (folder trust, a tool permission prompt, a
+ * question): what it asks, the lines above it (the tool and command it is about), the
+ * options, and which one the cursor is on.
+ */
+export interface ScreenMenu {
+  question: string;
+  /** What Claude Code shows above the question, as it shows it (wrapped lines joined). */
+  detail: string[];
+  options: string[];
+  selected: number;
+}
+
+const MENU_FOOTER_RE = /Enter to confirm|Esc to cancel|to select|to navigate/i;
+const SEPARATOR_RE = /^[\s─━═╌┄-]+$/;
+
+/**
+ * Reads the menu off the screen, if one is open. Its cursor (`❯`) is indented, unlike
+ * the input prompt's at the start of a line; options are the lines in the cursor's
+ * column (numbered or not), and a deeper-indented line continues the option above.
+ * A list in Claude's own reply has no cursor, so it is never taken for a menu.
+ */
+export function readMenu(lines: string[]): ScreenMenu | undefined {
+  const cursorAt = lines.findLastIndex((l) => /^\s+❯\s+\S/.test(l));
+  if (cursorAt < 0) return undefined;
+  const col = lines[cursorAt]!.indexOf('❯');
+  const optionText = (line: string): string | undefined => {
+    if (line.length <= col + 2) return undefined;
+    const marker = line.slice(col, col + 2);
+    if (line.slice(0, col).trim() || (marker !== '❯ ' && marker !== '  ')) return undefined;
+    const rest = line.slice(col + 2);
+    return /^\S/.test(rest) ? rest.trimEnd() : undefined;
+  };
+  const isContinuation = (line: string) =>
+    line.length > col + 3 && !line.slice(0, col + 3).trim() && /^\s+\S/.test(line.slice(col + 2));
+
+  // Down from the cursor, then up: each option, with its wrapped lines.
+  const rows: Array<{ text: string; at: number }> = [];
+  let end = cursorAt;
+  for (let i = cursorAt; i < lines.length; i++) {
+    const text = optionText(lines[i]!);
+    if (text !== undefined) {
+      rows.push({ text, at: i });
+      end = i;
+    } else if (isContinuation(lines[i]!) && rows.length) {
+      rows[rows.length - 1]!.text += ` ${lines[i]!.trim()}`;
+      end = i;
+    } else break;
+  }
+  let start = cursorAt;
+  for (let i = cursorAt - 1; i >= 0; i--) {
+    const text = optionText(lines[i]!);
+    if (text !== undefined) {
+      rows.unshift({ text, at: i });
+      start = i;
+    } else if (isContinuation(lines[i]!)) {
+      continue; // folded into the option above it on the way down only
+    } else break;
+  }
+  if (rows.length < 2) return undefined;
+  const numbered = rows.every((r, i) => r.text.startsWith(`${i + 1}. `));
+  const footer = lines.slice(end + 1, end + 4).some((l) => MENU_FOOTER_RE.test(l));
+  if (!numbered && !footer) return undefined;
+
+  // The question and what is above it, up to the full-width rule that opens the dialog.
+  const above: string[] = [];
+  for (let i = start - 1; i >= 0 && above.length < 24; i--) {
+    const line = lines[i]!;
+    if (/^\s*─{10,}\s*$/.test(line)) break;
+    above.unshift(line);
+  }
+  const content = above.filter((l) => l.trim() && !SEPARATOR_RE.test(l)).map((l) => l.trim());
+  if (!content.length) return undefined;
+  // The question is the last sentence asking one, even mid-paragraph (the trust check);
+  // the lines above stay as the terminal shows them.
+  const paragraphs = above
+    .map((l) => (SEPARATOR_RE.test(l) ? '' : l.trim()))
+    .join('\n')
+    .split(/\n{2,}/)
+    .map((p) => p.replace(/\n/g, ' ').trim())
+    .filter(Boolean);
+  // A line that is a question wins; else the asking sentence of a paragraph.
+  const questionLine = content.findLastIndex((l) => l.endsWith('?'));
+  const asking = paragraphs.findLast((p) => p.includes('?'));
+  const question =
+    questionLine >= 0
+      ? content[questionLine]!
+      : asking
+        ? (
+            /^.*?\?(?=\s|$)/.exec(asking.slice(0, asking.lastIndexOf('?') + 1))?.[0] ?? asking
+          ).trim()
+        : content.at(-1)!;
+  const detail =
+    questionLine >= 0
+      ? content.filter((_, i) => i !== questionLine)
+      : content.at(-1) === question
+        ? content.slice(0, -1)
+        : content;
+  return {
+    question,
+    detail,
+    options: rows.map((r) => (numbered ? r.text.replace(/^\d+\.\s+/, '') : r.text)),
+    selected: rows.findIndex((r) => r.at === cursorAt),
+  };
+}

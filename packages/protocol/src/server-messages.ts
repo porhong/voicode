@@ -65,6 +65,18 @@ export interface SessionSummary {
   attached?: boolean;
   /** Voice sessions: what Claude Code's dictation is doing. */
   voice?: { state: VoiceState; detail?: string };
+  /**
+   * Terminal sessions: a menu Claude Code shows (folder trust, a permission prompt, a
+   * question), read off its screen; answered with `claude.question.answer`.
+   */
+  question?: SessionQuestion;
+}
+
+export interface SessionQuestion {
+  text: string;
+  /** What the terminal shows above the question (the tool and command it is about). */
+  detail?: string[];
+  options: string[];
 }
 
 /** A model the phone can offer. */

@@ -204,6 +204,16 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     sessionId: id,
     allowFolder: z.boolean().optional(),
   }),
+  /**
+   * Picks an option of the menu a terminal session shows (`SessionSummary.question`).
+   * `option` is its text: the agent only answers if the same menu is still on screen.
+   */
+  z.object({
+    type: z.literal('claude.question.answer'),
+    sessionId: id,
+    index: z.number().int().min(0).max(19),
+    option: z.string().min(1).max(1000),
+  }),
   z.object({
     type: z.literal('claude.permission.respond'),
     sessionId: id,
