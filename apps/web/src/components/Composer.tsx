@@ -332,7 +332,7 @@ export function Composer({
                 : 'Listening…'
               : dictation.supported
                 ? dictation.remote
-                  ? 'Type here, or hold the mic to dictate on the PC'
+                  ? 'Type, or hold the mic to dictate'
                   : 'Ask Claude, or tap the mic'
                 : 'Ask Claude (use your keyboard’s mic to dictate)'
           }

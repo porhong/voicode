@@ -262,6 +262,14 @@ a {
 .composer-input:focus {
   outline-offset: 0;
 }
+/* A placeholder longer than a narrow phone's box stays on one line (cut at the edge;
+   Chrome draws no ellipsis there) rather than wrapping into a second line, which gave
+   the one-line box a scrollbar (▾). */
+.composer-input::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* --- Pairing ----------------------------------------------------------------- */
 
@@ -2132,6 +2140,9 @@ a {
   font: inherit;
   cursor: pointer;
   overflow: hidden;
+  /* Its rings fit the cell it is given (UsagePad measures it); they must never make the
+     cell bigger, which pushed the bottom key row out of a short landscape deck. */
+  contain: size;
   touch-action: manipulation;
   transition: transform 0.08s ease;
 }
