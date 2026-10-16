@@ -14,8 +14,14 @@ export interface MicStream {
   /** Audio is being streamed to the PC right now. */
   active: boolean;
   error?: string;
-  start: () => void;
+  /** `attachments`: images to send with what is said (see `takesImages`). */
+  start: (attachments?: string[]) => void;
   stop: () => void;
+  /**
+   * The session on screen takes images with the dictation (a Claude Code terminal
+   * session: the agent types them into its prompt while it records).
+   */
+  takesImages?: boolean;
 }
 
 export const micCaptureSupported = () =>

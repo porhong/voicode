@@ -370,9 +370,12 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
     `/voice`). `voicecode-agent doctor` checks all of this ("Phone microphone", "Claude
     Code voice").
   - With this mode chosen, **New session** on the phone runs Claude Code itself in a
-    terminal on the PC (dictation on, tap mode) instead of going through the Agent SDK.
-    Hold the mic and speak: the agent taps Claude Code's dictation key, your words are
-    transcribed by Claude Code and sent when you release. The conversation shows on the
+    terminal on the PC (dictation on, hold mode, set for that session only, so your own
+    Claude Code settings are left alone) instead of going through the Agent SDK. Hold the
+    mic and speak: the agent holds Claude Code's dictation key for as long as you do, your
+    words are transcribed by Claude Code and sent when you release. Images attached in the
+    box go with them: the agent puts them in Claude Code's prompt first and your words
+    land after them, so Claude gets one prompt with both. The conversation shows on the
     phone as usual, typed prompts go into the terminal, and every tool call still comes
     to the phone for approval (a Claude Code `PreToolUse` hook calls back into the
     agent; reads such as `Read`/`Grep` pass without asking, as in the CLI). The
@@ -380,7 +383,8 @@ or a headless Linux daemon cannot reach the desktop; `doctor` detects this.
     question on a new project, `/login`, or a prompt the hook did not cover.
   - Already have Claude Code open in a terminal? Pick it under **On this PC** and tap
     **Take control** (Windows): the agent attaches to that process's console through
-    `voicecode-console.exe`, turns on `/voice tap` there if needed, and from then on your
+    `voicecode-console.exe`, uses the dictation mode your Claude Code settings have
+    (turning dictation on if it is off), and from then on your
     dictation, typed prompts and the terminal keys go to the Claude Code in your
     terminal, whose screen is mirrored on the phone. Approvals it asks for show up in
     the terminal view (it opens by itself) and are answered with the keys. The session

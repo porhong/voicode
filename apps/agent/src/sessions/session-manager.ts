@@ -406,8 +406,8 @@ export class SessionManager extends EventEmitter<{
   }
 
   /** Push-to-talk for a voice session. */
-  ptt(sessionId: string, pressed: boolean, deviceName: string): void {
-    void this.getVoice(sessionId).pressPtt(pressed, deviceName);
+  ptt(sessionId: string, pressed: boolean, deviceName: string, imagePaths: string[] = []): void {
+    void this.getVoice(sessionId).pressPtt(pressed, deviceName, imagePaths);
   }
 
   start(

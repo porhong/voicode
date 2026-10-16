@@ -165,14 +165,33 @@ export function Composer({
   const hasImages = images.items.length > 0;
   const rowHidden =
     approvalShown || (compact && !typing && !hasText && !hasImages && !dictation.listening);
+  // Images and no text yet: the mic (say what to do with them); a small Send next to it
+  // sends the images alone.
   const action: 'stop-dictation' | 'send' | 'dictate' = dictation.listening
     ? 'stop-dictation'
-    : hasText || hasImages || !dictation.supported
+    : hasText || !dictation.supported
       ? 'send'
       : 'dictate';
   const canSend = (hasText || images.readyIds.length > 0) && !images.uploading;
+  const sendImagesAlone = hasImages && !hasText && action === 'dictate';
+  const [imageNote, setImageNote] = useState<string | undefined>();
 
   const dictate = () => {
+    const { readyIds, uploading } = imagesRef.current;
+    // Dictation to Claude Code on the PC: the images go with the press, and the agent
+    // types them into the prompt while it records, so they are sent with the words.
+    if (dictation.remote && remoteMic?.takesImages && (readyIds.length || uploading)) {
+      if (uploading) {
+        setImageNote('Wait for the image to upload, then hold the mic again.');
+        return;
+      }
+      setImageNote(undefined);
+      stopSpeaking();
+      navigator.vibrate?.(10);
+      remoteMic.start(readyIds);
+      imagesRef.current.clear();
+      return;
+    }
     // Don't let a reply being read aloud leak into the microphone.
     stopSpeaking();
     navigator.vibrate?.(10);
@@ -243,6 +262,11 @@ export function Composer({
         </div>
       )}
       {dictation.error && <p className="small error-text composer-error">{dictation.error}</p>}
+      {imageNote && !dictation.error && (
+        <p className="small error-text composer-error" role="status">
+          {imageNote}
+        </p>
+      )}
       <span className="visually-hidden" role="status">
         {dictation.listening ? 'Listening' : ''}
       </span>
@@ -348,6 +372,20 @@ export function Composer({
           disabled={disabled}
           maxLength={LIMITS.maxPromptLength}
         />
+        {sendImagesAlone && (
+          <button
+            className="composer-mini"
+            onClick={() => submit()}
+            disabled={disabled || !canSend}
+            aria-label={
+              images.uploading
+                ? 'Send the images (waiting for the upload)'
+                : 'Send the images alone'
+            }
+          >
+            <SendIcon />
+          </button>
+        )}
         <button
           className={`composer-action composer-action-${action}`}
           onClick={onAction}

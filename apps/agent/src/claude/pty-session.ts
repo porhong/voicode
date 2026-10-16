@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -40,6 +41,18 @@ const RECORD_START_TIMEOUT_MS = 2_500;
 /** After the phone stops streaming, the last audio needs this long to reach the cable. */
 const RELEASE_DELAY_MS = 600;
 const RECORD_STOP_TIMEOUT_MS = 6_000;
+/**
+ * After a recording with images typed in, the prompt must stay unchanged this long
+ * (transcription done, not sent by Claude Code) before the agent sends it itself.
+ */
+const SETTLE_MS = 2_000;
+const SETTLE_TIMEOUT_MS = 12_000;
+/** Hold mode: Space is repeated this often while the phone holds, like key-repeat. */
+const HOLD_REPEAT_MS = 30;
+/** How long Claude Code may take to turn pasted image paths into attachments. */
+const IMAGE_ATTACH_TIMEOUT_MS = 2_000;
+/** A menu is answered only once it has been on screen this long (see answerQuestion). */
+const MENU_SETTLE_MS = 600;
 /** An error shown on the phone's mic button clears itself after this. */
 const ERROR_SHOWN_MS = 5_000;
 const POLL_MS = 1_000;
@@ -204,6 +217,8 @@ export class VoiceSession extends EventEmitter<{
   private dialogAwaiting: string | undefined;
   /** The menu Claude Code shows, if any: the phone shows it with a button per option. */
   private menu: ScreenMenu | undefined;
+  /** When the menu on screen first appeared. */
+  private menuSince = 0;
   /** The last question announced in the transcript, so a repainted one isn't repeated. */
   private announcedDialog: string | undefined;
   private lastTyped: { text: string; deviceName: string } | undefined;
@@ -214,6 +229,15 @@ export class VoiceSession extends EventEmitter<{
   private dictationRequested = false;
   /** The last voice error line seen on screen, so a persistent one is reported once. */
   private screenError: string | undefined;
+  /** Hold mode: the timer repeating Space while the phone holds, and how many it typed. */
+  private holdTimer: NodeJS.Timeout | undefined;
+  private heldSpaces = 0;
+  /** Text the agent typed before this recording (image lines), to take back on failure. */
+  private typedForRecording = '';
+  /** Tap mode: images to send right after the dictated prompt. */
+  private followUpImages: string[] = [];
+  /** The dictation mode Claude Code runs in for this session (see `dictationMode`). */
+  private mode: 'tap' | 'hold' = 'hold';
 
   constructor(private readonly opts: VoiceSessionOptions) {
     super();
@@ -251,7 +275,9 @@ export class VoiceSession extends EventEmitter<{
     const settings = {
       // Both spellings: `voiceEnabled` is the older key, `voice` the current object.
       voiceEnabled: true,
-      voice: { enabled: true, mode: 'tap' },
+      // Hold mode: the transcript goes in at the cursor (after images typed first) and
+      // waits for Enter, so a dictation is sent as one prompt with whatever it belongs to.
+      voice: { enabled: true, mode: 'hold' },
       hooks: {
         PreToolUse: [
           {
@@ -344,18 +370,36 @@ export class VoiceSession extends EventEmitter<{
   }
 
   /**
-   * Types `/voice tap` once the prompt is visible and empty and no dictation hint is on
-   * screen. Claude Code 2.1.299 shows no footer hint even with voice enabled in settings,
-   * so the command (idempotent) is the reliable way to know the mode is on: it answers
-   * with "Voice mode enabled (tap)…", which `readVoiceScreen` recognises.
+   * Hosted sessions get dictation (hold mode) from their `--settings`, which applies to
+   * that session only. `/voice <mode>` is never typed there: Claude Code saves it to the
+   * user's settings. A terminal taken over keeps the user's own mode; only when its
+   * dictation is off is `/voice` typed, in the mode the user's settings name.
    */
   private ensureDictation(lines: string[]): void {
     if (this.dictationRequested || this.isClosed || !this.pty) return;
     const screen = this.lastScreen;
+    if (!this.attached) {
+      // Ready once Claude Code's prompt is on screen (not during its trust check, nor
+      // while it draws its main screen after it): keys typed earlier would be lost.
+      if (screen.dialog || this.menu || !promptIsEmpty(lines)) return;
+      this.dictationRequested = true;
+      if (this.voice === 'off') this.setVoice('idle');
+      return;
+    }
+    const user = userVoiceSettings(this.opts.claudeDir ?? claudeConfigDir());
+    this.mode = user.mode;
+    if (user.enabled) {
+      this.dictationRequested = true;
+      if (this.voice === 'off') this.setVoice('idle');
+      return;
+    }
     if (screen.enabled || screen.dialog || !promptIsEmpty(lines)) return;
     this.dictationRequested = true;
-    this.pty.write('/voice tap\r');
-    this.record({ kind: 'status', message: 'Turned on dictation in Claude Code (/voice tap).' });
+    this.pty.write(`/voice ${this.mode}\r`);
+    this.record({
+      kind: 'status',
+      message: `Turned on dictation in Claude Code (/voice ${this.mode}).`,
+    });
   }
 
   private get config(): AgentConfig['claude'] {
@@ -398,9 +442,16 @@ export class VoiceSession extends EventEmitter<{
     if (!menu || menu.options[index] !== option) {
       throw new Error('That question is no longer showing in the terminal.');
     }
+    // A menu that has only just been drawn may not be reading keys yet, and a half-read
+    // arrow (ESC [ B) counts as Esc, which cancels it (the trust check then exits).
+    const age = Date.now() - this.menuSince;
+    if (age < MENU_SETTLE_MS) await sleep(MENU_SETTLE_MS - age);
     const moves = index - menu.selected;
-    this.pty.write((moves > 0 ? '\x1b[B' : '\x1b[A').repeat(Math.abs(moves)));
-    await sleep(150);
+    for (let i = 0; i < Math.abs(moves); i++) {
+      this.pty?.write(moves > 0 ? '\x1b[B' : '\x1b[A');
+      await sleep(60);
+    }
+    await sleep(120);
     this.pty?.write('\r');
     const asked = menu.question;
     await this.waitFor(() => readMenu(this.screenLines())?.question !== asked, 3_000);
@@ -461,32 +512,78 @@ export class VoiceSession extends EventEmitter<{
     this.pty?.write('\x1b');
   }
 
+  /** The dictation mode in use: hold for hosted sessions, the user's for a taken-over one. */
+  get dictationMode(): 'tap' | 'hold' {
+    return this.attached ? this.mode : 'hold';
+  }
+
   /**
-   * Push-to-talk from the phone. Press taps the dictation key and waits for Claude Code
-   * to show it is recording; release waits for the phone's last audio to be played, then
-   * taps again, which makes Claude Code finalize the transcript and send it.
+   * Push-to-talk from the phone, sent as one prompt on release.
+   *
+   * Hold mode (hosted sessions): images are typed into the prompt first, then Space is
+   * repeated like a held key while the phone holds; Claude Code inserts the transcript
+   * after the images and waits, and the agent presses Enter once it has settled.
+   *
+   * Tap mode (a terminal taken over whose user dictates in tap mode): one tap starts,
+   * another stops, and Claude Code sends the transcript itself. It needs an empty prompt
+   * to start and drops the transcript if the prompt is edited meanwhile, so images go in
+   * a second prompt right after.
    */
-  async pressPtt(pressed: boolean, deviceName: string): Promise<void> {
+  async pressPtt(pressed: boolean, deviceName: string, imagePaths: string[] = []): Promise<void> {
     if (this.isClosed || !this.pty) return;
+    const hold = this.dictationMode === 'hold';
     if (pressed) {
       if (this.voice === 'starting' || this.voice === 'recording' || this.voice === 'finalizing') {
         return;
       }
       this.lastSpeaker = deviceName;
       this.pendingRelease = false;
+      this.followUpImages = hold ? [] : imagePaths;
+      this.typedForRecording = '';
       this.setVoice('starting');
-      this.pty.write(' ');
+      if (hold) {
+        if (imagePaths.length) {
+          this.typedForRecording = `${imagePaths.map((p) => `Attached image: ${p}`).join('\n')}\n`;
+          this.pty.write(`\x1b[200~${this.typedForRecording}\x1b[201~`);
+          // Claude Code turns a pasted image path into an attachment ("[Image #1]") once
+          // it has read the file; holding the key before that cuts the image off.
+          const want = imagePaths.length;
+          await this.waitFor(
+            () =>
+              (
+                this.screenLines()
+                  .join('\n')
+                  .match(/\[Image #\d+\]/g) ?? []
+              ).length >= want,
+            IMAGE_ATTACH_TIMEOUT_MS,
+          );
+          await sleep(150);
+        }
+        this.startHolding();
+      } else {
+        this.pty.write(' ');
+      }
       await this.waitForScreen(
         (s) => s.recording || s.error !== undefined,
         RECORD_START_TIMEOUT_MS,
       );
       const screen = this.lastScreen;
       if (this.isClosed) return;
-      if (screen.error) return this.setVoice('error', screen.error);
       if (!screen.recording) {
+        this.stopHolding(true);
+        if (imagePaths.length) {
+          this.record({
+            kind: 'status',
+            message: `The ${imagePaths.length === 1 ? 'image was' : 'images were'} not sent, since dictation did not start; attach ${imagePaths.length === 1 ? 'it' : 'them'} again.`,
+          });
+        }
+        this.followUpImages = [];
+        if (screen.error) return this.setVoice('error', screen.error);
         return this.setVoice(
           'error',
-          'Claude Code did not start recording: the prompt on the PC may not be empty, or dictation is off there (/voice tap). Open the terminal to check.',
+          hold
+            ? 'Claude Code did not start recording: dictation may be off there. Open the terminal to check.'
+            : 'Claude Code did not start recording: the prompt on the PC may not be empty, or dictation is off there (/voice tap). Open the terminal to check.',
         );
       }
       this.setVoice('recording');
@@ -503,14 +600,78 @@ export class VoiceSession extends EventEmitter<{
     }
     if (this.voice !== 'recording') return;
     this.setVoice('finalizing');
+    // The phone's last audio still has to reach the virtual microphone.
     await sleep(RELEASE_DELAY_MS);
-    if (this.isClosed || !this.pty) return;
-    this.pty.write(' ');
+    if (this.isClosed || !this.pty) return this.stopHolding(false);
+    if (hold) this.stopHolding(false);
+    else this.pty.write(' ');
     await this.waitForScreen((s) => !s.recording || s.error !== undefined, RECORD_STOP_TIMEOUT_MS);
     if (this.isClosed) return;
     const screen = this.lastScreen;
     if (screen.error) this.setVoice('error', screen.error);
     else this.setVoice('idle');
+    if (hold) {
+      await this.sendWhatStayed();
+    } else if (this.followUpImages.length) {
+      const images = this.followUpImages;
+      this.followUpImages = [];
+      await this.waitFor(() => promptIsEmpty(this.screenLines()), SETTLE_TIMEOUT_MS);
+      if (!this.isClosed && promptIsEmpty(this.screenLines())) {
+        this.sendPrompt('The image for my last message.', deviceName, images);
+      }
+    }
+  }
+
+  /** Hold mode: Space repeated like a held key, for as long as the phone holds. */
+  private startHolding(): void {
+    this.stopHolding(false);
+    this.heldSpaces = 0;
+    this.holdTimer = setInterval(() => {
+      if (!this.pty) return this.stopHolding(false);
+      this.pty.write(' ');
+      this.heldSpaces++;
+    }, HOLD_REPEAT_MS);
+    this.holdTimer.unref();
+  }
+
+  /**
+   * Lets go of the held key. `undo` (recording never started): the spaces it typed, and
+   * what was typed before it (image lines), are taken back out of the prompt.
+   */
+  private stopHolding(undo: boolean): void {
+    clearInterval(this.holdTimer);
+    this.holdTimer = undefined;
+    if (!undo || !this.pty) return;
+    const typed = this.heldSpaces + [...this.typedForRecording].length;
+    if (typed) this.pty.write('\x7f'.repeat(typed));
+    this.heldSpaces = 0;
+    this.typedForRecording = '';
+  }
+
+  /**
+   * After a hold-mode recording the transcript waits in the prompt (after any images);
+   * it is sent once the prompt has stayed the same for a while (Claude Code finalizes
+   * the transcript after the key is let go). Not when the prompt is empty (sent already,
+   * `autoSubmit` in the user's settings) or a menu has opened.
+   */
+  private async sendWhatStayed(): Promise<void> {
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+    let last = '';
+    let since = Date.now();
+    while (Date.now() < deadline && !this.isClosed && this.pty) {
+      await sleep(250);
+      const lines = this.screenLines();
+      if (promptIsEmpty(lines) || readMenu(lines) || this.lastScreen.dialog) return;
+      if (this.lastScreen.recording) return; // a new recording took over
+      const now = lines.join('\n');
+      if (now !== last) {
+        last = now;
+        since = Date.now();
+      } else if (Date.now() - since >= SETTLE_MS) {
+        this.pty.write('\r');
+        return;
+      }
+    }
   }
 
   noteStatus(message: string): void {
@@ -677,6 +838,7 @@ export class VoiceSession extends EventEmitter<{
 
   private handleExit(exitCode: number): void {
     this.exitCode = exitCode;
+    this.stopHolding(false);
     this.pty = undefined;
     clearInterval(this.pollTimer);
     clearTimeout(this.scanTimer);
@@ -761,7 +923,10 @@ export class VoiceSession extends EventEmitter<{
     const key = (m: ScreenMenu | undefined) => (m ? JSON.stringify([m.question, m.options]) : '');
     const changed = key(menu) !== key(this.menu);
     this.menu = menu;
-    if (changed) this.emitState();
+    if (changed) {
+      this.menuSince = Date.now();
+      this.emitState();
+    }
   }
 
   private trackDialog(screen: VoiceScreen): void {
@@ -944,12 +1109,15 @@ function startModel(
  * the rest of the line, so a transcript has "[Image #1]text\nAttached image:".
  */
 export function withoutImageMentions(text: string): { text: string; images: number } {
-  const paths = (text.match(/^Attached image:/gm) ?? []).length;
   const tokens = (text.match(/\[Image #\d+\]/g) ?? []).length;
+  const withoutTokens = text.replace(/\[Image #\d+\] ?/g, '');
+  const paths = (withoutTokens.match(/^Attached image:/gm) ?? []).length;
   return {
-    text: text
-      .replace(/\[Image #\d+\] ?/g, '')
-      .replace(/^Attached image:.*$/gm, '')
+    text: withoutTokens
+      // A line that only names an image goes; a label with words after it (a dictation
+      // landed on the line Claude Code left) loses just the label.
+      .replace(/^Attached image:[ \t]*(?:\S+\.(?:png|jpe?g|gif|webp))?[ \t]*$/gim, '')
+      .replace(/^Attached image:[ \t]*/gim, '')
       .trim(),
     images: Math.max(paths, tokens),
   };
@@ -960,4 +1128,23 @@ export function promptIsEmpty(lines: string[]): boolean {
   const prompt = lines.findLast((l) => /^[\s│|]*[>❯](\s|$)/.test(l));
   if (!prompt) return false;
   return /^[\s│|]*[>❯]\s*(Try\s+".*)?[\s│|]*$/.test(prompt);
+}
+
+/**
+ * Dictation as the user's Claude Code settings have it (a terminal taken over runs with
+ * them). Claude Code's default mode is hold.
+ */
+export function userVoiceSettings(claudeDir: string): { enabled: boolean; mode: 'tap' | 'hold' } {
+  try {
+    const settings = JSON.parse(readFileSync(path.join(claudeDir, 'settings.json'), 'utf8')) as {
+      voice?: { enabled?: unknown; mode?: unknown };
+      voiceEnabled?: unknown;
+    };
+    return {
+      enabled: settings.voice?.enabled === true || settings.voiceEnabled === true,
+      mode: settings.voice?.mode === 'tap' ? 'tap' : 'hold',
+    };
+  } catch {
+    return { enabled: false, mode: 'hold' };
+  }
 }

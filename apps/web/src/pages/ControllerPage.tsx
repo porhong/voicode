@@ -168,11 +168,17 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
           error:
             micStream.error ??
             (voiceSession?.voice?.state === 'error' ? voiceSession.voice.detail : undefined),
-          start: () => {
+          start: (attachments?: string[]) => {
             if (voiceSession)
-              send({ type: 'voice.ptt', sessionId: voiceSession.id, pressed: true });
+              send({
+                type: 'voice.ptt',
+                sessionId: voiceSession.id,
+                pressed: true,
+                ...(attachments?.length ? { attachments } : {}),
+              });
             micStream.start();
           },
+          takesImages: voiceSession !== undefined,
           stop: () => {
             micStream.stop();
             if (voiceSession)

@@ -61,6 +61,10 @@ export function transcriptEvents(entry: unknown): ClaudeEvent[] {
       return out;
     }
     if (!Array.isArray(content)) return out;
+    // Images Claude Code attached (a pasted image or image path) travel as image blocks.
+    const images = (content as Array<Record<string, unknown>>).filter(
+      (b) => b.type === 'image',
+    ).length;
     for (const block of content as Array<Record<string, unknown>>) {
       if (block.type === 'text' && typeof block.text === 'string') {
         const text = typedText(block.text);
@@ -79,6 +83,8 @@ export function transcriptEvents(entry: unknown): ClaudeEvent[] {
         });
       }
     }
+    const prompt = out.find((e) => e.kind === 'user_prompt');
+    if (images && prompt?.kind === 'user_prompt') prompt.images = (prompt.images ?? 0) + images;
     return out;
   }
 

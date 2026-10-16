@@ -248,6 +248,21 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   headless Chrome against `ui-demo.ts` (whose fake terminal opens a menu for "deploy"),
   chat and deck, dark and light. Not tried on a real phone or with AskUserQuestion.
 
+- Voice + images (2026-10-17): hosted voice sessions now dictate in **hold** mode, given
+  by `--settings` only (typing `/voice <mode>` saves it to the user's settings, so it is no
+  longer typed there). Push-to-talk repeats Space every 30 ms while the phone holds (like
+  key-repeat), keeps it up 600 ms after release for the last audio, and presses Enter once
+  the transcript has landed and the prompt stayed unchanged for 2 s (never into a menu or
+  an empty prompt). Images sent with the press (`voice.ptt.attachments`) are pasted first
+  and become Claude Code attachments (`[Image #1]`); the transcript lands after them, so
+  one prompt carries both. Tap mode can't: it needs an empty prompt to start and drops the
+  transcript when the prompt is edited while recording (checked); taken-over terminals keep
+  the user's mode, and in tap mode images follow as a second prompt. Dictation counts as
+  ready only once the prompt is on screen. Menus are answered only after 600 ms on screen,
+  one arrow per write (a half-read arrow counts as Esc). Verified with Claude Code 2.1.299,
+  Windows text-to-speech played into VB-CABLE, and an image: one prompt "What color is the
+  attached image? …" with the image, answered "Blue"; the user's settings file unchanged.
+
 Not verified yet:
 
 - A real phone: certificate install, microphone, touch.

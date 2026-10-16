@@ -19,7 +19,7 @@ import { SessionError, type SessionManager } from '../sessions/session-manager.j
 import type { Logger } from '../util/logger.js';
 import { VERSION } from '../util/version.js';
 import type { MicRouter } from '../voice/mic-router.js';
-import type { AttachmentStore } from '../storage/attachments.js';
+import type { Attachment, AttachmentStore } from '../storage/attachments.js';
 import { TokenBucket } from './token-bucket.js';
 
 const HEARTBEAT_MS = 15_000;
@@ -336,8 +336,15 @@ export class WsGateway {
         const session = await sessions.startVoice(msg.projectId, msg.resume, msg.model, msg.effort);
         return this.sendSnapshot(conn, session.id);
       }
-      case 'voice.ptt':
-        return sessions.ptt(msg.sessionId, msg.pressed, conn.device.name);
+      case 'voice.ptt': {
+        const images = await this.resolveAttachments(msg.attachments ?? []);
+        return sessions.ptt(
+          msg.sessionId,
+          msg.pressed,
+          conn.device.name,
+          images.map((i) => i.path),
+        );
+      }
 
       case 'terminal.subscribe': {
         const session = sessions.getVoice(msg.sessionId);
@@ -384,17 +391,7 @@ export class WsGateway {
           sessions: await sessions.history(msg.projectId),
         });
       case 'claude.prompt': {
-        const ids = msg.attachments ?? [];
-        const store = this.deps.attachments;
-        if (ids.length && !store) throw new SessionError('bad_request', 'Images are not available');
-        const images = [];
-        for (const attachmentId of ids) {
-          const found = await store!.get(attachmentId);
-          if (!found) {
-            throw new SessionError('bad_request', 'An attached image has expired; attach it again');
-          }
-          images.push(found);
-        }
+        const images = await this.resolveAttachments(msg.attachments ?? []);
         return sessions.prompt(msg.sessionId, msg.text, conn.device.name, images);
       }
       case 'claude.interrupt':
@@ -535,6 +532,22 @@ export class WsGateway {
 
   private check(conn: Connection, result: RouterResult): void {
     if (!result.ok) this.error(conn, result.code, result.message);
+  }
+
+  /** The stored images for the ids a phone sent; an unknown or expired one is refused. */
+  private async resolveAttachments(ids: string[]): Promise<Attachment[]> {
+    if (!ids.length) return [];
+    const store = this.deps.attachments;
+    if (!store) throw new SessionError('bad_request', 'Images are not available');
+    const images: Attachment[] = [];
+    for (const attachmentId of ids) {
+      const found = await store.get(attachmentId);
+      if (!found) {
+        throw new SessionError('bad_request', 'An attached image has expired; attach it again');
+      }
+      images.push(found);
+    }
+    return images;
   }
 
   private error(conn: Connection, code: ErrorCode, message: string): void {

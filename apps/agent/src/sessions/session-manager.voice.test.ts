@@ -109,7 +109,7 @@ describe('voice sessions', () => {
       voice: { enabled: boolean; mode: string };
       hooks: { PreToolUse: Array<{ hooks: Array<{ command: string; timeout: number }> }> };
     };
-    expect(settings.voice).toEqual({ enabled: true, mode: 'tap' });
+    expect(settings.voice).toEqual({ enabled: true, mode: 'hold' });
     expect(settings.hooks.PreToolUse[0]!.hooks[0]!.command).toContain('hook pre-tool-use');
     expect(spawned!.env.VOICECODE_HOOK_URL).toMatch(/^http:\/\/127\.0\.0\.1:/);
     expect(spawned!.env.VOICECODE_HOOK_TOKEN).toHaveLength(48);
@@ -127,27 +127,75 @@ describe('voice sessions', () => {
     await until(() => manager.get(id).summary().state === 'running');
   });
 
-  it('presses the dictation key on push-to-talk and releases after the audio drained', async () => {
+  it('holds the dictation key while the phone holds, and sends once the words have landed', async () => {
     const summary = () => manager.get(id).summary();
+    pty.written = '';
     manager.ptt(id, true, 'Phone');
-    await until(() => pty.written === ' ');
+    // Hold mode: Space repeats like a held key.
+    await until(() => pty.written.length >= 3);
+    expect(pty.written).toMatch(/^ +$/);
     expect(summary().voice?.state).toBe('starting');
-    pty.show('> \n  ● REC · tap to send');
+    pty.show('> \n  listening…');
     await until(() => summary().voice?.state === 'recording');
 
     manager.ptt(id, false, 'Phone');
     await until(() => summary().voice?.state === 'finalizing');
-    expect(pty.written).toBe(' ');
-    await until(() => pty.written === '  ', 2_000);
-    pty.show('> refactor the auth middleware\n  hold space to speak');
+    // The key is let go after the last audio has drained.
+    await sleep(900);
+    const held = pty.written.length;
+    await sleep(200);
+    expect(pty.written.length).toBe(held);
+    pty.show('> refactor the auth middleware\n  ⏸ manual mode on');
     await until(() => summary().voice?.state === 'idle');
+    await until(() => pty.written.endsWith('\r'), 5_000);
+    expect(pty.written.trimEnd()).toBe('');
+    pty.show('> ');
   });
 
-  it('reports when Claude Code did not start recording', async () => {
+  it('types attached images first, so the words land after them in one prompt', async () => {
+    const summary = () => manager.get(id).summary();
+    pty.written = '';
+    manager.ptt(id, true, 'Phone', ['C:\\img\\a.png']);
+    await until(() => pty.written.includes('\x1b[201~ '));
+    expect(pty.written.startsWith('\x1b[200~Attached image: C:\\img\\a.png\n\x1b[201~ ')).toBe(
+      true,
+    );
+    pty.show('> Attached image: C:\\img\\a.png\n  listening…');
+    await until(() => summary().voice?.state === 'recording');
+    manager.ptt(id, false, 'Phone');
+    await until(() => summary().voice?.state === 'finalizing');
+    pty.show('> Attached image: C:\\img\\a.png\n  fix this layout please\n  ⏸ manual mode on');
+    await until(() => summary().voice?.state === 'idle');
+    await until(() => pty.written.endsWith('\r'), 5_000);
+    pty.show('> ');
+  });
+
+  it('sends nothing more when Claude Code already sent it (autoSubmit)', async () => {
+    const summary = () => manager.get(id).summary();
     pty.written = '';
     manager.ptt(id, true, 'Phone');
-    await until(() => manager.get(id).summary().voice?.state === 'error', 4_000);
+    await until(() => pty.written.length >= 3);
+    pty.show('> \n  listening…');
+    await until(() => summary().voice?.state === 'recording');
+    manager.ptt(id, false, 'Phone');
+    await until(() => summary().voice?.state === 'finalizing');
+    pty.show('> \n  ⏸ manual mode on');
+    await until(() => summary().voice?.state === 'idle');
+    await sleep(2_500);
+    expect(pty.written.endsWith('\r')).toBe(false);
+  });
+
+  it('reports when Claude Code did not start recording, and takes the typing back', async () => {
+    pty.written = '';
+    manager.ptt(id, true, 'Phone', ['C:\\img\\b.png']);
+    await until(() => manager.get(id).summary().voice?.state === 'error', 8_000);
     expect(manager.get(id).summary().voice?.detail).toMatch(/did not start recording/);
+    // The image line and every space typed are deleted again.
+    const typed = '\x1b[200~Attached image: C:\\img\\b.png\n\x1b[201~';
+    const spaces = (pty.written.match(/ /g) ?? []).length - 2; // two inside the image line
+    const deletes = (pty.written.match(/\x7f/g) ?? []).length;
+    expect(pty.written.startsWith(typed)).toBe(true);
+    expect(deletes).toBe(spaces + [...'Attached image: C:\\img\\b.png\n'].length);
   });
 
   it('follows the transcript and labels dictated prompts with the speaker', async () => {
@@ -172,13 +220,14 @@ describe('voice sessions', () => {
           message: { content: [{ type: 'text', text: 'On it.' }] },
         }),
     );
-    await until(() => manager.get(id).events().length >= 2);
-    expect(
+    const said = () =>
       manager
         .get(id)
         .events()
-        .map((e) => e.event),
-    ).toEqual([
+        .map((e) => e.event)
+        .filter((e) => e.kind !== 'status');
+    await until(() => said().length >= 2);
+    expect(said()).toEqual([
       { kind: 'user_prompt', text: 'refactor the auth middleware', deviceName: 'Phone' },
       { kind: 'assistant_text', text: 'On it.' },
     ]);
@@ -250,7 +299,12 @@ describe('voice sessions', () => {
     });
     await expect(manager.controlPc(pc)).rejects.toThrow(/already controlled/);
 
-    // Dictation is off and the prompt is empty: the agent turns it on.
+    // Dictation is off in the user's settings and the prompt is empty: the agent turns it
+    // on, in the mode those settings name (tap here).
+    await writeFile(
+      path.join(claudeDir, 'settings.json'),
+      JSON.stringify({ voice: { enabled: false, mode: 'tap' } }),
+    );
     attached.show('❯ Try "how does <filepath> work?"\n  ⏸ manual mode on · ? for shortcuts');
     await until(() => attached.written.includes('/voice tap\r'));
     attached.show('❯ /voice tap\n  ⎿  Voice mode enabled (tap). Tap space to start.\n❯\n');

@@ -71,7 +71,19 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     effort: EffortSchema.optional(),
   }),
   /** Push-to-talk for a voice session: press taps the dictation key, release sends. */
-  z.object({ type: z.literal('voice.ptt'), sessionId: id, pressed: z.boolean() }),
+  /**
+   * Push-to-talk. `attachments` (on the press) are images to send with what is said:
+   * the agent types them into Claude Code's prompt while it records.
+   */
+  z.object({
+    type: z.literal('voice.ptt'),
+    sessionId: id,
+    pressed: z.boolean(),
+    attachments: z
+      .array(z.string().regex(/^[0-9a-f]{32}$/))
+      .max(LIMITS.maxAttachments)
+      .optional(),
+  }),
 
   // --- Terminal of a voice session ---------------------------------------
   z.object({
