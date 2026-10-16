@@ -53,6 +53,8 @@ export interface AppState {
   voiceMic: { status: VoiceMicStatus; youHoldLease: boolean };
   /** Whether the agent can take over a Claude Code running in a terminal on the PC. */
   pcControl: { available: boolean; reason?: string };
+  /** Whether the agent can take over a session of the Claude Desktop app. */
+  desktopControl: { available: boolean; reason?: string };
   history: Record<string, HistoricSession[]>;
   /** The latest model list the agent sent (for a session, or in general). */
   models?: { sessionId?: string; models: ModelChoice[]; persistsDefault: boolean };
@@ -81,6 +83,7 @@ export const initialState: AppState = {
   mouse: { status: { available: false, driver: 'none' }, youHoldLease: false },
   voiceMic: { status: { available: false, driver: 'none' }, youHoldLease: false },
   pcControl: { available: false },
+  desktopControl: { available: false },
   history: {},
   pcSessions: [],
   pcEvents: {},
@@ -141,6 +144,7 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
           youHoldLease: false,
         },
         pcControl: msg.pcControl ?? { available: false, reason: 'older agent' },
+        desktopControl: msg.desktopControl ?? { available: false, reason: 'older agent' },
         // Permissions are re-sent right after welcome.
         permissions: {},
         protocolMismatch: msg.protocolVersion !== PROTOCOL_VERSION,
@@ -280,4 +284,14 @@ function applyServerMessage(state: AppState, msg: ServerMessage): AppState {
       };
     }
   }
+}
+
+/** Whether the phone can take control of this PC session (its terminal or Claude Desktop). */
+export function canControl(state: AppState, pc: PcSession): boolean {
+  return pc.app === 'desktop' ? state.desktopControl.available : state.pcControl.available;
+}
+
+/** Where a PC session runs, in words. */
+export function pcPlace(pc: PcSession): string {
+  return pc.app === 'desktop' ? 'Claude Desktop' : 'terminal';
 }

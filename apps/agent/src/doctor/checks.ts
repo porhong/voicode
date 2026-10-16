@@ -35,6 +35,8 @@ import {
   tunnelSetupProblem,
 } from '../tunnel/cloudflared.js';
 import { consoleAttachStatus } from '../claude/console-attach.js';
+import { desktopHookInstalled } from '../desktop/approval-hook.js';
+import { desktopControlStatus } from '../desktop/desktop-helper.js';
 import { loadPtySpawn } from '../claude/pty-session.js';
 import { virtualMicSetupHint, windowsAudioHelper } from '../voice/resolve-driver.js';
 
@@ -175,6 +177,25 @@ export async function runChecks(
         ? 'can take over a Claude Code running in a terminal'
         : (control.reason ?? 'unavailable'),
       fix: control.available ? undefined : 'Use "Continue as copy" on the phone instead',
+    });
+  }
+
+  // Claude Desktop (Windows) ------------------------------------------------------
+  if (process.platform === 'win32') {
+    const helper = desktopControlStatus();
+    const hook = desktopHookInstalled();
+    add({
+      name: 'Claude Desktop control',
+      status: helper.available && hook ? 'ok' : 'warn',
+      detail: !helper.available
+        ? (helper.reason ?? 'unavailable')
+        : hook
+          ? 'phone approvals through the PermissionRequest hook'
+          : 'off',
+      fix:
+        helper.available && !hook
+          ? 'Run `voicecode-agent desktop enable` to control Claude Desktop sessions from the phone'
+          : undefined,
     });
   }
 

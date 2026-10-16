@@ -77,21 +77,26 @@ export class ApprovalBroker extends EventEmitter<{
   }
 
   /**
-   * A permission check that did not come through the SDK (a Claude Code hook): the same
-   * phone approval, answered as a plain decision. Nothing can be "remembered" here, since
-   * hooks carry no rule suggestions.
+   * A permission check that did not come through the SDK (a Claude Code hook, or a
+   * request Claude Desktop shows): the same phone approval, answered as a plain decision.
+   * Nothing can be "remembered" here, since these carry no rule suggestions. `signal`
+   * withdraws the request (it was answered elsewhere); `incomplete` marks input the phone
+   * cannot be sure it shows in full, which can then only be rejected.
    */
   async ask(
     sessionId: string,
     toolName: string,
     input: Record<string, unknown>,
-  ): Promise<{ decision: 'allow' | 'deny'; reason?: string }> {
+    opts: { signal?: AbortSignal; incomplete?: boolean; description?: string } = {},
+  ): Promise<{ decision: 'allow' | 'deny'; reason?: string; feedback?: string }> {
     const result = await this.enqueue(sessionId, toolName, input, {
-      signal: new AbortController().signal,
+      signal: opts.signal ?? new AbortController().signal,
+      incomplete: opts.incomplete,
+      description: opts.description,
     });
-    return result.behavior === 'allow'
-      ? { decision: 'allow' }
-      : { decision: 'deny', reason: result.message };
+    if (result.behavior === 'allow') return { decision: 'allow' };
+    const feedback = (result as { feedback?: string }).feedback;
+    return { decision: 'deny', reason: result.message, ...(feedback ? { feedback } : {}) };
   }
 
   private enqueue(
@@ -104,6 +109,7 @@ export class ApprovalBroker extends EventEmitter<{
       title?: string;
       description?: string;
       displayName?: string;
+      incomplete?: boolean;
     },
   ): Promise<PermissionResult> {
     return new Promise<PermissionResult>((resolve) => {
@@ -112,7 +118,9 @@ export class ApprovalBroker extends EventEmitter<{
       const rememberable = rememberableUpdates(options.suggestions ?? []);
       const acceptsEdits = rememberable.some((u) => u.type === 'setMode');
 
-      const { detail, complete } = describeToolInput(toolName, input);
+      const described = describeToolInput(toolName, input);
+      const detail = described.detail;
+      const complete = described.complete && !options.incomplete;
       const request: PermissionRequest = {
         sessionId,
         requestId,
@@ -209,11 +217,15 @@ export class ApprovalBroker extends EventEmitter<{
         ...(remember && p.rememberable.length ? { updatedPermissions: p.rememberable } : {}),
       });
     } else {
-      p.settle({
+      const result: PermissionResult = {
         behavior: 'deny',
         message: message ?? `The user rejected this ${p.request.toolName} call.`,
         interrupt: interrupted,
-      });
+      };
+      // What the user typed, for callers (`ask`) that pass it on another way.
+      p.settle(
+        reason === 'user' && message ? Object.assign(result, { feedback: message }) : result,
+      );
     }
     this.emit('resolved', {
       sessionId: p.request.sessionId,

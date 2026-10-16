@@ -98,17 +98,19 @@ export function loadPtySpawn(): PtySpawn {
 }
 
 /**
- * The shell command Claude Code runs as the PreToolUse hook: this very program, in
- * whatever form it is running (standalone binary, installed package, or sources).
+ * The shell command Claude Code runs as a hook: this very program, in whatever form it
+ * is running (standalone binary, installed package, or sources), with `hook <event>`.
  */
-export function hookCommandLine(): string {
+export function hookCommandLine(
+  event: 'pre-tool-use' | 'permission-request' = 'pre-tool-use',
+): string {
   const q = (s: string) => `"${s}"`;
-  if (isStandalone()) return `${q(process.execPath)} hook pre-tool-use`;
+  if (isStandalone()) return `${q(process.execPath)} hook ${event}`;
   const script = process.argv[1] ?? '';
   if (/\.[cm]?ts$/.test(script)) {
-    return `${q(process.execPath)} --import tsx ${q(script)} hook pre-tool-use`;
+    return `${q(process.execPath)} --import tsx ${q(script)} hook ${event}`;
   }
-  return `${q(process.execPath)} ${q(script)} hook pre-tool-use`;
+  return `${q(process.execPath)} ${q(script)} hook ${event}`;
 }
 
 export interface VoiceSessionOptions {

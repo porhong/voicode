@@ -268,6 +268,7 @@ export class WsGateway {
       mouse: router.status(),
       voiceMic: mic.status(),
       pcControl: sessions.pcControlStatus(),
+      desktopControl: sessions.desktopControlStatus(),
     });
     for (const request of sessions.broker.pendingFor()) {
       this.send(conn, { type: 'claude.permission.request', request });
@@ -480,7 +481,8 @@ export class WsGateway {
           await this.deps.allowFolder(pc.cwd, conn.device.name);
         }
         conn.pcSubscription = undefined;
-        const session = await sessions.controlPc(pc);
+        const session =
+          pc.app === 'desktop' ? await sessions.controlDesktop(pc) : await sessions.controlPc(pc);
         return this.sendSnapshot(conn, session.id);
       }
 

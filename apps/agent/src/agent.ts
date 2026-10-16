@@ -145,7 +145,7 @@ export class Agent extends EventEmitter<{
       config,
       logger.child({ component: 'claude' }),
       undefined,
-      {},
+      { hookEndpointFile: paths.hookEndpoint },
       this.attachments.dir,
     );
     const sessions = this.sessions;

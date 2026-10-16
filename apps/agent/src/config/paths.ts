@@ -22,6 +22,8 @@ export interface AgentPaths {
   tunnelToken: string;
   /** Named pipe (Windows) or Unix domain socket (Linux) for the local control channel. */
   ipcEndpoint: string;
+  /** Where a running agent's hook server listens, for hooks Claude Desktop runs. */
+  hookEndpoint: string;
 }
 
 /**
@@ -66,5 +68,6 @@ export function resolvePaths(home = resolveHome()): AgentPaths {
     tunnelCredentials: path.join(tunnelDir, 'credentials.json'),
     tunnelToken: path.join(tunnelDir, 'token'),
     ipcEndpoint,
+    hookEndpoint: path.join(home, 'hook-endpoint.json'),
   };
 }

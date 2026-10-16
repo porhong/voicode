@@ -141,8 +141,10 @@ for (const helper of HELPERS[target]) {
   }
 }
 if (process.platform === 'win32') {
-  const ps1 = path.join(agentDir, 'native-bin', 'win32', 'voicecode-input.ps1');
-  assets.push({ key: 'native-bin/win32/voicecode-input.ps1', file: ps1 });
+  for (const name of ['voicecode-input.ps1', 'voicecode-desktop.ps1']) {
+    const ps1 = path.join(agentDir, 'native-bin', 'win32', name);
+    assets.push({ key: `native-bin/win32/${name}`, file: ps1 });
+  }
 }
 // node-pty (Claude Code voice sessions) is a native addon the bundle cannot contain;
 // its platform package is embedded as files and loaded from the extracted runtime.

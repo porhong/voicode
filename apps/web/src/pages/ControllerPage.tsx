@@ -24,7 +24,7 @@ import { useSpeakReplies } from '../hooks/useSpeakReplies';
 import { useSettings } from '../hooks/useSettings';
 import { useUsage } from '../hooks/useUsage';
 import { useWakeLock } from '../hooks/useWakeLock';
-import { initialState, reducer, type Toast } from '../lib/store';
+import { initialState, reducer, type Toast, canControl, pcPlace } from '../lib/store';
 
 type Tab = 'claude' | 'trackpad';
 
@@ -153,8 +153,9 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   // In a voice session the agent also presses Claude Code's dictation key for us, so a
   // press is "start recording there + stream the mic" and a release the reverse.
   const voiceSession = active?.kind === 'voice' ? active : undefined;
+  // Claude Desktop records from its own window; the phone's own dictation types into it.
   const remoteMic: MicStream | undefined =
-    settings.dictation === 'claude-code'
+    settings.dictation === 'claude-code' && active?.kind !== 'desktop'
       ? {
           ...micStream,
           error:
@@ -202,12 +203,15 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
     }
     send({ type: 'pc.session.continue', sessionId: pc.sessionId, allowFolder: !pc.projectId });
   };
-  // Taking control keeps the session in the terminal: keys and dictation go to it.
+  // Taking control keeps the session where it runs (a terminal, Claude Desktop): prompts
+  // go to it, and its questions come here.
   const controlPc = (target = pc) => {
     if (!target) return;
     if (!target.projectId) {
       const ok = confirm(
-        `Allow Claude to work in this folder from your phone?\n\n${target.cwd}\n\nTool calls it asks about in the terminal can be answered from the terminal view.`,
+        target.app === 'desktop'
+          ? `Allow Claude to work in this folder from your phone?\n\n${target.cwd}\n\nWhat Claude Desktop asks to approve will come to this phone.`
+          : `Allow Claude to work in this folder from your phone?\n\n${target.cwd}\n\nTool calls it asks about in the terminal can be answered from the terminal view.`,
       );
       if (!ok) return;
     }
@@ -278,18 +282,23 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
       <p className="muted">
         Start a session in one of your projects, then speak or type what you want done.
       </p>
-      {state.pcControl.available && state.pcSessions.length > 0 && (
+      {state.pcSessions.some((p) => canControl(state, p)) && (
         <div className="pc-offer">
-          {state.pcSessions.slice(0, 3).map((p) => (
-            <button
-              key={p.sessionId}
-              className="btn btn-block"
-              disabled={connection !== 'open'}
-              onClick={() => controlPc(p)}
-            >
-              Take control of the terminal in {p.folder}
-            </button>
-          ))}
+          {state.pcSessions
+            .filter((p) => canControl(state, p))
+            .slice(0, 3)
+            .map((p) => (
+              <button
+                key={p.sessionId}
+                className="btn btn-block"
+                disabled={connection !== 'open'}
+                onClick={() => controlPc(p)}
+              >
+                {p.app === 'desktop'
+                  ? `Take control of “${p.name ?? p.folder}” in Claude Desktop`
+                  : `Take control of the terminal in ${p.folder}`}
+              </button>
+            ))}
         </div>
       )}
       <StartSession
@@ -543,17 +552,23 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 {pc ? (
                   <>
                     <p className="pc-bar-text">
-                      <strong>Running in a terminal on the PC.</strong>{' '}
+                      <strong>
+                        {pc.app === 'desktop'
+                          ? 'Running in Claude Desktop on the PC.'
+                          : 'Running in a terminal on the PC.'}
+                      </strong>{' '}
                       <span className="muted">
-                        {state.pcControl.available
-                          ? 'Take control to dictate and type into it, or continue a copy here.'
+                        {canControl(state, pc)
+                          ? pc.app === 'desktop'
+                            ? 'Take control to send prompts and answer its approvals from here, or continue a copy here.'
+                            : 'Take control to dictate and type into it, or continue a copy here.'
                           : pc.status === 'working' || pc.status === 'waiting'
                             ? 'You can continue it here once it finishes.'
-                            : 'Continue it here as a copy; the terminal keeps its own.'}
+                            : `Continue it here as a copy; the ${pcPlace(pc)} keeps its own.`}
                       </span>
                     </p>
                     <div className="pc-bar-actions">
-                      {state.pcControl.available && (
+                      {canControl(state, pc) && (
                         <button
                           className="btn btn-primary"
                           disabled={connection !== 'open'}
@@ -563,7 +578,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                         </button>
                       )}
                       <button
-                        className={state.pcControl.available ? 'btn' : 'btn btn-primary'}
+                        className={canControl(state, pc) ? 'btn' : 'btn btn-primary'}
                         disabled={
                           connection !== 'open' ||
                           pc.status === 'working' ||
@@ -571,7 +586,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                         }
                         onClick={continuePc}
                       >
-                        {state.pcControl.available ? 'Continue as copy' : 'Continue on phone'}
+                        {canControl(state, pc) ? 'Continue as copy' : 'Continue on phone'}
                       </button>
                     </div>
                   </>

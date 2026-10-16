@@ -26,14 +26,28 @@ import { UsageMeter } from '../claude/usage.js';
 import { HookServer, type HookDecision, type PreToolUseEvent } from '../claude/hook-server.js';
 import { attachConsole, consoleAttachStatus } from '../claude/console-attach.js';
 import {
+  DesktopHelper,
+  desktopControlStatus,
+  type DesktopDriver,
+} from '../desktop/desktop-helper.js';
+import { DesktopSession } from '../desktop/desktop-session.js';
+import {
+  desktopHookInstalled,
+  removeHookEndpoint,
+  writeHookEndpoint,
+} from '../desktop/approval-hook.js';
+import {
   hookCommandLine,
   VoiceSession,
   type PtyHandle,
   type PtySpawn,
 } from '../claude/pty-session.js';
 
-/** A phone session, driven through the SDK or hosted in a terminal for dictation. */
-export type ManagedSession = ClaudeSession | VoiceSession;
+/**
+ * A phone session: driven through the SDK, hosted in (or attached to) a terminal, or a
+ * Claude Desktop session taken over through its window.
+ */
+export type ManagedSession = ClaudeSession | VoiceSession | DesktopSession;
 
 /**
  * Tools Claude Code runs without asking anyway (reads, bookkeeping); a hook that asked
@@ -84,6 +98,8 @@ export class SessionManager extends EventEmitter<{
   private readonly sessions = new Map<string, ManagedSession>();
   private hooks: HookServer | undefined;
   private hooksStarting: Promise<HookServer> | undefined;
+  /** One helper drives the one Claude Desktop window for every session taken over. */
+  private desktopDriver: DesktopDriver | undefined;
 
   constructor(
     private readonly config: AgentConfig,
@@ -95,6 +111,9 @@ export class SessionManager extends EventEmitter<{
       claudePath?: string;
       claudeDir?: string;
       attach?: (pid: number) => Promise<PtyHandle>;
+      desktop?: () => DesktopDriver;
+      /** Where the hook server's address is written for Desktop's hook processes. */
+      hookEndpointFile?: string;
     } = {},
     /** Folder of images from the phone; hosted terminal sessions may read it. */
     private readonly attachmentsDir?: string,
@@ -265,12 +284,82 @@ export class SessionManager extends EventEmitter<{
     return session;
   }
 
+  /** Whether `controlDesktop` can work on this PC. */
+  desktopControlStatus(): { available: boolean; reason?: string } {
+    if (this.voiceDeps.desktop) return { available: true };
+    const status = desktopControlStatus();
+    if (!status.available) return status;
+    // Approvals come through Claude Code's PermissionRequest hook, set up on the PC.
+    return desktopHookInstalled()
+      ? status
+      : {
+          available: false,
+          reason: 'run `voicecode-agent desktop enable` on the PC to control Claude Desktop',
+        };
+  }
+
+  /**
+   * Takes control of a Claude Code session of the Claude Desktop app: prompts are typed
+   * into Desktop's window and its permission requests are answered from the phone.
+   * Closing only lets go; the session carries on in Desktop.
+   */
+  async controlDesktop(pc: PcSession): Promise<DesktopSession> {
+    const status = this.desktopControlStatus();
+    if (!status.available) throw new SessionError('bad_request', status.reason ?? 'unavailable');
+    const project = this.projectForFolder(pc.cwd);
+    if (!project)
+      throw new SessionError('folder_not_allowed', `${pc.cwd} is not an allowed folder`);
+    const taken = [...this.sessions.values()].some(
+      (s) => !s.isClosed && s.summary().claudeSessionId === pc.sessionId,
+    );
+    if (taken) throw new SessionError('session_busy', 'That session is already controlled');
+    this.checkCapacity();
+    await this.ensureHooks();
+    this.desktopDriver ??=
+      this.voiceDeps.desktop?.() ??
+      new DesktopHelper(this.logger.child({ component: 'desktop-helper' }));
+    const session = new DesktopSession({
+      id: randomUUID(),
+      project,
+      config: this.config.claude,
+      broker: this.broker,
+      logger: this.logger.child({ session: project.name, kind: 'desktop', pid: pc.pid }),
+      driver: this.desktopDriver,
+      pc: { pid: pc.pid, claudeSessionId: pc.sessionId },
+      claudeDir: this.voiceDeps.claudeDir,
+    });
+    try {
+      await session.start();
+    } catch (err) {
+      session.close();
+      throw new SessionError(
+        'bad_request',
+        `Could not take control in Claude Desktop: ${(err as Error).message}`,
+      );
+    }
+    this.track(session);
+    session.touch();
+    return session;
+  }
+
   private ensureHooks(): Promise<HookServer> {
     if (this.hooks) return Promise.resolve(this.hooks);
     this.hooksStarting ??= (async () => {
-      const server = new HookServer((event) => this.decideHook(event), this.logger);
+      const server = new HookServer(
+        {
+          preToolUse: (event) => this.decideHook(event),
+          permissionRequest: (event) => this.decidePermissionRequest(event),
+        },
+        this.logger,
+      );
       await server.start();
       this.hooks = server;
+      const file = this.voiceDeps.hookEndpointFile;
+      if (file) {
+        await writeHookEndpoint(file, { url: server.url, token: server.token }).catch(
+          (err: unknown) => this.logger.warn({ err }, 'could not write the hook endpoint'),
+        );
+      }
       return server;
     })().finally(() => (this.hooksStarting = undefined));
     return this.hooksStarting;
@@ -290,6 +379,20 @@ export class SessionManager extends EventEmitter<{
     // otherwise the phone still decides, whatever mode the terminal was put in.
     if (this.config.claude.allowUnsafeModes && UNSAFE_MODE_SET.has(mode)) return undefined;
     return this.broker.ask(session.id, event.tool_name, event.tool_input);
+  }
+
+  /**
+   * A permission request Claude Code is about to show (the hook `desktop enable` adds):
+   * answered from the phone for a Claude Desktop session the phone controls, and left to
+   * Claude Code's own dialog for every other session.
+   */
+  async decidePermissionRequest(event: PreToolUseEvent): Promise<HookDecision | undefined> {
+    const session = [...this.sessions.values()].find(
+      (s): s is DesktopSession =>
+        s instanceof DesktopSession && s.summary().claudeSessionId === event.session_id,
+    );
+    if (!session || session.isClosed) return undefined;
+    return session.askPermission(event.tool_name, event.tool_input);
   }
 
   /** Push-to-talk for a voice session. */
@@ -368,6 +471,18 @@ export class SessionManager extends EventEmitter<{
       );
       return;
     }
+    if (session instanceof DesktopSession) {
+      try {
+        await session.sendPrompt(
+          text,
+          deviceName,
+          images.map((i) => i.path),
+        );
+      } catch (err) {
+        throw new SessionError('bad_request', (err as Error).message);
+      }
+      return;
+    }
     const blocks = await Promise.all(
       images.map(async (image) => ({
         mediaType: image.mediaType,
@@ -378,7 +493,12 @@ export class SessionManager extends EventEmitter<{
   }
 
   async interrupt(sessionId: string): Promise<void> {
-    await this.get(sessionId).interrupt();
+    try {
+      await this.get(sessionId).interrupt();
+    } catch (err) {
+      if (err instanceof SessionError) throw err;
+      throw new SessionError('bad_request', (err as Error).message);
+    }
   }
 
   rename(sessionId: string, title: string): void {
@@ -432,6 +552,9 @@ export class SessionManager extends EventEmitter<{
         'Terminal sessions take the effort when they start; start a new one to change it.',
       );
     }
+    if (session instanceof DesktopSession) {
+      throw new SessionError('bad_request', 'Set the effort in Claude Desktop itself.');
+    }
     try {
       await session.setEffort(effort);
     } catch (err) {
@@ -443,6 +566,13 @@ export class SessionManager extends EventEmitter<{
   async models(sessionId?: string): Promise<{ models: ModelChoice[]; persistsDefault: boolean }> {
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
     if (session instanceof VoiceSession) return { models: session.models(), persistsDefault: true };
+    if (session instanceof DesktopSession) {
+      try {
+        return { models: await session.models(), persistsDefault: false };
+      } catch (err) {
+        throw new SessionError('bad_request', (err as Error).message);
+      }
+    }
     if (session) return { models: await session.models(), persistsDefault: false };
     return { models: MODEL_ALIASES, persistsDefault: false };
   }
@@ -495,6 +625,11 @@ export class SessionManager extends EventEmitter<{
     for (const session of this.sessions.values()) session.close();
     this.sessions.clear();
     void this.hooks?.stop();
+    if (this.hooks && this.voiceDeps.hookEndpointFile) {
+      void removeHookEndpoint(this.voiceDeps.hookEndpointFile).catch(() => undefined);
+    }
     this.hooks = undefined;
+    this.desktopDriver?.close();
+    this.desktopDriver = undefined;
   }
 }

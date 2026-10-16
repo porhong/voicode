@@ -162,13 +162,17 @@ export function ModelSheet({
   const offer = state.models && state.models.sessionId === sessionId ? state.models : undefined;
   const busy = session?.state === 'running' || session?.state === 'awaiting_permission';
   const terminal = session?.kind === 'voice';
+  // Claude Desktop offers its own model names and keeps its own effort setting; picking
+  // one there leaves the phone's choice for new sessions alone.
+  const desktop = live && session.kind === 'desktop';
 
   const pick = (value: string) => {
     const model = value === 'default' ? null : value;
     if (sessionId) send({ type: 'claude.model.set', sessionId, model });
-    onChoose(model ?? '');
+    if (!desktop) onChoose(model ?? '');
   };
-  const isChosen = (value: string) => (value === 'default' ? chosen === '' : chosen === value);
+  const isChosen = (value: string) =>
+    desktop ? session.model === value : value === 'default' ? chosen === '' : chosen === value;
   const picked: ModelChoice | undefined =
     offer?.models.find((m) => isChosen(m.value)) ?? offer?.models[0];
   // Unknown (terminal sessions, older Claude Code): offer every level; Claude Code
@@ -233,16 +237,18 @@ export function ModelSheet({
         </>
       )}
       <p className="small muted">
-        {sessionId
-          ? `This session uses ${modelLabel(session?.model) ?? 'the PC’s default'}. Your choice applies to it now and to new sessions from this phone.`
-          : 'Applies to the sessions you start from this phone.'}
+        {desktop
+          ? `This Claude Desktop session uses ${session.model ?? 'its default model'}. Your choice switches it in Claude Desktop.`
+          : sessionId
+            ? `This session uses ${modelLabel(session?.model) ?? 'the PC’s default'}. Your choice applies to it now and to new sessions from this phone.`
+            : 'Applies to the sessions you start from this phone.'}
       </p>
       {offer?.persistsDefault && (
         <p className="small muted">
           Claude Code in the terminal also saves it as its default for new sessions on the PC.
         </p>
       )}
-      {busy && terminal && (
+      {busy && (terminal || desktop) && (
         <p className="small error-text">Claude is working; switch once it has finished.</p>
       )}
       <ul className="list">
@@ -252,7 +258,7 @@ export function ModelSheet({
             <button
               className="list-main"
               aria-pressed={isChosen(m.value)}
-              disabled={disabled || (busy && terminal)}
+              disabled={disabled || (busy && (terminal || desktop))}
               onClick={() => pick(m.value)}
             >
               <span className="list-title">{m.label}</span>
@@ -263,7 +269,9 @@ export function ModelSheet({
       </ul>
 
       <h3>Effort</h3>
-      {levels.length === 0 ? (
+      {desktop ? (
+        <p className="small muted">Claude Desktop keeps its own effort setting; change it there.</p>
+      ) : levels.length === 0 ? (
         <p className="small muted">{picked?.label ?? 'This model'} has no effort setting.</p>
       ) : (
         <>

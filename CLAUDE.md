@@ -28,6 +28,9 @@ apps/agent          CLI + server, bundled with tsup (npm) or esbuild (SEA)
   src/tunnel        cloudflared config + process supervisor (optional Cloudflare Tunnel)
   src/sessions      SessionManager (phone sessions), PcSessionWatcher (read-only view of all
                     Claude sessions on the PC via ~/.claude/sessions + transcripts)
+  src/desktop       DesktopSession (a Claude Desktop session taken over), desktop-helper
+                    (voicecode-desktop.ps1 over JSON lines: UI Automation), approval-hook
+                    (the PermissionRequest hook `desktop enable` installs)
   src/mouse         InputRouter (lease, coalescing), helper-process / command drivers
   src/voice         MicRouter (phone mic lease, PCM frames) → virtual microphone drivers
                     (Windows waveOut helper into VB-CABLE, Linux PipeWire null sink)
@@ -213,6 +216,25 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   the paperclip in its display bar (count badge; `ComposerHandle.attach/sendPrompt`, so
   macro keys and the joystick send the waiting images too); checked in headless Chrome at
   390 and 360 px, dark and light, normal and full screen.
+
+- Claude Desktop control (2026-10-16), Windows: `pc.session.control` on a session whose
+  registry entry has `entrypoint: "claude-desktop"` (`PcSession.app`) creates a
+  `DesktopSession` (`kind: 'desktop'`). Approvals: `voicecode-agent desktop enable` adds a
+  `PermissionRequest` hook (`hook permission-request`) to `~/.claude/settings.json`; Claude
+  Code runs it alongside Desktop's dialog ("whichever decides first applies"), the hook
+  reads the agent's loopback endpoint from `<VOICECODE_HOME>/hook-endpoint.json` and gets
+  the phone's answer; a request answered on the PC is withdrawn when its tool call gets a
+  result in the transcript. Prompts, Stop, mode and model go through Desktop's window
+  (`native/windows/voicecode-desktop.ps1`, UI Automation; the open session is found by the
+  page title "<title> - Claude Code", sessions by the transcript's `custom-title`). The
+  window is raised without activation before acting (Chromium stops rendering a covered
+  or minimized window, and its tree goes stale); while minimized, working/idle comes from
+  the transcript (`end_turn`, `stop_hook_summary`). Pressing Desktop's approval buttons
+  through UI Automation was tried first and is unreliable when the window isn't active.
+  Verified against Claude Desktop 1.30096 (Claude Code 2.1.229) with Desktop minimized:
+  hook allow ran the command, deny blocked it; model switch confirms Desktop's "Switch
+  model?" dialog. Hooks reload in running sessions. Not verified: the phone UI against a
+  real Desktop session (only typecheck + unit tests), Desktop v2.x labels.
 
 Not verified yet:
 

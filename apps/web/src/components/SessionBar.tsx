@@ -124,7 +124,7 @@ export function SessionBar({
   const projectLine = pc
     ? `On this PC · ${pc.folder}`
     : active
-      ? `${projectName(state.projects, active.projectId)}${active.attached ? ' · your terminal' : ''}`
+      ? `${projectName(state.projects, active.projectId)}${active.kind === 'desktop' ? ' · Claude Desktop' : active.attached ? ' · your terminal' : ''}`
       : 'No session';
   const titleLine = pc
     ? pcTitle(pc)
@@ -302,7 +302,13 @@ function SessionSheet({
                   <span className="list-title">{s.title ?? 'New session'}</span>
                   <span className="small muted">
                     {projectName(state.projects, s.projectId)} · {STATE_LABEL[s.state]}
-                    {s.attached ? ' · your terminal' : s.kind === 'voice' ? ' · Claude Code' : ''}
+                    {s.kind === 'desktop'
+                      ? ' · Claude Desktop'
+                      : s.attached
+                        ? ' · your terminal'
+                        : s.kind === 'voice'
+                          ? ' · Claude Code'
+                          : ''}
                   </span>
                 </button>
                 <button
@@ -345,7 +351,9 @@ function SessionSheet({
           >
             <button className="list-main" onClick={() => onSelectPc(p.sessionId)}>
               <span className="list-title">{pcTitle(p)}</span>
-              <span className="small muted">{p.folder} · terminal</span>
+              <span className="small muted">
+                {p.folder} · {p.app === 'desktop' ? 'Claude Desktop' : 'terminal'}
+              </span>
             </button>
             <span className={`chip chip-${PC_STATUS[p.status].chip}`}>
               {PC_STATUS[p.status].label}

@@ -1,4 +1,6 @@
 import type { Command } from 'commander';
+import { resolvePaths } from '../../config/paths.js';
+import { readHookEndpoint } from '../../desktop/approval-hook.js';
 
 /**
  * `voicecode-agent hook pre-tool-use`: the command the agent registers as a Claude Code
@@ -17,6 +19,55 @@ export function registerHook(program: Command): void {
     const output = await forwardPreToolUse(url, token, await readStdin()).catch(() => undefined);
     if (output) process.stdout.write(`${JSON.stringify(output)}\n`);
   });
+  /**
+   * `hook permission-request`: the hook `voicecode-agent desktop enable` adds to the
+   * user's Claude Code settings, so Claude Desktop's permission requests can be answered
+   * from the phone. Desktop starts it without the agent's environment, so the endpoint
+   * comes from the file a running agent writes. No agent, a session the phone doesn't
+   * control, or any failure: nothing is printed, and Desktop's own dialog decides.
+   */
+  hook.command('permission-request').action(async () => {
+    const endpoint =
+      process.env.VOICECODE_HOOK_URL && process.env.VOICECODE_HOOK_TOKEN
+        ? { url: process.env.VOICECODE_HOOK_URL, token: process.env.VOICECODE_HOOK_TOKEN }
+        : await readHookEndpoint(resolvePaths().hookEndpoint);
+    if (!endpoint) return;
+    const output = await forwardPermissionRequest(
+      endpoint.url,
+      endpoint.token,
+      await readStdin(),
+    ).catch(() => undefined);
+    if (output) process.stdout.write(`${JSON.stringify(output)}\n`);
+  });
+}
+
+export async function forwardPermissionRequest(
+  url: string,
+  token: string,
+  body: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<unknown> {
+  const res = await fetchImpl(`${url}/permission-request`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body,
+  });
+  if (res.status !== 200) return undefined;
+  const answer = (await res.json()) as { decision?: string; reason?: string; interrupt?: boolean };
+  if (answer.decision !== 'allow' && answer.decision !== 'deny') return undefined;
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PermissionRequest',
+      decision:
+        answer.decision === 'allow'
+          ? { behavior: 'allow' }
+          : {
+              behavior: 'deny',
+              ...(answer.reason ? { message: answer.reason } : {}),
+              ...(answer.interrupt ? { interrupt: true } : {}),
+            },
+    },
+  };
 }
 
 export async function forwardPreToolUse(

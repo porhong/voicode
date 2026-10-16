@@ -190,6 +190,7 @@ pairing code.
 | `voicecode-agent autostart enable`     | Start the agent at login; `autostart disable` / `autostart status` too                                        |
 | `voicecode-agent tunnel`               | Cloudflare Tunnel: `tunnel quick`, `tunnel setup <hostname>`, `tunnel token <hostname>`, `tunnel off`         |
 | `voicecode-agent firewall`             | Allow the agent's port through Windows Defender Firewall                                                      |
+| `voicecode-agent desktop enable`       | Let the phone take control of Claude Desktop sessions (Windows); `desktop disable` / `desktop status` too     |
 | `voicecode-agent doctor`               | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                    |
 | `voicecode-agent cleanup`              | Remove caches, old versions and the old log (`--dry-run`); `cleanup auto on\|off [--limit <MB>]`              |
 | `voicecode-agent stop`                 | Stop the running agent                                                                                        |
@@ -278,6 +279,25 @@ when a task finishes in any other session, on the phone or the PC; tap it to jum
 only reads Claude Code's own session files (`~/.claude/sessions` and `~/.claude/projects`, or
 `CLAUDE_CONFIG_DIR`) for this.
 
+**Claude Desktop sessions (Windows).** Sessions of the Claude Desktop app's Code tab are in
+the same list, marked "Claude Desktop". After `voicecode-agent desktop enable` on the PC,
+**Take control** lets the phone drive one:
+
+- Prompts (and attached images) are typed into Desktop's window, which comes to the front
+  on the PC for it. Stop, the permission mode and Desktop's own model list work the same way.
+- What Desktop asks to approve comes to the phone with the complete tool input. It comes
+  through Claude Code's `PermissionRequest` hook, not Desktop's window, so it works with
+  Desktop covered or minimized. Answering on the PC first still wins, and the phone's
+  request then goes away.
+
+`desktop enable` adds that one hook to `~/.claude/settings.json` and keeps every other
+setting and hook. The hook decides nothing for sessions the phone doesn't control, and
+`desktop disable` removes it. While unsafe modes are off, a session the phone controls is
+switched back to Manual if Desktop is in Auto or Bypass permissions. Desktop shows one
+session at a time, so taking control switches what it shows. The agent reads Desktop's
+window through Windows UI Automation (`voicecode-desktop.ps1`); a new Desktop version can
+rename its controls, which the agent then reports instead of guessing.
+
 **Trackpad tab.** One finger moves the pointer (with acceleration), tap = left click,
 two-finger tap = right click, three-finger tap = middle click, two fingers scroll, tap then
 touch-and-drag = drag/select. L/M/R buttons can be held while dragging with another
@@ -302,6 +322,7 @@ or is idle for two minutes, and any held buttons are released automatically.
 | A hidden tail in an approved command                  | Approval details are never silently shortened: invisible and bidi characters are shown as `⟨U+…⟩`, and input too long to display in full (60k characters) can only be rejected — enforced by the agent, not just the UI                                                                                                                                                                                                                                                                                                                                               |
 | A project's own settings pre-approving tools          | Like the CLI, sessions load the project's `.claude/settings*.json` (needed for CLAUDE.md). Its `permissions.allow` rules and hooks are listed when the project is added (the equivalent of Claude Code's folder-trust prompt), in `doctor`, and at the top of every session on the phone                                                                                                                                                                                                                                                                              |
 | Images uploaded from the phone                        | Paired devices only, same origin check; the type is read from the file's bytes (PNG, JPEG, GIF, WebP, nothing else), 10 MB and 30 uploads a minute; stored under random 128-bit ids in a private folder (`0700`/`0600`), deleted after 24 hours; a prompt can only refer to them by id. Terminal sessions get read access to that folder only                                                                                                                                                                                                                         |
+| A Claude Desktop session driven from the phone        | Only after `voicecode-agent desktop enable` on the PC; approvals come through Claude Code's PermissionRequest hook with the complete tool input, the hook decides nothing for sessions the phone doesn't control, and it reaches the agent only on loopback with a per-run token kept in a private file; the PC's own answer wins if given first                                                                                                                                                                                                                      |
 | Claude working outside intended directories           | Sessions can only start in an allow-list of canonical (realpath) project directories managed from the PC                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Stuck mouse buttons                                   | Buttons pressed under a lease are released when it ends, on disconnect, on driver exit and by the helper on EOF                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Other local users driving the agent                   | Control channel is a named pipe / `0600` Unix socket plus a per-install secret                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

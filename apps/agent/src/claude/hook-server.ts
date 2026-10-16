@@ -16,10 +16,21 @@ export interface PreToolUseEvent {
 export interface HookDecision {
   decision: 'allow' | 'deny';
   reason?: string;
+  /** PermissionRequest only: a denial stops Claude instead of letting it adjust. */
+  interrupt?: boolean;
 }
 
 /** Answers a hook; `undefined` leaves the decision to Claude Code's normal permission flow. */
 export type HookHandler = (event: PreToolUseEvent) => Promise<HookDecision | undefined>;
+
+/**
+ * The hooks the server answers: PreToolUse (sessions the agent hosts) and
+ * PermissionRequest (Claude Desktop sessions taken over from the phone).
+ */
+export interface HookHandlers {
+  preToolUse: HookHandler;
+  permissionRequest: HookHandler;
+}
 
 const MAX_BODY = 1024 * 1024;
 
@@ -36,7 +47,7 @@ export class HookServer {
   private port = 0;
 
   constructor(
-    private readonly handler: HookHandler,
+    private readonly handlers: HookHandlers,
     private readonly logger: Logger,
   ) {}
 
@@ -78,9 +89,13 @@ export class HookServer {
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (!this.authorized(req)) return end(res, 401, { error: 'unauthorized' });
-    if (req.method !== 'POST' || req.url !== '/pre-tool-use') {
-      return end(res, 404, { error: 'not found' });
-    }
+    const handler =
+      req.url === '/pre-tool-use'
+        ? this.handlers.preToolUse
+        : req.url === '/permission-request'
+          ? this.handlers.permissionRequest
+          : undefined;
+    if (req.method !== 'POST' || !handler) return end(res, 404, { error: 'not found' });
     let body: string;
     try {
       body = await readBody(req);
@@ -94,7 +109,7 @@ export class HookServer {
       return end(res, 400, { error: (err as Error).message });
     }
     try {
-      const decision = await this.handler(event);
+      const decision = await handler(event);
       if (!decision) return end(res, 204);
       end(res, 200, decision);
     } catch (err) {

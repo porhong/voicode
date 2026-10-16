@@ -28,6 +28,8 @@ const RegistrySchema = z.object({
   startedAt: z.number().optional(),
   updatedAt: z.number().optional(),
   statusUpdatedAt: z.number().optional(),
+  /** Who started it: `cli`, `sdk-cli`, `claude-desktop`, … */
+  entrypoint: z.string().max(64).optional(),
 });
 
 /** Events kept per PC session for clients that open it. */
@@ -57,6 +59,8 @@ export function isAlive(pid: number): boolean {
 
 interface Tracked {
   info: PcSession;
+  /** The title in the transcript (`/rename`, Desktop's generated one), newest first. */
+  title?: string;
   tail?: TranscriptTail;
   seq: number;
   events: SessionEventRecord[];
@@ -142,12 +146,14 @@ export class PcSessionWatcher extends EventEmitter<{
         pid: entry.pid,
         cwd: entry.cwd,
         folder: path.basename(entry.cwd) || entry.cwd,
-        name: entry.name,
+        // Desktop names sessions in the transcript; the registry has a folder-based name.
+        name: tracked.title ?? entry.name,
         status,
         lastPrompt: previous?.info.lastPrompt,
         startedAt: entry.startedAt,
         updatedAt: entry.statusUpdatedAt ?? entry.updatedAt,
         projectId: this.opts.projectFor(entry.cwd),
+        ...(entry.entrypoint === 'claude-desktop' ? { app: 'desktop' as const } : {}),
       };
       this.tracked.set(entry.sessionId, tracked);
       await this.tail(tracked);
@@ -190,6 +196,7 @@ export class PcSessionWatcher extends EventEmitter<{
     const result = await t.tail.read();
     if (result.reset) t.events = [];
     if (result.lastPrompt) t.info.lastPrompt = result.lastPrompt;
+    if (result.title) t.title = t.info.name = result.title;
     for (const item of result.items) {
       const record = { seq: ++t.seq, at: item.at, event: item.event };
       t.events.push(record);

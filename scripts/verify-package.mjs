@@ -24,6 +24,7 @@ const required = [
   'dist/web/index.html',
   'dist/web/manifest.webmanifest',
   'native-bin/win32/voicecode-input.ps1',
+  'native-bin/win32/voicecode-desktop.ps1',
 ];
 const native = [
   'native-bin/win32-x64/voicecode-input.exe',

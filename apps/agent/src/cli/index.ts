@@ -2,6 +2,7 @@
 import { Command } from 'commander';
 import { VERSION } from '../util/version.js';
 import { registerCleanup } from './commands/cleanup.js';
+import { registerDesktop } from './commands/desktop.js';
 import { registerDevices, registerPair } from './commands/devices.js';
 import { registerHook } from './commands/hook.js';
 import { registerInit } from './commands/init.js';
@@ -32,6 +33,7 @@ registerSystem(program);
 registerCleanup(program);
 registerHook(program);
 registerModes(program);
+registerDesktop(program);
 
 program.parseAsync().catch((err: unknown) => {
   out(fail((err as Error).message));

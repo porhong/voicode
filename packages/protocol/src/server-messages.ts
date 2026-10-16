@@ -56,9 +56,12 @@ export interface SessionSummary {
   /** The modes the phone may switch this session to, in display order. */
   modes?: PermissionModeName[];
   totalCostUsd?: number;
-  /** Absent for a session driven through the Agent SDK. */
-  kind?: 'voice';
-  /** Voice sessions: the Claude Code was started by the user in a terminal; we attached. */
+  /**
+   * Absent for a session driven through the Agent SDK; `voice` for Claude Code in a
+   * terminal (hosted or taken over), `desktop` for a session of the Claude Desktop app.
+   */
+  kind?: 'voice' | 'desktop';
+  /** The Claude Code was started by the user (a terminal, Claude Desktop); we took control. */
   attached?: boolean;
   /** Voice sessions: what Claude Code's dictation is doing. */
   voice?: { state: VoiceState; detail?: string };
@@ -99,6 +102,8 @@ export interface PcSession {
   updatedAt?: number;
   /** The allow-listed project for `cwd`; continuing elsewhere needs the folder allowed. */
   projectId?: string;
+  /** The app running it, when not the terminal CLI. */
+  app?: 'desktop';
 }
 
 export interface MouseStatus {
@@ -235,6 +240,8 @@ export type ServerMessage =
       voiceMic: VoiceMicStatus;
       /** Whether a terminal session can be taken over (keys and screen through its console). */
       pcControl: { available: boolean; reason?: string };
+      /** Whether a Claude Desktop session can be taken over (through UI Automation). */
+      desktopControl?: { available: boolean; reason?: string };
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'projects'; projects: ProjectInfo[]; roots: string[] }

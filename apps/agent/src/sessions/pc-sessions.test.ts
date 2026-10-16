@@ -132,6 +132,25 @@ describe('PcSessionWatcher', () => {
     expect(changed).toHaveLength(2);
   });
 
+  it('tags Claude Desktop sessions and names them by the title Desktop shows', async () => {
+    await writeFile(
+      path.join(dir, 'sessions', `${process.pid}.json`),
+      JSON.stringify({
+        pid: process.pid,
+        sessionId: 'pc-1',
+        cwd,
+        name: 'some-project-84',
+        entrypoint: 'claude-desktop',
+      }),
+    );
+    await line({ type: 'custom-title', customTitle: 'Shell command output', sessionId: 'pc-1' });
+    const w = watcher();
+    await w.poll();
+    expect(w.list()[0]).toMatchObject({ app: 'desktop', name: 'Shell command output' });
+    await w.poll();
+    expect(w.list()[0]).toMatchObject({ app: 'desktop', name: 'Shell command output' });
+  });
+
   it("skips the agent's own sessions and dead processes", async () => {
     await register('busy', 'mine');
     await writeFile(

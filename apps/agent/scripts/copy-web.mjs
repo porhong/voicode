@@ -16,7 +16,9 @@ if (!existsSync(webDist)) {
   console.log('[copy-web] web client copied to dist/web');
 }
 
-const ps1 = fileURLToPath(new URL('../../native/windows/voicecode-input.ps1', root));
+// PowerShell helpers: the mouse fallback and the Claude Desktop (UI Automation) helper.
 const ps1Target = fileURLToPath(new URL('native-bin/win32/', root));
 await mkdir(ps1Target, { recursive: true });
-await cp(ps1, `${ps1Target}voicecode-input.ps1`);
+for (const name of ['voicecode-input.ps1', 'voicecode-desktop.ps1']) {
+  await cp(fileURLToPath(new URL(`../../native/windows/${name}`, root)), `${ps1Target}${name}`);
+}
