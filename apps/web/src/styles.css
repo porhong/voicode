@@ -1627,6 +1627,29 @@ a {
 .deck-tool[aria-pressed='true'] {
   color: var(--text);
 }
+.deck-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.deck-tool-attach {
+  position: relative;
+}
+/* How many images go with the next prompt. */
+.deck-tool-badge {
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
 .deck-menu {
   position: absolute;
   top: calc(100% + 6px);

@@ -209,7 +209,10 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   transcript. Verified: unit + integration tests, headless Chrome against `ui-demo.ts`
   (6 MB photo → 156 KB JPEG, error state, image-only prompt, dark and light), and a real
   Haiku terminal session that read the image without a permission prompt. Not verified:
-  a real phone's camera and HEIC photos (decoding is left to the browser).
+  a real phone's camera and HEIC photos (decoding is left to the browser). The deck has
+  the paperclip in its display bar (count badge; `ComposerHandle.attach/sendPrompt`, so
+  macro keys and the joystick send the waiting images too); checked in headless Chrome at
+  390 and 360 px, dark and light, normal and full screen.
 
 Not verified yet:
 

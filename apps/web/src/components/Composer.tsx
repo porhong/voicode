@@ -14,6 +14,20 @@ export interface ComposerHandle {
   pushToTalk: (pressed: boolean) => void;
   /** Shows the input row (deck layout) and focuses it for typing. */
   focus: () => void;
+  /** Opens the image picker (the deck's paperclip; must run in the tap's handler). */
+  attach: () => void;
+  /**
+   * Sends this text with the images picked so far, leaving the draft alone (deck keys).
+   * Returns false while an image is still uploading, so it isn't left behind.
+   */
+  sendPrompt: (text: string) => boolean;
+}
+
+/** The images waiting to go with the next prompt, for the deck's paperclip. */
+export interface PendingImages {
+  count: number;
+  uploading: boolean;
+  full: boolean;
 }
 
 interface Props {
@@ -33,6 +47,8 @@ interface Props {
   remoteMic?: MicStream;
   /** Reports dictation starting and stopping (the deck lights its mic key). */
   onListeningChange?: (listening: boolean) => void;
+  /** Reports the images waiting to be sent whenever they change. */
+  onImagesChange?: (images: PendingImages) => void;
   /** The prompt, with the ids of the images uploaded for it. */
   onSend: (text: string, attachments: string[]) => void;
   onInterrupt: () => void;
@@ -55,6 +71,7 @@ export function Composer({
   compact = false,
   remoteMic,
   onListeningChange,
+  onImagesChange,
   onSend,
   onInterrupt,
 }: Props) {
@@ -69,6 +86,11 @@ export function Composer({
   };
 
   const images = useAttachments();
+  const imageCount = images.items.length;
+  const { uploading: imagesUploading, full: imagesFull } = images;
+  useEffect(() => {
+    onImagesChange?.({ count: imageCount, uploading: imagesUploading, full: imagesFull });
+  }, [onImagesChange, imageCount, imagesUploading, imagesFull]);
   const fileRef = useRef<HTMLInputElement>(null);
   // Read by speech callbacks too (auto-send after dictation includes the images).
   const imagesRef = useRef(images);
@@ -177,6 +199,16 @@ export function Composer({
     focus: () => {
       setTyping(true);
       requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    attach: () => {
+      if (!disabled && !imagesRef.current.full) fileRef.current?.click();
+    },
+    sendPrompt: (value: string) => {
+      const { readyIds, uploading } = imagesRef.current;
+      if (uploading) return false;
+      onSend(value.slice(0, LIMITS.maxPromptLength), readyIds);
+      if (readyIds.length) imagesRef.current.clear();
+      return true;
     },
   }));
   const onAction = () => {

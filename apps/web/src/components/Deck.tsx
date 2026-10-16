@@ -15,7 +15,8 @@ import {
 } from '../hooks/useOrientationLock';
 import { DeckIcon, type DeckIconName } from './DeckIcons';
 import { UsagePad } from './UsagePad';
-import { CollapseIcon, ExpandIcon, MicIcon, MoreIcon, StopIcon } from './Icons';
+import type { PendingImages } from './Composer';
+import { AttachIcon, CollapseIcon, ExpandIcon, MicIcon, MoreIcon, StopIcon } from './Icons';
 
 /** What the deck's light shows: the session on screen, roughly as the hardware does. */
 export type DeckStatus =
@@ -66,6 +67,9 @@ interface Props {
   replies: string[];
   /** The plan's usage limits, for the usage rings. */
   usage?: UsageReport;
+  /** Images picked for the next prompt: they go with talk, Type and the macro keys. */
+  images: PendingImages;
+  onAttach: () => void;
   onToggleFull: () => void;
   onPadChange: (pad: DeckPad) => void;
   onUsage: () => void;
@@ -633,7 +637,15 @@ export function Deck(props: Props) {
       setFlash('Start a session first');
       return;
     }
-    setFlash(macro.review ? `${macro.label}: edit, then send` : `Sent: ${macro.label}`);
+    const { count, uploading } = props.images;
+    if (!macro.review && uploading) {
+      setFlash('Wait for the image to upload');
+      return;
+    }
+    const withImages = count ? ` with ${count === 1 ? 'the image' : `${count} images`}` : '';
+    setFlash(
+      macro.review ? `${macro.label}: edit, then send` : `Sent: ${macro.label}${withImages}`,
+    );
     props.onMacro(macro);
   };
 
@@ -729,6 +741,30 @@ export function Deck(props: Props) {
                 {flash ?? ''}
               </span>
             </span>
+            {/*
+              Here rather than a key: the key rows are full at phone width. The picked
+              images show above the deck, in the prompt box, and the count shows here.
+            */}
+            <button
+              className="deck-tool deck-tool-attach"
+              onClick={props.onAttach}
+              disabled={!canPrompt || props.images.full}
+              aria-label={
+                props.images.full
+                  ? 'Image limit reached'
+                  : props.images.count
+                    ? `Attach another image (${props.images.count} attached)`
+                    : 'Attach a photo or image'
+              }
+              title="Attach a photo or image"
+            >
+              <AttachIcon size={20} />
+              {props.images.count > 0 && (
+                <span className="deck-tool-badge" aria-hidden>
+                  {props.images.count}
+                </span>
+              )}
+            </button>
             <button
               className="deck-tool"
               onClick={props.onToggleFull}

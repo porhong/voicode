@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { ServerMessage, SessionSummary } from '@voicecode/protocol';
-import { Composer, type ComposerHandle } from '../components/Composer';
+import { Composer, type ComposerHandle, type PendingImages } from '../components/Composer';
 import { Deck, type DeckApproval, type DeckStatus } from '../components/Deck';
 import { DeckEditor } from '../components/DeckEditor';
 import { FolderSheet } from '../components/FolderSheet';
@@ -66,6 +66,7 @@ const SUGGESTIONS = [
   'What changed since the last commit?',
 ];
 
+const NO_IMAGES: PendingImages = { count: 0, uploading: false, full: false };
 export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [tab, setTab] = useState<Tab>('claude');
@@ -78,6 +79,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const [deckEditorOpen, setDeckEditorOpen] = useState(false);
   const [foldersOpen, setFoldersOpen] = useState(false);
   const [listening, setListening] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PendingImages>(NO_IMAGES);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
@@ -371,6 +373,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
   const runMacro = (macro: Macro) => {
     if (!active || !canPrompt) return;
     if (macro.review) composerRef.current?.setDraft(macro.prompt);
+    // Through the prompt box, so the images picked for the next prompt go with it.
+    else if (composerRef.current) composerRef.current.sendPrompt(macro.prompt);
     else send({ type: 'claude.prompt', sessionId: active.id, text: macro.prompt });
   };
   const newSession = () => {
@@ -616,6 +620,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 compact={deckMode}
                 remoteMic={remoteMic}
                 onListeningChange={setListening}
+                onImagesChange={setPendingImages}
                 onSend={(text, attachments) =>
                   send({
                     type: 'claude.prompt',
@@ -657,6 +662,8 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
               full={deckFull}
               replies={replies}
               usage={state.usage}
+              images={active && live ? pendingImages : NO_IMAGES}
+              onAttach={() => composerRef.current?.attach()}
               onPadChange={(pad) => saveDeck({ ...deck, pad })}
               onUsage={() => setUsageOpen(true)}
               onToggleFull={() => updateSettings({ deckHistory: !settings.deckHistory })}

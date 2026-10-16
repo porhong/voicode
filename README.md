@@ -234,7 +234,9 @@ the phone to at most 1568 px on the long side (photos become JPEG, which also dr
 location metadata; screenshots stay PNG) and uploaded as soon as it's picked, so **Send**
 is instant. The text is optional. Agent SDK sessions pass the images to Claude directly;
 in a Claude Code terminal session the agent pastes their file paths, which Claude Code
-reads itself (it shows them as `[Image #1]`). Uploads are PNG, JPEG, GIF or WebP checked
+reads itself (it shows them as `[Image #1]`). On the deck, the paperclip sits in the
+display bar with a count of the images waiting; they go with the next prompt, whether it
+comes from a programmable key, the joystick, hold-to-talk or **Type**. Uploads are PNG, JPEG, GIF or WebP checked
 by their content, up to 10 MB, stored in the agent's cache folder for at most 24 hours.
 
 **Permission mode.** The same sheet switches the session between **Manual** (asks for
