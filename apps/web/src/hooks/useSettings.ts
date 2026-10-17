@@ -6,6 +6,11 @@ export interface Settings {
   claudeLayout: 'chat' | 'deck';
   /** Deck layout: show the conversation above the pad, or give the pad the whole screen. */
   deckHistory: boolean;
+  /**
+   * Show Claude's tool activity (commands, file reads, their results, thinking) in the
+   * conversation; off leaves only the messages.
+   */
+  showToolActivity: boolean;
   /** Base pointer speed multiplier (phone CSS px → desktop px). */
   sensitivity: number;
   /** How strongly fast swipes are amplified. 0 = linear. */
@@ -39,6 +44,7 @@ const KEY = 'voicecode.settings.v1';
 const defaults: Settings = {
   claudeLayout: 'chat',
   deckHistory: true,
+  showToolActivity: true,
   sensitivity: 1.6,
   acceleration: 0.8,
   naturalScroll: true,

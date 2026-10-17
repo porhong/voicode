@@ -214,7 +214,8 @@ and least useful first, down to 80 % of the limit. The phone itself caches nothi
 **Claude tab.** Pick a project, tap **New session** (or **Resume…** an earlier Claude Code
 session), tap the microphone and speak. Dictation lands in the text box so you can fix
 misheard words before tapping **Send** (or enable auto-send in settings). Claude's replies
-and tool activity stream in. When Claude wants to run a tool that needs permission, an
+and tool activity stream in (turn off **Settings → Show tool activity** to see only the
+messages, without the commands, file reads and their results). When Claude wants to run a tool that needs permission, an
 approval card shows exactly what it will do — **Accept**, **Reject**, **Reject with
 feedback**, or **Always allow this session**. **Stop** interrupts the current turn. For file edits, **Allow all edits this session** switches the
 session to auto-accept edits (commands still ask). Turn on approval notifications in

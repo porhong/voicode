@@ -164,6 +164,12 @@ export function SettingsSheet({
           </button>
         ))}
       </div>
+      <Toggle
+        label="Show tool activity"
+        hint="Commands, file reads and their results. Off shows only the messages."
+        checked={settings.showToolActivity}
+        onChange={(showToolActivity) => update({ showToolActivity })}
+      />
 
       <h3>Voice</h3>
       <div className="segmented" role="radiogroup" aria-label="Dictation">

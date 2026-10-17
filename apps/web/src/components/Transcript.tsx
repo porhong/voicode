@@ -69,9 +69,14 @@ export interface TranscriptHandle {
   toEnd: () => void;
 }
 
+/** What "Show tool activity" off hides: the work, not the conversation. */
+const TOOL_ACTIVITY = new Set(['tool_use', 'tool_result', 'thinking']);
+
 interface Props {
   ref?: Ref<TranscriptHandle>;
   events: EventItem[];
+  /** Leave out tool calls, their results and thinking: only the messages remain. */
+  hideToolActivity?: boolean;
   streaming: string;
   /** Shown instead of the transcript when there is nothing in it yet. */
   empty: ReactNode;
@@ -82,7 +87,14 @@ interface Props {
  * reader is already there; someone scrolled up to re-read gets a "Latest" button
  * instead of being yanked down by every streamed word.
  */
-export function Transcript({ ref, events, streaming, empty }: Props) {
+export function Transcript({
+  ref,
+  events: all,
+  hideToolActivity = false,
+  streaming,
+  empty,
+}: Props) {
+  const events = hideToolActivity ? all.filter((i) => !TOOL_ACTIVITY.has(i.event.kind)) : all;
   const scrollRef = useRef<HTMLDivElement>(null);
   const atEndRef = useRef(true);
   const [behind, setBehind] = useState(false);

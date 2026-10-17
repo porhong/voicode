@@ -526,6 +526,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 ref={transcriptRef}
                 key={`pc-${pcId}`}
                 events={pcEvents}
+                hideToolActivity={!settings.showToolActivity}
                 streaming=""
                 empty={
                   <div className="empty-card">
@@ -538,6 +539,7 @@ export function ControllerPage({ onUnpaired }: { onUnpaired: () => void }) {
                 ref={transcriptRef}
                 key={active?.id ?? 'none'}
                 events={activeEvents}
+                hideToolActivity={!settings.showToolActivity}
                 streaming={active ? (state.streaming[active.id] ?? '') : ''}
                 empty={emptyState}
               />
