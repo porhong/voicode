@@ -1,6 +1,6 @@
 {
   "name": "@anantbot/voicecode-agent",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Turn your PC into a local server for voice-controlled Claude Code and desktop mouse control from any browser on your LAN",
   "license": "MIT",
   "keywords": [
