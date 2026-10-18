@@ -298,6 +298,15 @@ Not verified yet:
   the second PC on the shared `voicecode` tunnel, and a real quick tunnel's log has the
   connector line. The `setup` migration itself was not run, since it changes the owner's
   DNS.
+- Tunnel unlink/relink (2026-10-19): `tunnel unlink [--keep-tunnel]` deletes the PC's
+  tunnel (not while the agent runs, not while another connector is on it), then its CNAME
+  through the Cloudflare API. It uses the API token in `cert.pem` and deletes only a record
+  whose content is `<id>.cfargotunnel.com` (`tunnel/cloudflare-api.ts`; cloudflared can't
+  delete records). `tunnel relink [hostname] [--login]` reruns setup for the remembered
+  host name, with `--overwrite-dns` for it. `setup` checks that the host name is inside
+  the login's zone. Verified: the API GETs (zone name, the dev PC's CNAME) with the
+  owner's real cert, and the offline unlink paths in a temp home. Not run for real:
+  creating or deleting tunnels and records (the permission classifier refused DNS changes).
 
 Next candidates, in rough priority:
 

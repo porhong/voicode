@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { rm } from 'node:fs/promises';
+import { rename, rm } from 'node:fs/promises';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 import { isValidHostname, saveConfig, type AgentConfig } from '../../config/config.js';
@@ -21,7 +21,8 @@ import {
   tunnelConnectors,
   tunnelSetupProblem,
 } from '../../tunnel/cloudflared.js';
-import { ensurePrivateDir, readJsonFile, writeFileAtomic } from '../../util/fs.js';
+import { certZoneName, deleteTunnelDnsRecord } from '../../tunnel/cloudflare-api.js';
+import { ensurePrivateDir, fileExists, readJsonFile, writeFileAtomic } from '../../util/fs.js';
 import { loadOrInit } from '../shared.js';
 import { clean, ok, out, row, warn } from '../ui.js';
 
@@ -74,6 +75,21 @@ export function registerTunnel(program: Command): void {
       out(ok('Tunnel disabled; the agent is LAN-only again.'));
       await applyHint(paths);
     });
+
+  tunnel
+    .command('unlink')
+    .description(
+      'Disconnect this PC from Cloudflare: delete its tunnel, DNS record and credentials',
+    )
+    .option('--keep-tunnel', 'only forget the tunnel on this PC, leaving it in the account')
+    .action(unlink);
+
+  tunnel
+    .command('relink [hostname]')
+    .description('Link this PC to Cloudflare again (fresh credentials, its host name re-pointed)')
+    .option('-n, --name <name>', 'tunnel name (default: the one this PC used)')
+    .option('--login', 'log in to Cloudflare again first (another account or domain)')
+    .action(relink);
 }
 
 async function load(): Promise<{ paths: AgentPaths; config: AgentConfig }> {
@@ -112,7 +128,10 @@ async function showStatus(): Promise<void> {
   const t = config.tunnel;
   const exe = findCloudflared(t.cloudflared);
   row('Mode', t.mode === 'off' ? pc.dim('off (LAN only)') : t.mode);
-  if (t.hostname) row('Host name', t.hostname);
+  if (t.hostname) {
+    const unlinked = t.mode === 'off' && !t.tunnelId;
+    row('Host name', unlinked ? `${t.hostname} ${pc.dim('(unlinked)')}` : t.hostname);
+  }
   if (t.tunnelName) row('Tunnel', t.tunnelName);
   if (t.tunnelId) row('Tunnel ID', pc.dim(t.tunnelId));
   row(
@@ -144,6 +163,10 @@ async function showStatus(): Promise<void> {
   out(pc.dim('  voicecode-agent tunnel setup <hostname>      your own domain on Cloudflare'));
   out(pc.dim('  voicecode-agent tunnel token <hostname>      a dashboard-managed tunnel'));
   out(pc.dim('  voicecode-agent tunnel off                   LAN only'));
+  out(
+    pc.dim("  voicecode-agent tunnel unlink                delete this PC's tunnel and DNS record"),
+  );
+  out(pc.dim('  voicecode-agent tunnel relink                link this PC to Cloudflare again'));
   if (!exe) out(warn(`\n  ${INSTALL_HINT}.`));
 }
 
@@ -172,6 +195,15 @@ async function setupNamed(
     out(`that ${pc.bold(hostname)} belongs to.`);
     await runInteractive(exe, ['tunnel', 'login']);
     if (!existsSync(originCertPath())) throw new Error('Cloudflare login did not complete.');
+  }
+  // A login covers one zone, and `route dns` for a name outside it doesn't fail: it adds
+  // "code.other.com.example.com" to the login's zone instead.
+  const zone = await certZoneName(originCertPath());
+  if (zone && hostname !== zone && !hostname.endsWith(`.${zone}`)) {
+    throw new Error(
+      `The Cloudflare login on this PC is for ${zone}, not for ${hostname}. Run ` +
+        `\`voicecode-agent tunnel relink ${hostname} --login\` and pick its domain.`,
+    );
   }
 
   await ensurePrivateDir(paths.tunnelDir);
@@ -236,6 +268,144 @@ async function existingTunnelId(exe: string, name: string): Promise<string | und
       `cloudflared printed an unreadable tunnel list: ${clean(res.stdout.slice(0, 200))}`,
     );
   }
+}
+
+/**
+ * Undoes `tunnel setup` / `tunnel token` on this PC. The tunnel is deleted from the
+ * account unless another PC still runs it, then its DNS record if that still points at
+ * it (a record left behind answers with error 1016), then the local credentials, token
+ * and generated config. The host name and tunnel name stay in the config, so `relink`
+ * can bring the same address back.
+ */
+async function unlink(opts: { keepTunnel?: boolean }): Promise<void> {
+  const { paths, config } = await load();
+  const t = config.tunnel;
+  const files = [paths.tunnelCredentials, paths.tunnelToken, paths.tunnelConfig];
+  const stored = (await Promise.all(files.map(fileExists))).some(Boolean);
+  if (!t.tunnelId && !stored && t.mode !== 'quick' && t.mode !== 'token') {
+    out("This PC isn't linked to a Cloudflare tunnel.");
+    return;
+  }
+  let keptTunnel = !!opts.keepTunnel;
+  if (t.tunnelId && !keptTunnel) {
+    if (await isAgentRunning(paths)) {
+      throw new Error(
+        'Stop the agent first (`voicecode-agent stop`): its cloudflared keeps the tunnel ' +
+          'connected, and Cloudflare does not delete a connected tunnel.',
+      );
+    }
+    keptTunnel = !(await deleteNamedTunnel(config, t.tunnelId, t.tunnelName, t.hostname));
+  }
+  await Promise.all(files.map((file) => rm(file, { force: true })));
+  // A dashboard tunnel's host name is relinked with a new token, not by `relink`.
+  const dashboard = t.mode === 'token';
+  config.tunnel = {
+    ...t,
+    mode: 'off',
+    tunnelId: undefined,
+    hostname: dashboard ? undefined : t.hostname,
+  };
+  await saveConfig(paths.config, config);
+  out(ok('This PC is unlinked from Cloudflare; the agent is LAN-only again.'));
+  if (dashboard) {
+    out(pc.dim('  The tunnel itself lives in the dashboard (Zero Trust → Networks → Tunnels);'));
+    out(pc.dim('  delete it there once no PC uses it.'));
+  } else if (keptTunnel && t.tunnelId) {
+    const label = t.tunnelName ?? t.tunnelId;
+    out(pc.dim(`  The tunnel ${label} and its DNS record are still in your Cloudflare account.`));
+  }
+  if (t.hostname && t.mode !== 'quick') {
+    const again = dashboard
+      ? `\`voicecode-agent tunnel token ${t.hostname}\``
+      : '`voicecode-agent tunnel relink`';
+    out(pc.dim(`  Devices paired through https://${t.hostname} reach this PC again after`));
+    out(pc.dim(`  ${again}; on the LAN they keep working.`));
+  }
+  await applyHint(paths);
+}
+
+/** Deletes this PC's tunnel and its DNS record; false when another PC still runs it. */
+async function deleteNamedTunnel(
+  config: AgentConfig,
+  id: string,
+  name: string | undefined,
+  hostname: string | undefined,
+): Promise<boolean> {
+  const exe = requireCloudflared(config);
+  const label = name ?? id;
+  if (!existsSync(originCertPath())) {
+    throw new Error(
+      'Deleting the tunnel needs the Cloudflare login on this PC (`cloudflared tunnel login`). ' +
+        'Log in, or rerun with --keep-tunnel to only forget it here.',
+    );
+  }
+  const connectors = await tunnelConnectors(exe, id);
+  if (connectors?.length) {
+    out(warn(`The tunnel ${label} is still connected from somewhere else (another PC, or a`));
+    out(warn('cloudflared that did not exit), so it stays in your account.'));
+    return false;
+  }
+  // Without -f, Cloudflare refuses to delete a tunnel that still has connections.
+  const res = await runCloudflared(exe, ['tunnel', 'delete', id]);
+  if (res.code !== 0 && !/not found|does not exist|no tunnel/i.test(res.stderr)) {
+    throw cloudflaredError(`Deleting the tunnel ${label} failed`, res.stderr);
+  }
+  out(ok(`Deleted the tunnel ${label}`));
+  if (hostname) {
+    const removed = await deleteTunnelDnsRecord(originCertPath(), hostname, id);
+    if (removed) out(ok(`Removed the DNS record for ${hostname}`));
+    else if (removed === undefined) {
+      out(warn(`  Could not remove the DNS record for ${hostname}; delete it in the Cloudflare`));
+      out(warn('  dashboard (your domain → DNS → Records).'));
+    }
+  }
+  return true;
+}
+
+/**
+ * Links this PC to Cloudflare again: after `unlink`, a lost credentials file, a tunnel
+ * deleted in the dashboard, or a login for the wrong account or domain (`--login`). It
+ * runs the `setup` steps for the host name this PC used, and since that name was this
+ * PC's, its DNS record is replaced if it points elsewhere (at a deleted tunnel, say).
+ */
+async function relink(
+  rawHostname: string | undefined,
+  opts: { name?: string; login?: boolean },
+): Promise<void> {
+  const { config } = await load();
+  if (config.tunnel.mode === 'token' && !rawHostname) {
+    throw new Error(
+      'A dashboard tunnel is linked with its token: `voicecode-agent tunnel token <hostname>`.',
+    );
+  }
+  const hostname = rawHostname ? normalizeHostname(rawHostname) : config.tunnel.hostname;
+  if (!hostname) {
+    throw new Error('This PC has no host name yet: `voicecode-agent tunnel setup <hostname>`.');
+  }
+  const backup = opts.login ? await moveLoginAside() : undefined;
+  try {
+    await setupNamed(hostname, {
+      name: opts.name,
+      overwriteDns: hostname === config.tunnel.hostname,
+    });
+  } catch (err) {
+    // A login that didn't complete leaves no certificate: put the previous one back.
+    if (backup && !existsSync(originCertPath())) await rename(backup, originCertPath());
+    throw err;
+  }
+  if (backup) {
+    out(pc.dim(`  The previous Cloudflare login is kept as ${backup}; cloudflared now uses`));
+    out(pc.dim('  the new one for every tunnel command on this PC.'));
+  }
+}
+
+/** Moves `cert.pem` aside, since `cloudflared tunnel login` won't overwrite it. */
+async function moveLoginAside(): Promise<string | undefined> {
+  const cert = originCertPath();
+  if (!existsSync(cert)) return undefined;
+  const backup = `${cert}.${new Date().toISOString().replace(/[:.]/g, '-')}.bak`;
+  await rename(cert, backup);
+  return backup;
 }
 
 /**

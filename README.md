@@ -154,6 +154,18 @@ voicecode-agent start                           # prints the Tunnel URL and a QR
   and CA Pool path, and leave "No TLS Verify" off.
 - `voicecode-agent tunnel` shows the current setup. `tunnel off` switches back to LAN
   only, and `start --no-tunnel` skips the tunnel for one run.
+- **`tunnel unlink`** disconnects this PC from Cloudflare (stop the agent first). It
+  deletes the PC's tunnel, removes the DNS record if it still points at that tunnel (a
+  leftover record shows visitors error 1016), and deletes the local credentials. A tunnel
+  another PC is still connected to is kept. `--keep-tunnel` only forgets the tunnel on
+  this PC. A dashboard tunnel is deleted in the dashboard.
+- **`tunnel relink [hostname]`** links the PC again with the same host name. Use it after
+  `unlink`, a lost credentials file or a tunnel deleted in the dashboard. It fetches fresh
+  credentials (creating the tunnel if needed) and points the PC's own host name back at
+  it. `--login` logs in to Cloudflare again first, for another account or domain (the
+  old `cert.pem` is kept as a `.bak`). `setup` and `relink` refuse a host name outside
+  the domain the login is for, rather than letting cloudflared add a record like
+  `code.other.com.example.com`.
 
 The agent starts `cloudflared` and supervises it, restarting it with backoff if it exits.
 `cloudflared` checks the agent's certificate against the local CA instead of turning off
@@ -191,25 +203,25 @@ pairing code.
 
 ## Commands
 
-| Command                                | Purpose                                                                                                                       |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `voicecode-agent`                      | Same as `start`; works from any folder and sets everything up on first run                                                    |
-| `voicecode-agent init [--root <dir>]`  | Create config, CA and server certificate; run diagnostics (`--project <dir>` too)                                             |
-| `voicecode-agent start [--root <dir>]` | Start the local server (`--project`, `--port`, `--host`, `--no-qr`, `--no-dashboard`, `--verbose`, `--tunnel`, `--no-tunnel`) |
-| `voicecode-agent roots add <dir>`      | Add a workspace folder whose projects can be opened from a device; `roots remove` / `roots list` too                          |
-| `voicecode-agent status`               | Running or not, URL, uptime, connected clients, mouse holder, sessions                                                        |
-| `voicecode-agent pair`                 | Issue a new one-time pairing code (with QR) on the running agent                                                              |
-| `voicecode-agent devices`              | List paired devices (● = connected)                                                                                           |
-| `voicecode-agent devices revoke <id>`  | Revoke a device by id prefix (or `all`); it is disconnected immediately                                                       |
-| `voicecode-agent sessions`             | Live Claude sessions and recent saved sessions per project                                                                    |
-| `voicecode-agent projects add <dir>`   | Allow a directory for Claude; `projects remove` / `projects list` too. Applies to a running agent immediately                 |
-| `voicecode-agent autostart enable`     | Start the agent at login; `autostart disable` / `autostart status` too                                                        |
-| `voicecode-agent tunnel`               | Cloudflare Tunnel: `tunnel quick`, `tunnel setup <hostname>`, `tunnel token <hostname>`, `tunnel off`                         |
-| `voicecode-agent firewall`             | Allow the agent's port through Windows Defender Firewall                                                                      |
-| `voicecode-agent desktop enable`       | Let the phone take control of Claude Desktop sessions (Windows); `desktop disable` / `desktop status` too                     |
-| `voicecode-agent doctor`               | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                                    |
-| `voicecode-agent cleanup`              | Remove caches, old versions and the old log (`--dry-run`); `cleanup auto on\|off [--limit <MB>]`                              |
-| `voicecode-agent stop`                 | Stop the running agent                                                                                                        |
+| Command                                | Purpose                                                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `voicecode-agent`                      | Same as `start`; works from any folder and sets everything up on first run                                                              |
+| `voicecode-agent init [--root <dir>]`  | Create config, CA and server certificate; run diagnostics (`--project <dir>` too)                                                       |
+| `voicecode-agent start [--root <dir>]` | Start the local server (`--project`, `--port`, `--host`, `--no-qr`, `--no-dashboard`, `--verbose`, `--tunnel`, `--no-tunnel`)           |
+| `voicecode-agent roots add <dir>`      | Add a workspace folder whose projects can be opened from a device; `roots remove` / `roots list` too                                    |
+| `voicecode-agent status`               | Running or not, URL, uptime, connected clients, mouse holder, sessions                                                                  |
+| `voicecode-agent pair`                 | Issue a new one-time pairing code (with QR) on the running agent                                                                        |
+| `voicecode-agent devices`              | List paired devices (● = connected)                                                                                                     |
+| `voicecode-agent devices revoke <id>`  | Revoke a device by id prefix (or `all`); it is disconnected immediately                                                                 |
+| `voicecode-agent sessions`             | Live Claude sessions and recent saved sessions per project                                                                              |
+| `voicecode-agent projects add <dir>`   | Allow a directory for Claude; `projects remove` / `projects list` too. Applies to a running agent immediately                           |
+| `voicecode-agent autostart enable`     | Start the agent at login; `autostart disable` / `autostart status` too                                                                  |
+| `voicecode-agent tunnel`               | Cloudflare Tunnel: `tunnel quick`, `tunnel setup <hostname>`, `tunnel token <hostname>`, `tunnel off`, `tunnel unlink`, `tunnel relink` |
+| `voicecode-agent firewall`             | Allow the agent's port through Windows Defender Firewall                                                                                |
+| `voicecode-agent desktop enable`       | Let the phone take control of Claude Desktop sessions (Windows); `desktop disable` / `desktop status` too                               |
+| `voicecode-agent doctor`               | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                                              |
+| `voicecode-agent cleanup`              | Remove caches, old versions and the old log (`--dry-run`); `cleanup auto on\|off [--limit <MB>]`                                        |
+| `voicecode-agent stop`                 | Stop the running agent                                                                                                                  |
 
 State lives in `%APPDATA%\voicecode-agent` (Windows) or `~/.config/voicecode-agent`
 (Linux); override with `VOICECODE_HOME`. Logs are JSON lines in `agent.log` there
