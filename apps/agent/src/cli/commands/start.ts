@@ -5,6 +5,7 @@ import { addProject, saveConfig } from '../../config/config.js';
 import { resolvePaths } from '../../config/paths.js';
 import { runChecks } from '../../doctor/checks.js';
 import { isAgentRunning } from '../../ipc/control.js';
+import { sharedTunnelWarning } from '../../tunnel/cloudflared.js';
 import { createLogger } from '../../util/logger.js';
 import { VERSION } from '../../util/version.js';
 import {
@@ -228,7 +229,9 @@ function describeTunnel(t: AgentTunnelInfo): string {
   if ('error' in t) return warn(`Unavailable — ${t.error}`);
   switch (t.state) {
     case 'ready':
-      return pc.bold(t.url);
+      return t.sharedWith
+        ? `${pc.bold(t.url)} ${warn(`— ${sharedTunnelWarning(t.sharedWith)}`)}`
+        : pc.bold(t.url);
     case 'connecting':
       return warn('Connecting… (check `voicecode-agent status` in a moment)');
     case 'down':

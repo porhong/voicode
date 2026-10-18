@@ -3,6 +3,7 @@ import type { PairingCode } from '@voicecode/security';
 import pc from 'picocolors';
 import qrcode from 'qrcode-terminal';
 import type { Agent, AgentSnapshot, AgentTunnelInfo } from '../agent.js';
+import { sharedTunnelWarning } from '../tunnel/cloudflared.js';
 import { formatDuration } from './shared.js';
 import { clean, fail, ok, warn } from './ui.js';
 
@@ -250,7 +251,9 @@ function tunnelCell(t: AgentTunnelInfo): string {
   if ('error' in t) return warn(`Unavailable — ${t.error}`);
   switch (t.state) {
     case 'ready':
-      return `${pc.bold(t.url)} ${ok('●')}`;
+      return t.sharedWith
+        ? `${pc.bold(t.url)} ${warn('● shared with another PC')}`
+        : `${pc.bold(t.url)} ${ok('●')}`;
     case 'connecting':
       return warn('Connecting…');
     case 'down':
@@ -342,6 +345,9 @@ export class LiveDashboard {
     });
     on('tunnel', (t) => {
       if (t.mode === 'off' || 'error' in t || t.state === 'connecting') return this.refresh();
+      if (t.state === 'ready' && t.sharedWith) {
+        return this.log(warn(`Tunnel ${sharedTunnelWarning(t.sharedWith)}`));
+      }
       this.log(`Tunnel ${tunnelCell(t)}`);
     });
     on('folderAllowed', (dir, device) =>

@@ -132,6 +132,8 @@ export const ConfigSchema = z.object({
       hostname: z.string().regex(HOSTNAME_RE, 'not a valid host name').optional(),
       /** Tunnel UUID for `named` mode. */
       tunnelId: z.uuid().optional(),
+      /** Name of that tunnel in the Cloudflare account; one tunnel per PC. */
+      tunnelName: z.string().min(1).optional(),
       /** Path to `cloudflared`; found on PATH or in its default install location if unset. */
       cloudflared: z.string().min(1).optional(),
     })

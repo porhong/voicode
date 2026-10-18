@@ -8,16 +8,20 @@ import { resolvePaths, type AgentPaths } from '../../config/paths.js';
 import { isAgentRunning } from '../../ipc/control.js';
 import {
   cloudflaredVersion,
+  configuredTunnelId,
   decodeTunnelToken,
+  defaultTunnelName,
   findCloudflared,
   findTunnelId,
   INSTALL_HINT,
   originCertPath,
   originUrl,
   runCloudflared,
+  sharedTunnelWarning,
+  tunnelConnectors,
   tunnelSetupProblem,
 } from '../../tunnel/cloudflared.js';
-import { ensurePrivateDir, writeFileAtomic } from '../../util/fs.js';
+import { ensurePrivateDir, readJsonFile, writeFileAtomic } from '../../util/fs.js';
 import { loadOrInit } from '../shared.js';
 import { clean, ok, out, row, warn } from '../ui.js';
 
@@ -48,7 +52,10 @@ export function registerTunnel(program: Command): void {
   tunnel
     .command('setup <hostname>')
     .description('Create a tunnel on your own domain (the domain must be on Cloudflare)')
-    .option('-n, --name <name>', 'tunnel name in your Cloudflare account', 'voicecode')
+    .option(
+      '-n, --name <name>',
+      `tunnel name in your Cloudflare account, one per PC (default: ${defaultTunnelName()})`,
+    )
     .option('--overwrite-dns', 'replace an existing DNS record for the host name')
     .action(setupNamed);
 
@@ -106,6 +113,7 @@ async function showStatus(): Promise<void> {
   const exe = findCloudflared(t.cloudflared);
   row('Mode', t.mode === 'off' ? pc.dim('off (LAN only)') : t.mode);
   if (t.hostname) row('Host name', t.hostname);
+  if (t.tunnelName) row('Tunnel', t.tunnelName);
   if (t.tunnelId) row('Tunnel ID', pc.dim(t.tunnelId));
   row(
     'cloudflared',
@@ -116,6 +124,20 @@ async function showStatus(): Promise<void> {
   if (t.mode !== 'off') {
     const problem = await tunnelSetupProblem(t, paths);
     row('Setup', problem ? warn(problem) : ok('ready'));
+    const id = exe && !problem ? await configuredTunnelId(t, paths) : undefined;
+    const connectors = id ? await tunnelConnectors(exe!, id) : undefined;
+    if (connectors) {
+      // The running agent's cloudflared is one of them; any other is a second PC.
+      const others = connectors.length - ((await isAgentRunning(paths)) ? 1 : 0);
+      row(
+        'Running on',
+        others > 0
+          ? warn(sharedTunnelWarning(others))
+          : connectors.length
+            ? ok('this PC only')
+            : pc.dim('no PC right now'),
+      );
+    }
   }
   out();
   out(pc.dim('  voicecode-agent tunnel quick                 random trycloudflare.com URL'));
@@ -132,14 +154,18 @@ async function showStatus(): Promise<void> {
  */
 async function setupNamed(
   rawHostname: string,
-  opts: { name: string; overwriteDns?: boolean },
+  opts: { name?: string; overwriteDns?: boolean },
 ): Promise<void> {
   const hostname = normalizeHostname(rawHostname);
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(opts.name)) {
+  const { paths, config } = await load();
+  // A PC set up before tunnels were per PC has no tunnelName and moves off the shared
+  // `voicecode` tunnel onto its own; the PCs still on the old one are not touched.
+  const name = opts.name ?? config.tunnel.tunnelName ?? defaultTunnelName();
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(name)) {
     throw new Error('Tunnel names may contain letters, digits, "-" and "_"');
   }
-  const { paths, config } = await load();
   const exe = requireCloudflared(config);
+  const previous = config.tunnel.mode === 'named' ? config.tunnel : undefined;
 
   if (!existsSync(originCertPath())) {
     out('Log in to Cloudflare in the browser window that opens, and pick the domain');
@@ -149,10 +175,11 @@ async function setupNamed(
   }
 
   await ensurePrivateDir(paths.tunnelDir);
-  const tunnelId = await existingTunnelId(exe, opts.name);
+  const tunnelId = await existingTunnelId(exe, name);
   if (tunnelId) {
-    out(`Using the existing tunnel ${pc.bold(opts.name)} ${pc.dim(tunnelId)}`);
-    await writeCredentialsFromToken(exe, opts.name, paths);
+    await refuseTunnelOfAnotherPc(exe, name, tunnelId, config, paths);
+    out(`Using the existing tunnel ${pc.bold(name)} ${pc.dim(tunnelId)}`);
+    await writeCredentialsFromToken(exe, name, paths);
   } else {
     await rm(paths.tunnelCredentials, { force: true });
     const created = await runCloudflared(exe, [
@@ -160,28 +187,39 @@ async function setupNamed(
       'create',
       '--credentials-file',
       paths.tunnelCredentials,
-      opts.name,
+      name,
     ]);
     if (created.code !== 0) throw cloudflaredError('Creating the tunnel failed', created.stderr);
-    out(ok(`Created tunnel ${opts.name}`));
+    out(ok(`Created tunnel ${name}`));
   }
-  const id = tunnelId ?? (await existingTunnelId(exe, opts.name));
+  const id = tunnelId ?? (await existingTunnelId(exe, name));
   if (!id) throw new Error('The tunnel was created but its ID could not be read.');
 
+  // This PC's own host name moving to its new tunnel replaces the record that pointed at
+  // the tunnel it used before. Any other existing record is only replaced on request.
+  const movesOwnHost =
+    previous?.hostname === hostname && !!previous.tunnelId && previous.tunnelId !== id;
   const routeArgs = ['tunnel', 'route', 'dns'];
-  if (opts.overwriteDns) routeArgs.push('--overwrite-dns');
+  if (opts.overwriteDns || movesOwnHost) routeArgs.push('--overwrite-dns');
   const routed = await runCloudflared(exe, [...routeArgs, id, hostname]);
   if (routed.code !== 0) {
     const hint = /already exists|already configured/i.test(routed.stderr)
-      ? '\nA DNS record for that name already exists. Pick another name, or rerun with --overwrite-dns to replace it.'
+      ? `\nThat host name already has a DNS record, maybe another PC's tunnel. Give each PC its own host name (pc2.${parentDomain(hostname)}, …), or rerun with --overwrite-dns to point it at this PC instead.`
       : '';
     throw cloudflaredError(`Routing ${hostname} to the tunnel failed`, routed.stderr + hint);
   }
-  out(ok(`${hostname} → tunnel ${opts.name}`));
+  out(ok(`${hostname} → tunnel ${name}`));
 
-  config.tunnel = { ...config.tunnel, mode: 'named', hostname, tunnelId: id };
+  config.tunnel = { ...config.tunnel, mode: 'named', hostname, tunnelId: id, tunnelName: name };
   await saveConfig(paths.config, config);
   out(ok(`Tunnel enabled: https://${hostname}`));
+  if (previous?.tunnelId && previous.tunnelId !== id) {
+    const old = previous.tunnelName ?? previous.tunnelId;
+    out(pc.dim(`  This PC no longer runs the tunnel ${old}. It stays in your account for any`));
+    out(pc.dim(`  other PC that uses it; once none does, \`cloudflared tunnel delete ${old}\`.`));
+  }
+  out(pc.dim('  For another PC, run `tunnel setup` there with a different host name: each PC'));
+  out(pc.dim('  gets its own tunnel, and they all work side by side.'));
   publicWarning();
   out(pc.dim('  For a second login in front of the agent, add a Cloudflare Access application'));
   out(pc.dim('  for this host name in the Zero Trust dashboard.'));
@@ -198,6 +236,37 @@ async function existingTunnelId(exe: string, name: string): Promise<string | und
       `cloudflared printed an unreadable tunnel list: ${clean(res.stdout.slice(0, 200))}`,
     );
   }
+}
+
+/**
+ * Refuses to take over a tunnel another PC is running: two PCs on one tunnel receive each
+ * other's requests. The tunnel this PC already runs (its config and credentials name it,
+ * and the agent may have it connected right now) is always fine.
+ */
+async function refuseTunnelOfAnotherPc(
+  exe: string,
+  name: string,
+  id: string,
+  config: AgentConfig,
+  paths: AgentPaths,
+): Promise<void> {
+  const credentials = await readJsonFile<{ TunnelID?: unknown }>(paths.tunnelCredentials).catch(
+    () => undefined,
+  );
+  if (config.tunnel.tunnelId === id && credentials?.TunnelID === id) return;
+  const connectors = await tunnelConnectors(exe, id);
+  if (!connectors?.length) return;
+  const other = name === defaultTunnelName() ? `${name}-2` : defaultTunnelName();
+  throw new Error(
+    `The tunnel "${clean(name)}" is running on another PC right now. Each PC needs a tunnel ` +
+      `of its own, or they get each other's requests. Rerun with another name: --name ${other}`,
+  );
+}
+
+/** `example.com` for `code.example.com`, to suggest a sibling host name. */
+function parentDomain(hostname: string): string {
+  const labels = hostname.split('.');
+  return labels.length > 2 ? labels.slice(1).join('.') : hostname;
 }
 
 /** Credentials of a tunnel created elsewhere, rebuilt from its token. */
@@ -229,7 +298,13 @@ async function setupToken(rawHostname: string): Promise<void> {
     );
   }
   await writeFileAtomic(paths.tunnelToken, `${token}\n`);
-  config.tunnel = { ...config.tunnel, mode: 'token', hostname, tunnelId: undefined };
+  config.tunnel = {
+    ...config.tunnel,
+    mode: 'token',
+    hostname,
+    tunnelId: undefined,
+    tunnelName: undefined,
+  };
   await saveConfig(paths.config, config);
   out(ok(`Tunnel enabled: https://${hostname}`));
   out();
@@ -237,6 +312,8 @@ async function setupToken(rawHostname: string): Promise<void> {
   row('Service', originUrl(config.server));
   row('CA Pool', paths.caCert);
   out(pc.dim('  (Additional application settings → TLS. Keep "No TLS Verify" off.)'));
+  out(pc.dim('  Use a separate tunnel and token for each PC: a token used on two PCs makes them'));
+  out(pc.dim("  replicas of one tunnel, and each would get the other's requests."));
   out();
   publicWarning();
   await applyHint(paths);

@@ -6,6 +6,7 @@ import type { ProjectConfig } from '../../config/config.js';
 import { loadConfig } from '../../config/config.js';
 import { resolvePaths } from '../../config/paths.js';
 import { AgentNotRunningError, controlRequest } from '../../ipc/control.js';
+import { sharedTunnelWarning } from '../../tunnel/cloudflared.js';
 import { listSessions } from '@anthropic-ai/claude-agent-sdk';
 import { formatDuration } from '../shared.js';
 import { clean, fail, ok, out, row, warn } from '../ui.js';
@@ -46,7 +47,9 @@ export function registerStatus(program: Command): void {
           'error' in t
             ? warn(t.error)
             : t.state === 'ready'
-              ? t.url
+              ? t.sharedWith
+                ? `${t.url} ${warn(`— ${sharedTunnelWarning(t.sharedWith)}`)}`
+                : t.url
               : t.state === 'down'
                 ? warn(`down (${t.reason})`)
                 : warn('connecting'),

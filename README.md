@@ -136,10 +136,18 @@ voicecode-agent start                           # prints the Tunnel URL and a QR
   device cookie belongs to that URL, devices have to pair again each time. For a quick
   test without changing the config, use `voicecode-agent start --tunnel`.
 - **`tunnel setup <hostname>`** opens a Cloudflare login the first time. It then creates
-  a tunnel named `voicecode` (change this with `--name`) and adds a DNS record for the
-  host name. It won't replace an existing DNS record unless you pass `--overwrite-dns`.
-  The tunnel credentials are saved in `<state dir>/tunnel/credentials.json`. The URL
-  stays the same, so devices stay paired.
+  a tunnel for this PC named `voicecode-<PC name>` (change this with `--name`) and adds a
+  DNS record for the host name. It won't replace an existing DNS record unless you pass
+  `--overwrite-dns`. The tunnel credentials are saved in
+  `<state dir>/tunnel/credentials.json`. The URL stays the same, so devices stay paired.
+- **Several PCs:** run `tunnel setup` on each PC with its own host name
+  (`pc1.example.com`, `pc2.example.com`). Each PC gets its own tunnel, so they all work
+  at the same time. Don't run one tunnel on two PCs: Cloudflare treats them as replicas
+  and sends each request to either PC, whatever its host name. `setup` refuses a tunnel
+  another PC is running, and `voicecode-agent tunnel` and the running agent warn when a
+  tunnel is shared. Up to 0.1.2, every PC defaulted to the same `voicecode` tunnel; to fix
+  that, rerun `tunnel setup <same hostname>` on each PC. It moves that PC's host name to
+  a new tunnel of its own.
 - **`tunnel token <hostname>`** reads the token from stdin, or from a hidden prompt. It
   stores the token in `<state dir>/tunnel/token`, and the agent never passes it on the
   command line. In the dashboard, point the public hostname at the printed service URL

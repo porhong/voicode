@@ -286,6 +286,18 @@ Not verified yet:
   2026.10.1, a fresh account: `tunnel list --output json` prints `null` there): tunnel
   created, DNS routed, the PWA served over the public host name; pairing through it was
   not tried. `tunnel token` is still only checked by its generated config.
+- One tunnel per PC (2026-10-19): two PCs on one tunnel are replicas, and Cloudflare
+  sends each request to either PC whatever its host name (the old fixed default name
+  `voicecode` caused this). `tunnel setup` now defaults to `voicecode-<PC name>`
+  (`defaultTunnelName`) and saves `tunnelName`. It refuses an existing tunnel that has
+  connectors when this PC's config and credentials don't name it, and moves this PC's
+  own host name to its new tunnel with `--overwrite-dns`. The agent compares
+  `tunnel info --output json` connectors with its own "Generated Connector ID" on every
+  connect and every 15 min, and reports `sharedWith` (start log, dashboard, `status`).
+  `tunnel status` shows a "Running on" row. Verified: `tunnel status` on the dev PC found
+  the second PC on the shared `voicecode` tunnel, and a real quick tunnel's log has the
+  connector line. The `setup` migration itself was not run, since it changes the owner's
+  DNS.
 
 Next candidates, in rough priority:
 

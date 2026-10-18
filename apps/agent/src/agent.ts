@@ -75,10 +75,16 @@ export interface AgentSnapshot {
 export type AgentTunnelInfo =
   | { mode: 'off' }
   | { mode: AgentConfig['tunnel']['mode']; error: string }
-  | ({ mode: AgentConfig['tunnel']['mode'] } & TunnelState);
+  | ({
+      mode: AgentConfig['tunnel']['mode'];
+      /** Other cloudflared processes (other PCs) running the same tunnel, when there are any. */
+      sharedWith?: number;
+    } & TunnelState);
 
 /** How long `start` waits for the tunnel before printing without its URL. */
 const TUNNEL_WAIT_MS = 30_000;
+/** How often a connected named/token tunnel checks whether another PC runs it too. */
+const TUNNEL_SHARING_CHECK_MS = 15 * 60_000;
 
 /**
  * Composition root: TLS, device registry and pairing, the mouse router, Claude
@@ -112,6 +118,7 @@ export class Agent extends EventEmitter<{
   private urls: string[] = [];
   private tunnel: CloudflaredTunnel | undefined;
   private tunnelInfo: AgentTunnelInfo = { mode: 'off' };
+  private tunnelSharingTimer: NodeJS.Timeout | undefined;
   /** Host names the tunnel serves; the server's origin guard reads this set live. */
   private readonly tunnelHosts = new Set<string>();
   private startedAt = 0;
@@ -284,8 +291,43 @@ export class Agent extends EventEmitter<{
       this.tunnelInfo = { mode: settings.mode, ...state };
       this.emit('tunnel', this.tunnelInfo);
     });
+    if (prepared.otherConnectors) this.watchTunnelSharing(prepared.otherConnectors, logger);
     this.tunnel.start();
     await this.tunnel.waitReady(TUNNEL_WAIT_MS);
+  }
+
+  /**
+   * Notices another PC running the same tunnel: Cloudflare then splits requests between
+   * the two, so each PC's host name fails part of the time. Checked on every connect and
+   * every 15 minutes, since the other PC may start later.
+   */
+  private watchTunnelSharing(
+    otherConnectors: () => Promise<number | undefined>,
+    logger: Logger,
+  ): void {
+    let checking = false;
+    const check = async () => {
+      if (checking || !this.isTunnelReady()) return;
+      checking = true;
+      const others = await otherConnectors().finally(() => (checking = false));
+      const info = this.tunnelInfo;
+      if (others === undefined || info.mode === 'off' || !('state' in info)) return;
+      if (info.state !== 'ready') return;
+      const sharedWith = others || undefined;
+      if (sharedWith === info.sharedWith) return;
+      if (sharedWith) logger.warn({ others }, 'tunnel is also run by another cloudflared');
+      this.tunnelInfo = { ...info, sharedWith };
+      this.emit('tunnel', this.tunnelInfo);
+    };
+    this.tunnel?.on('state', (state) => {
+      if (state.state === 'ready') void check();
+    });
+    this.tunnelSharingTimer = setInterval(() => void check(), TUNNEL_SHARING_CHECK_MS);
+    this.tunnelSharingTimer.unref();
+  }
+
+  private isTunnelReady(): boolean {
+    return 'state' in this.tunnelInfo && this.tunnelInfo.state === 'ready';
   }
 
   /** Adds a folder to the allow-list and tells every device and the terminal. */
@@ -355,6 +397,7 @@ export class Agent extends EventEmitter<{
       this.attachments?.stop();
       this.sessions?.closeAll();
       this.gateway?.closeAll();
+      clearInterval(this.tunnelSharingTimer);
       await this.tunnel?.stop();
       await this.pcSessions?.stop();
       await this.router?.stop();

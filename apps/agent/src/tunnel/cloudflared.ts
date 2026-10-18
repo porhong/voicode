@@ -27,6 +27,8 @@ export const INSTALL_HINT =
 const QUICK_URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 const CONNECTED_RE = /Registered tunnel connection/;
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
+/** `tunnel run` logs "Generated Connector ID: <uuid>": one ID per cloudflared process. */
+const CONNECTOR_RE = new RegExp(`Connector ID: (${UUID_RE.source})`);
 
 /** Where `cloudflared` is: the configured path, PATH, or its default install location. */
 export function findCloudflared(override?: string): string | undefined {
@@ -89,6 +91,74 @@ export function findTunnelId(listJson: string, name: string): string | undefined
     (t) => t?.name === name && typeof t.id === 'string',
   );
   return match ? (match.id as string) : undefined;
+}
+
+/**
+ * The tunnel name `tunnel setup` uses on this PC. Every PC needs a tunnel of its own: two
+ * cloudflared processes running one tunnel are replicas of it, and Cloudflare hands each
+ * request to either of them whatever host name it is for. A second PC on a shared tunnel
+ * therefore breaks the first one's host name (its requests land on the other PC, whose
+ * ingress answers 404), which is what the old fixed default name `voicecode` led to.
+ */
+export function defaultTunnelName(machine: string = os.hostname()): string {
+  const slug = machine
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 40)
+    .replace(/^-+|-+$/g, '');
+  return slug ? `voicecode-${slug}` : 'voicecode';
+}
+
+/**
+ * The connectors (one per cloudflared process) that are connected to a tunnel, from
+ * `cloudflared tunnel info --output json`. Connectors without open connections are gone.
+ */
+export function parseConnectorIds(infoJson: string): string[] {
+  const info: unknown = JSON.parse(infoJson.trim() || 'null');
+  const conns = (info as { conns?: unknown } | null)?.conns;
+  if (!Array.isArray(conns)) return [];
+  return (conns as Array<{ id?: unknown; conns?: unknown } | null>)
+    .filter((c) => typeof c?.id === 'string' && Array.isArray(c.conns) && c.conns.length > 0)
+    .map((c) => c!.id as string);
+}
+
+/**
+ * The connectors running a tunnel, or undefined when that can't be read: it needs the
+ * account certificate from `cloudflared tunnel login` (a token-only setup has none) and
+ * a reachable Cloudflare API.
+ */
+export async function tunnelConnectors(
+  exe: string,
+  tunnelId: string,
+): Promise<string[] | undefined> {
+  if (!existsSync(originCertPath())) return undefined;
+  const res = await runCloudflared(exe, ['tunnel', 'info', '--output', 'json', tunnelId]);
+  if (res.code !== 0) return undefined;
+  try {
+    return parseConnectorIds(res.stdout);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The tunnel a named or token setup runs. */
+export async function configuredTunnelId(
+  tunnel: TunnelConfig,
+  paths: AgentPaths,
+): Promise<string | undefined> {
+  if (tunnel.mode === 'named') return tunnel.tunnelId;
+  if (tunnel.mode !== 'token') return undefined;
+  const token = await readFile(paths.tunnelToken, 'utf8').catch(() => '');
+  return decodeTunnelToken(token.trim())?.t;
+}
+
+/** Shown wherever a running tunnel turns out to be shared with another PC. */
+export function sharedTunnelWarning(others: number): string {
+  const who = others === 1 ? 'another cloudflared' : `${others} other cloudflared processes`;
+  return (
+    `also run by ${who} (another PC?), so requests are split between them. ` +
+    'Give each PC its own tunnel: `voicecode-agent tunnel setup <hostname>`'
+  );
 }
 
 /**
@@ -213,6 +283,7 @@ export class CloudflaredTunnel extends EventEmitter<{ state: [TunnelState] }> {
   private backoffMs = MIN_BACKOFF_MS;
   private retryTimer: NodeJS.Timeout | undefined;
   private current: TunnelState = { state: 'connecting' };
+  private connector: string | undefined;
   private readonly killOnExit = () => this.child?.kill();
 
   constructor(
@@ -227,6 +298,11 @@ export class CloudflaredTunnel extends EventEmitter<{ state: [TunnelState] }> {
 
   get status(): TunnelState {
     return this.current;
+  }
+
+  /** This run's connector ID, which tells our connections apart from other PCs'. */
+  get connectorId(): string | undefined {
+    return this.connector;
   }
 
   start(): void {
@@ -276,6 +352,7 @@ export class CloudflaredTunnel extends EventEmitter<{ state: [TunnelState] }> {
     const startedAt = Date.now();
     let url = this.fixedUrl;
     let lastError = '';
+    this.connector = undefined;
     this.setState({ state: 'connecting' });
 
     const child = spawn(this.command, this.args, {
@@ -295,6 +372,7 @@ export class CloudflaredTunnel extends EventEmitter<{ state: [TunnelState] }> {
         this.logger.debug({ line: text }, 'cloudflared');
       }
       url ??= QUICK_URL_RE.exec(text)?.[0];
+      this.connector ??= CONNECTOR_RE.exec(text)?.[1];
       if (url && CONNECTED_RE.test(text) && this.current.state !== 'ready') {
         this.logger.info({ url }, 'tunnel connected');
         this.setState({ state: 'ready', url });
@@ -330,7 +408,14 @@ export async function prepareTunnel(
   config: AgentConfig,
   paths: AgentPaths,
   logger: Logger,
-): Promise<{ tunnel: CloudflaredTunnel } | { error: string }> {
+): Promise<
+  | {
+      tunnel: CloudflaredTunnel;
+      /** How many other cloudflared processes run this tunnel; undefined when unknown. */
+      otherConnectors?: () => Promise<number | undefined>;
+    }
+  | { error: string }
+> {
   const exe = findCloudflared(config.tunnel.cloudflared);
   if (!exe) return { error: `cloudflared not found. ${INSTALL_HINT}.` };
   const problem = await tunnelSetupProblem(config.tunnel, paths);
@@ -338,7 +423,16 @@ export async function prepareTunnel(
   const { yaml, args } = cloudflaredConfig(config, paths);
   await writeFileAtomic(paths.tunnelConfig, yaml);
   const host = staticTunnelHost(config.tunnel);
+  const tunnel = new CloudflaredTunnel(exe, args, logger, host ? `https://${host}` : undefined);
+  const tunnelId = await configuredTunnelId(config.tunnel, paths);
+  if (!tunnelId) return { tunnel };
   return {
-    tunnel: new CloudflaredTunnel(exe, args, logger, host ? `https://${host}` : undefined),
+    tunnel,
+    otherConnectors: async () => {
+      const ids = await tunnelConnectors(exe, tunnelId);
+      if (!ids) return undefined;
+      const own = tunnel.connectorId;
+      return own ? ids.filter((id) => id !== own).length : Math.max(0, ids.length - 1);
+    },
   };
 }

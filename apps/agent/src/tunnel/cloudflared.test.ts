@@ -6,8 +6,10 @@ import {
   cloudflaredConfig,
   CloudflaredTunnel,
   decodeTunnelToken,
+  defaultTunnelName,
   findTunnelId,
   originUrl,
+  parseConnectorIds,
   type TunnelState,
 } from './cloudflared.js';
 
@@ -90,6 +92,32 @@ describe('cloudflared configuration', () => {
     expect(findTunnelId('', 'voicecode')).toBeUndefined();
     expect(findTunnelId('[]', 'voicecode')).toBeUndefined();
   });
+
+  it('names the tunnel after the PC, so two PCs never share one by default', () => {
+    expect(defaultTunnelName('DESKTOP-4F2K9')).toBe('voicecode-desktop-4f2k9');
+    expect(defaultTunnelName('Anna’s MacBook.local')).toBe('voicecode-anna-s-macbook-local');
+    expect(defaultTunnelName('--')).toBe('voicecode');
+    expect(defaultTunnelName('x'.repeat(80))).toBe(`voicecode-${'x'.repeat(40)}`);
+    expect(defaultTunnelName(`${'a'.repeat(39)}.b`)).toBe(`voicecode-${'a'.repeat(39)}`);
+  });
+
+  it('reads the connected connectors of a tunnel', () => {
+    const info = JSON.stringify({
+      id: TUNNEL_ID,
+      name: 'voicecode',
+      conns: [
+        { id: 'acafe923-70f7-4204-a120-99966b104f9a', conns: [{ colo_name: 'sin19' }] },
+        { id: 'd06039a5-e239-4533-90d1-b20d6d7436a3', conns: [{ colo_name: 'sin12' }] },
+        { id: '11111111-e239-4533-90d1-b20d6d7436a3', conns: [] },
+      ],
+    });
+    expect(parseConnectorIds(info)).toEqual([
+      'acafe923-70f7-4204-a120-99966b104f9a',
+      'd06039a5-e239-4533-90d1-b20d6d7436a3',
+    ]);
+    expect(parseConnectorIds(JSON.stringify({ id: TUNNEL_ID, conns: null }))).toEqual([]);
+    expect(parseConnectorIds('')).toEqual([]);
+  });
 });
 
 /** A stand-in for cloudflared: a Node script that prints the given log lines. */
@@ -128,10 +156,14 @@ describe('CloudflaredTunnel', () => {
   });
 
   it('uses the configured host name for named tunnels', async () => {
-    const [cmd, args] = fakeCloudflared(['INF Registered tunnel connection connIndex=0']);
+    const [cmd, args] = fakeCloudflared([
+      '2026-10-18T16:55:55Z INF Generated Connector ID: acafe923-70f7-4204-a120-99966b104f9a',
+      'INF Registered tunnel connection connIndex=0',
+    ]);
     const tunnel = new CloudflaredTunnel(cmd, args, silentLogger(), 'https://code.example.com');
     tunnel.start();
     expect(await tunnel.waitReady(10_000)).toBe('https://code.example.com');
+    expect(tunnel.connectorId).toBe('acafe923-70f7-4204-a120-99966b104f9a');
     await tunnel.stop();
   });
 
