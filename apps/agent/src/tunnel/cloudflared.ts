@@ -79,6 +79,19 @@ export function parseTunnelId(output: string): string | undefined {
 }
 
 /**
+ * The ID of the tunnel called `name` in `cloudflared tunnel list --output json`. An account
+ * without tunnels prints `null` there, not `[]`.
+ */
+export function findTunnelId(listJson: string, name: string): string | undefined {
+  const list: unknown = JSON.parse(listJson.trim() || 'null');
+  if (!Array.isArray(list)) return undefined;
+  const match = (list as Array<{ id?: unknown; name?: unknown } | null>).find(
+    (t) => t?.name === name && typeof t.id === 'string',
+  );
+  return match ? (match.id as string) : undefined;
+}
+
+/**
  * A tunnel token is base64 JSON with the account tag (`a`), tunnel ID (`t`) and secret
  * (`s`): the same fields as a credentials file.
  */

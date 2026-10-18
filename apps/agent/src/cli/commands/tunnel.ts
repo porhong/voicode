@@ -10,6 +10,7 @@ import {
   cloudflaredVersion,
   decodeTunnelToken,
   findCloudflared,
+  findTunnelId,
   INSTALL_HINT,
   originCertPath,
   originUrl,
@@ -190,8 +191,13 @@ async function setupNamed(
 async function existingTunnelId(exe: string, name: string): Promise<string | undefined> {
   const res = await runCloudflared(exe, ['tunnel', 'list', '--output', 'json', '--name', name]);
   if (res.code !== 0) throw cloudflaredError('Listing tunnels failed', res.stderr);
-  const list = JSON.parse(res.stdout || '[]') as Array<{ id?: string; name?: string }>;
-  return list.find((t) => t.name === name && t.id)?.id;
+  try {
+    return findTunnelId(res.stdout, name);
+  } catch {
+    throw new Error(
+      `cloudflared printed an unreadable tunnel list: ${clean(res.stdout.slice(0, 200))}`,
+    );
+  }
 }
 
 /** Credentials of a tunnel created elsewhere, rebuilt from its token. */

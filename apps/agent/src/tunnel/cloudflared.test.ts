@@ -6,6 +6,7 @@ import {
   cloudflaredConfig,
   CloudflaredTunnel,
   decodeTunnelToken,
+  findTunnelId,
   originUrl,
   type TunnelState,
 } from './cloudflared.js';
@@ -76,6 +77,18 @@ describe('cloudflared configuration', () => {
     expect(decodeTunnelToken(Buffer.from('{"a":"x","t":"nope","s":"y"}').toString('base64'))).toBe(
       undefined,
     );
+  });
+
+  it('finds a tunnel by name in the tunnel list, which is null for no tunnels', () => {
+    const list = JSON.stringify([
+      { id: '11111111-765d-4adf-8112-31c55c1551ef', name: 'other' },
+      { id: TUNNEL_ID, name: 'voicecode' },
+    ]);
+    expect(findTunnelId(list, 'voicecode')).toBe(TUNNEL_ID);
+    expect(findTunnelId(list, 'missing')).toBeUndefined();
+    expect(findTunnelId('null\n', 'voicecode')).toBeUndefined();
+    expect(findTunnelId('', 'voicecode')).toBeUndefined();
+    expect(findTunnelId('[]', 'voicecode')).toBeUndefined();
   });
 });
 
