@@ -270,8 +270,10 @@ Not verified yet:
 - PC session discovery reads Claude Code internals (`~/.claude/sessions/<pid>.json`,
   transcript JSONL); checked against Claude Code 2.1.299 only. Parsing is lenient.
 - Cloudflare Tunnel: quick mode was checked end to end through Cloudflare (pairing,
-  cookie, WebSocket). `tunnel setup` and `tunnel token` need a Cloudflare account and a
-  domain, so only their generated ingress config was validated with cloudflared.
+  cookie, WebSocket). `tunnel setup` was run for real on 2026-10-18 (cloudflared
+  2026.10.1, a fresh account: `tunnel list --output json` prints `null` there): tunnel
+  created, DNS routed, the PWA served over the public host name; pairing through it was
+  not tried. `tunnel token` is still only checked by its generated config.
 
 Next candidates, in rough priority:
 
