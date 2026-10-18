@@ -50,22 +50,30 @@ to skip the question, or `--project <dir>` to allow just one folder; `voicecode-
 does the same setup without starting the server.
 
 ```
-VoiceCode Agent  v0.1.0
-  ● Running
+VoiceCode Agent  v0.1.2   ● Running · up 0m
 
-  Platform      Windows 11 (build 26300)
+  Devices       none online
   Claude Code   Claude login
-  Mouse driver  Ready (win32-sendinput)
+  Mouse         Ready (win32-sendinput)
+  LAN URL       https://192.168.1.100:8443
+  Platform      Windows 11 (build 26300)
   Projects      my-app
   Workspace     C:\Users\you\code
-  LAN URL       https://192.168.1.100:8443
-  Pairing code  482-917  expires in 10 min
   CA SHA-256    99:89:0D:…
 
+  Pair a device   code 482-917  expires in 10 min
   Scan with your phone to open and pair:  [QR code]
+
+  ○ Waiting for a device…
+  P new code   Q stop
 ```
 
 Scan the QR code (it carries the pairing code), confirm a device name, and you're in.
+Once a device is online, the terminal turns into a live dashboard: online devices, open
+Claude sessions and approvals waiting on the phone, Claude Code sessions on the PC, who
+holds the mouse and microphone, the tunnel, and recent events. The setup details and the
+QR code are hidden until you press P to pair another device. `--no-dashboard` (or
+`--verbose`, or a non-interactive terminal) keeps the scrolling log instead.
 
 ### Standalone executables
 
@@ -175,25 +183,25 @@ pairing code.
 
 ## Commands
 
-| Command                                | Purpose                                                                                                       |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `voicecode-agent`                      | Same as `start`; works from any folder and sets everything up on first run                                    |
-| `voicecode-agent init [--root <dir>]`  | Create config, CA and server certificate; run diagnostics (`--project <dir>` too)                             |
-| `voicecode-agent start [--root <dir>]` | Start the local server (`--project`, `--port`, `--host`, `--no-qr`, `--verbose`, `--tunnel`, `--no-tunnel`)   |
-| `voicecode-agent roots add <dir>`      | Add a workspace folder whose projects can be opened from a device; `roots remove` / `roots list` too          |
-| `voicecode-agent status`               | Running or not, URL, uptime, connected clients, mouse holder, sessions                                        |
-| `voicecode-agent pair`                 | Issue a new one-time pairing code (with QR) on the running agent                                              |
-| `voicecode-agent devices`              | List paired devices (● = connected)                                                                           |
-| `voicecode-agent devices revoke <id>`  | Revoke a device by id prefix (or `all`); it is disconnected immediately                                       |
-| `voicecode-agent sessions`             | Live Claude sessions and recent saved sessions per project                                                    |
-| `voicecode-agent projects add <dir>`   | Allow a directory for Claude; `projects remove` / `projects list` too. Applies to a running agent immediately |
-| `voicecode-agent autostart enable`     | Start the agent at login; `autostart disable` / `autostart status` too                                        |
-| `voicecode-agent tunnel`               | Cloudflare Tunnel: `tunnel quick`, `tunnel setup <hostname>`, `tunnel token <hostname>`, `tunnel off`         |
-| `voicecode-agent firewall`             | Allow the agent's port through Windows Defender Firewall                                                      |
-| `voicecode-agent desktop enable`       | Let the phone take control of Claude Desktop sessions (Windows); `desktop disable` / `desktop status` too     |
-| `voicecode-agent doctor`               | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                    |
-| `voicecode-agent cleanup`              | Remove caches, old versions and the old log (`--dry-run`); `cleanup auto on\|off [--limit <MB>]`              |
-| `voicecode-agent stop`                 | Stop the running agent                                                                                        |
+| Command                                | Purpose                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `voicecode-agent`                      | Same as `start`; works from any folder and sets everything up on first run                                                    |
+| `voicecode-agent init [--root <dir>]`  | Create config, CA and server certificate; run diagnostics (`--project <dir>` too)                                             |
+| `voicecode-agent start [--root <dir>]` | Start the local server (`--project`, `--port`, `--host`, `--no-qr`, `--no-dashboard`, `--verbose`, `--tunnel`, `--no-tunnel`) |
+| `voicecode-agent roots add <dir>`      | Add a workspace folder whose projects can be opened from a device; `roots remove` / `roots list` too                          |
+| `voicecode-agent status`               | Running or not, URL, uptime, connected clients, mouse holder, sessions                                                        |
+| `voicecode-agent pair`                 | Issue a new one-time pairing code (with QR) on the running agent                                                              |
+| `voicecode-agent devices`              | List paired devices (● = connected)                                                                                           |
+| `voicecode-agent devices revoke <id>`  | Revoke a device by id prefix (or `all`); it is disconnected immediately                                                       |
+| `voicecode-agent sessions`             | Live Claude sessions and recent saved sessions per project                                                                    |
+| `voicecode-agent projects add <dir>`   | Allow a directory for Claude; `projects remove` / `projects list` too. Applies to a running agent immediately                 |
+| `voicecode-agent autostart enable`     | Start the agent at login; `autostart disable` / `autostart status` too                                                        |
+| `voicecode-agent tunnel`               | Cloudflare Tunnel: `tunnel quick`, `tunnel setup <hostname>`, `tunnel token <hostname>`, `tunnel off`                         |
+| `voicecode-agent firewall`             | Allow the agent's port through Windows Defender Firewall                                                                      |
+| `voicecode-agent desktop enable`       | Let the phone take control of Claude Desktop sessions (Windows); `desktop disable` / `desktop status` too                     |
+| `voicecode-agent doctor`               | Diagnose Node, Claude auth, desktop session, mouse, TLS, firewall, network                                                    |
+| `voicecode-agent cleanup`              | Remove caches, old versions and the old log (`--dry-run`); `cleanup auto on\|off [--limit <MB>]`                              |
+| `voicecode-agent stop`                 | Stop the running agent                                                                                                        |
 
 State lives in `%APPDATA%\voicecode-agent` (Windows) or `~/.config/voicecode-agent`
 (Linux); override with `VOICECODE_HOME`. Logs are JSON lines in `agent.log` there

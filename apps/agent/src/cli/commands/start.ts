@@ -27,6 +27,7 @@ import {
   timestamp,
   warn,
 } from '../ui.js';
+import { LiveDashboard } from '../dashboard.js';
 
 interface StartOptions {
   project?: string;
@@ -34,6 +35,7 @@ interface StartOptions {
   port?: number;
   host?: string;
   qr: boolean;
+  dashboard: boolean;
   verbose?: boolean;
   tunnel?: boolean;
 }
@@ -49,6 +51,7 @@ export function registerStart(program: Command): void {
     .option('--port <port>', 'HTTPS port for this run', parsePort)
     .option('--host <address>', 'bind address for this run')
     .option('--no-qr', 'do not print the pairing QR code')
+    .option('--no-dashboard', 'print a scrolling log instead of the live dashboard')
     .option('--tunnel', 'use a Cloudflare quick tunnel for this run if none is configured')
     .option('--no-tunnel', 'do not start the configured Cloudflare Tunnel this run')
     .option('-v, --verbose', 'mirror the JSON log to stderr')
@@ -103,6 +106,57 @@ async function start(opts: StartOptions): Promise<void> {
   const auth = (await runChecks(config, paths, { probeMouse: false, probeVoice: false })).find(
     (c) => c.name === 'Claude Code auth',
   );
+
+  let shuttingDown = false;
+  let dashboard: LiveDashboard | undefined;
+  /** Back on the normal screen, with what happened while the dashboard was up. */
+  const closeDashboard = () => {
+    if (!dashboard) return;
+    const events = dashboard.stop();
+    dashboard = undefined;
+    for (const e of events.slice(-20)) {
+      out(`${pc.dim(new Date(e.at).toLocaleTimeString())} ${e.text}`);
+    }
+  };
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    closeDashboard();
+    out(`\n${timestamp()} Stopping…`);
+    await agent.stop();
+  };
+  agent.on('stopped', () => {
+    closeDashboard();
+    out(`${timestamp()} Stopped`);
+    logger.flush();
+    process.exit(0);
+  });
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+  // Sent when the terminal goes away (Node also emits it when a Windows console closes).
+  process.on('SIGHUP', shutdown);
+
+  // The JSON log on stderr would scroll the dashboard away, so --verbose keeps the log view.
+  if (opts.dashboard && process.stdout.isTTY && process.stdin.isTTY && !opts.verbose) {
+    dashboard = new LiveDashboard(
+      agent,
+      {
+        version: VERSION,
+        platform: platformName(),
+        claudeCode:
+          auth?.status === 'ok'
+            ? { ok: true, text: auth.detail }
+            : { ok: false, text: auth?.fix ?? 'unknown' },
+        workspace: config.roots,
+        caFingerprint: info.caFingerprint,
+        qr: opts.qr,
+      },
+      () => void shutdown(),
+    );
+    dashboard.start();
+    return;
+  }
+
   heading('VoiceCode Agent', VERSION);
   out(`  ${ok('●')} Running`);
   out();
@@ -167,23 +221,6 @@ async function start(opts: StartOptions): Promise<void> {
     out(`${timestamp()} ${warn('Folder allowed')} ${clean(dir)} by ${clean(device)}`),
   );
   agent.on('connections', (n) => out(`${timestamp()} ${n} client${n === 1 ? '' : 's'} connected`));
-
-  let shuttingDown = false;
-  const shutdown = async () => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    out(`\n${timestamp()} Stopping…`);
-    await agent.stop();
-  };
-  agent.on('stopped', () => {
-    out(`${timestamp()} Stopped`);
-    logger.flush();
-    process.exit(0);
-  });
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-  // Sent when the terminal goes away (Node also emits it when a Windows console closes).
-  process.on('SIGHUP', shutdown);
 }
 
 function describeTunnel(t: AgentTunnelInfo): string {

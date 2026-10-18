@@ -263,6 +263,18 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   Windows text-to-speech played into VB-CABLE, and an image: one prompt "What color is the
   attached image? …" with the image, answered "Blue"; the user's settings file unchanged.
 
+- Terminal dashboard (2026-10-18): on an interactive terminal `start` draws a live screen
+  (`cli/dashboard.ts`, alternate screen, redrawn on agent events and each second only
+  when the frame changed) from `Agent.snapshot()`. With no device online it shows the
+  setup details, the code and its QR; once one is, devices, sessions, waiting approvals,
+  PC sessions, mouse/mic holders, tunnel and recent events, and the QR only after P (or
+  `voicecode-agent pair`). Short windows drop hints, events and details before the QR.
+  `--no-dashboard`, `--verbose` and non-TTY runs keep the scrolling log. Verified in a
+  ConPTY (node-pty + headless xterm) with a fake device paired over HTTP/WebSocket:
+  waiting → connected → P → 80×24 → disconnected → Q. Stdin must be paused before
+  `setRawMode(false)` on Windows, or later console output stalls. Not tried in Linux
+  terminals.
+
 Not verified yet:
 
 - A real phone: certificate install, microphone, touch.

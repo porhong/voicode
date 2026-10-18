@@ -1,7 +1,15 @@
 import type http from 'node:http';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import type {
+  MouseStatus,
+  PcSession,
+  PermissionRequest,
+  SessionSummary,
+  VoiceMicStatus,
+} from '@voicecode/protocol';
 import type { PairingCode } from '@voicecode/security';
+import type { ResolvedEvent } from './claude/approval-broker.js';
 import {
   addProject,
   loadConfig,
@@ -46,6 +54,24 @@ export interface AgentRuntimeInfo {
   tunnel: AgentTunnelInfo;
 }
 
+/** What the terminal dashboard shows, read again on every redraw. */
+export interface AgentSnapshot {
+  startedAt: number;
+  urls: string[];
+  tunnel: AgentTunnelInfo;
+  /** Online devices, one entry per device however many tabs it has open. */
+  devices: Array<{ deviceId: string; deviceName: string; connections: number }>;
+  pairedDevices: number;
+  sessions: SessionSummary[];
+  pendingApprovals: PermissionRequest[];
+  pcSessions: PcSession[];
+  mouse: MouseStatus;
+  voiceMic: VoiceMicStatus;
+  projects: ProjectConfig[];
+  /** The pairing code that can still be used, if any. */
+  pairingCode?: PairingCode;
+}
+
 export type AgentTunnelInfo =
   | { mode: 'off' }
   | { mode: AgentConfig['tunnel']['mode']; error: string }
@@ -65,6 +91,10 @@ export class Agent extends EventEmitter<{
   tunnel: [info: AgentTunnelInfo];
   /** A paired device allowed a new project folder (to continue a PC session there). */
   folderAllowed: [dir: string, deviceName: string];
+  /** A pairing code was issued (by the terminal, or by `voicecode-agent pair`). */
+  pairingCode: [code: PairingCode];
+  approvalRequested: [request: PermissionRequest];
+  approvalResolved: [event: ResolvedEvent];
   stopped: [];
 }> {
   private registry!: DeviceRegistry;
@@ -121,6 +151,7 @@ export class Agent extends EventEmitter<{
     });
     this.pairing.on('paired', (d) => this.emit('paired', d));
     this.pairing.on('failed', (reason, addr) => this.emit('pairingFailed', reason, addr));
+    this.pairing.on('code', (code) => this.emit('pairingCode', code));
 
     this.router = new InputRouter(logger.child({ component: 'mouse' }), {
       leaseIdleMs: config.mouse.leaseIdleMs,
@@ -149,6 +180,8 @@ export class Agent extends EventEmitter<{
       this.attachments.dir,
     );
     const sessions = this.sessions;
+    sessions.on('permissionRequest', (request) => this.emit('approvalRequested', request));
+    sessions.on('permissionResolved', (event) => this.emit('approvalResolved', event));
     this.pcSessions = new PcSessionWatcher({
       logger: logger.child({ component: 'pc-sessions' }),
       isOwnSession: (id) => sessions.owns(id),
@@ -289,6 +322,30 @@ export class Agent extends EventEmitter<{
 
   issuePairingCode(): PairingCode {
     return this.pairing.issueCode();
+  }
+
+  snapshot(): AgentSnapshot {
+    const devices = new Map<string, AgentSnapshot['devices'][number]>();
+    for (const c of this.gateway.devicesOnline()) {
+      const entry = devices.get(c.deviceId);
+      if (entry) entry.connections++;
+      else
+        devices.set(c.deviceId, { deviceId: c.deviceId, deviceName: c.deviceName, connections: 1 });
+    }
+    return {
+      startedAt: this.startedAt,
+      urls: this.urls,
+      tunnel: this.tunnelInfo,
+      devices: [...devices.values()],
+      pairedDevices: this.registry.list().length,
+      sessions: this.sessions.list(),
+      pendingApprovals: this.sessions.broker.pendingFor(),
+      pcSessions: this.pcSessions?.list() ?? [],
+      mouse: this.router.status(),
+      voiceMic: this.mic.status(),
+      projects: this.config.projects,
+      pairingCode: this.pairing.activeCode(),
+    };
   }
 
   stop(): Promise<void> {
