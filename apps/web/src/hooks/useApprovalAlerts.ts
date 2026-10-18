@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { PermissionRequest } from '@voicecode/protocol';
-
-const BASE_TITLE = 'VoiceCode';
+import { setTitlePending } from '../lib/title';
 
 export function notificationsSupported(): boolean {
   return 'Notification' in window && 'serviceWorker' in navigator;
@@ -22,7 +21,7 @@ export function useApprovalAlerts(requests: PermissionRequest[], notify: boolean
   const seen = useRef(new Set<string>());
 
   useEffect(() => {
-    document.title = requests.length ? `(${requests.length}) ${BASE_TITLE}` : BASE_TITLE;
+    setTitlePending(requests.length);
 
     const fresh = requests.filter((r) => !seen.current.has(r.requestId));
     seen.current = new Set(requests.map((r) => r.requestId));

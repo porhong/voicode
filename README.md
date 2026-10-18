@@ -227,6 +227,11 @@ and least useful first, down to 80 % of the limit. The phone itself caches nothi
 
 ## Using it
 
+**Install it.** Add the page to your home screen (Chrome: menu → **Install app**; Safari:
+Share → **Add to Home Screen**). The installed app is named after the PC, so each PC
+you pair gets its own icon you can tell apart. Through the tunnel, the name appears only
+once the device is paired.
+
 **Claude tab.** Pick a project, tap **New session** (or **Resume…** an earlier Claude Code
 session), tap the microphone and speak. Dictation lands in the text box so you can fix
 misheard words before tapping **Send** (or enable auto-send in settings). Claude's replies

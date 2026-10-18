@@ -268,7 +268,23 @@ beforeAll(async () => {
       open: async (dir) => addProject(config, await resolveRootFolder(dir, config.roots)),
     },
   });
-  app = await buildServer({ tls, logger, registry, pairing, gateway, tunnelHosts, attachments });
+  const webRoot = path.join(home, 'web');
+  await mkdir(webRoot, { recursive: true });
+  await writeFile(path.join(webRoot, 'index.html'), '<!doctype html><title>VoiceCode</title>');
+  await writeFile(
+    path.join(webRoot, 'manifest.webmanifest'),
+    JSON.stringify({ name: 'VoiceCode', short_name: 'VoiceCode', start_url: '/' }),
+  );
+  app = await buildServer({
+    tls,
+    logger,
+    registry,
+    pairing,
+    gateway,
+    tunnelHosts,
+    attachments,
+    webRoot,
+  });
   await app.listen({ host: '127.0.0.1', port: 0 });
   base = `https://127.0.0.1:${(app.server.address() as { port: number }).port}`;
 });
@@ -295,6 +311,16 @@ describe('HTTPS API', () => {
       }),
     );
     expect(ca).toBe(tls.caCert);
+  });
+
+  it('names the installed app after the PC', async () => {
+    const manifest = await request('GET', '/manifest.webmanifest');
+    expect(manifest.status).toBe(200);
+    expect(manifest.body).toEqual({
+      name: `${os.hostname()} · VoiceCode`,
+      short_name: os.hostname(),
+      start_url: '/',
+    });
   });
 
   it('rejects wrong codes and foreign origins, then pairs with a hardened cookie', async () => {
@@ -347,8 +373,10 @@ describe('Cloudflare Tunnel host', () => {
     try {
       const info = await request('GET', '/api/info', { host });
       expect(info.status).toBe(200);
-      // Strangers on the internet don't learn the PC's name.
+      // Strangers on the internet don't learn the PC's name, not even from the manifest.
       expect(info.body.hostname).toBeUndefined();
+      const manifest = await request('GET', '/manifest.webmanifest', { host });
+      expect(manifest.body).toMatchObject({ name: 'VoiceCode', short_name: 'VoiceCode' });
       const { code } = pairing.issueCode();
       const body = { code, deviceName: 'Tunnel phone' };
       // The LAN origin is not valid for a request addressed to the tunnel host.
@@ -358,6 +386,8 @@ describe('Cloudflare Tunnel host', () => {
       expect(res.setCookie).toMatch(/^__Host-vc_device=/);
       const cookie = res.setCookie!.split(';')[0]!;
       expect((await request('GET', '/api/info', { host, cookie })).body.hostname).toBeTruthy();
+      const named = await request('GET', '/manifest.webmanifest', { host, cookie });
+      expect(named.body.short_name).toBe(os.hostname());
       tunnelCookie = cookie;
     } finally {
       tunnelHosts.delete(host);

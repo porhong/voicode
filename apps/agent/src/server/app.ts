@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import Fastify, { LogController, type FastifyRequest } from 'fastify';
@@ -29,6 +30,7 @@ import {
   readCookie,
   setDeviceCookie,
 } from './http-security.js';
+import { webManifest } from './web-manifest.js';
 import type { WsGateway } from './ws-gateway.js';
 
 declare module 'fastify' {
@@ -58,6 +60,9 @@ export async function buildServer(deps: ServerDeps) {
   const guard = createOriginGuard(tls.names, deps.extraOrigins ?? [], deps.tunnelHosts);
   const behindTunnel = deps.tunnelHosts !== undefined;
   const clientIp = (request: FastifyRequest) => clientAddress(request, behindTunnel);
+  /** Unpaired visitors through the tunnel aren't told the PC's name. */
+  const pcName = (request: FastifyRequest) =>
+    request.device || !guard.viaTunnel(request) ? os.hostname() : undefined;
 
   const app = Fastify({
     loggerInstance: deps.logger,
@@ -115,7 +120,7 @@ export async function buildServer(deps: ServerDeps) {
   app.get('/api/info', async (request): Promise<AgentInfoResponse> => ({
     name: 'voicecode-agent',
     version: VERSION,
-    hostname: request.device || !guard.viaTunnel(request) ? os.hostname() : undefined,
+    hostname: pcName(request),
     protocolVersion: PROTOCOL_VERSION,
     paired: request.device !== null,
     device: request.device ? { id: request.device.id, name: request.device.name } : undefined,
@@ -217,9 +222,21 @@ export async function buildServer(deps: ServerDeps) {
   );
 
   if (deps.webRoot && existsSync(path.join(deps.webRoot, 'index.html'))) {
+    const manifestFile = path.join(deps.webRoot, 'manifest.webmanifest');
+    if (existsSync(manifestFile)) {
+      const template = JSON.parse(await readFile(manifestFile, 'utf8')) as Record<string, unknown>;
+      app.get('/manifest.webmanifest', async (request, reply) =>
+        reply
+          .type('application/manifest+json')
+          .header('cache-control', 'no-cache')
+          .send(webManifest(template, pcName(request))),
+      );
+    }
     await app.register(fastifyStatic, {
       root: deps.webRoot,
       wildcard: false,
+      // Served above with this PC's name in it.
+      globIgnore: ['manifest.webmanifest'],
       setHeaders(reply, filePath) {
         // Vite emits content-hashed assets; everything else must revalidate.
         const hashed = filePath.includes(`${path.sep}assets${path.sep}`);

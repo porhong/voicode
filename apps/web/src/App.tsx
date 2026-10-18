@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AgentInfoResponse } from '@voicecode/protocol';
 import { useViewportHeight } from './hooks/useViewportHeight';
 import { api } from './lib/api';
+import { setTitlePcName } from './lib/title';
 import { ControllerPage } from './pages/ControllerPage';
 import { PairPage } from './pages/PairPage';
 
@@ -23,7 +24,11 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
     api.info().then(
-      (info) => !cancelled && setView({ kind: info.paired ? 'controller' : 'pair', info }),
+      (info) => {
+        if (cancelled) return;
+        setTitlePcName(info.hostname);
+        setView({ kind: info.paired ? 'controller' : 'pair', info });
+      },
       () => !cancelled && setView({ kind: 'offline' }),
     );
     return () => {
