@@ -275,6 +275,13 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   `setRawMode(false)` on Windows, or later console output stalls. Not tried in Linux
   terminals.
 
+- Settings sheet regrouped (2026-10-19): phone-style sections (Claude, Voice,
+  Notifications, Trackpad, Storage on the PC, This device), each a card of rows with
+  hairlines and a footnote (`components/SettingsGroup.tsx`); two-way choices are a pill
+  control showing only the chosen option's description, and Claude Code dictation shows
+  a green/amber ready line. Checked with `ui-demo.ts` screenshots at 390 and 360 px, dark
+  and light.
+
 Not verified yet:
 
 - A real phone: certificate install, microphone, touch.

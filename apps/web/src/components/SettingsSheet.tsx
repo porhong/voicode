@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import type { StorageInfo, VoiceMicStatus } from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
 import { notificationsSupported, requestNotificationPermission } from '../hooks/useApprovalAlerts';
@@ -8,6 +8,14 @@ import { speechSynthesisSupported } from '../hooks/useSpeakReplies';
 import { api } from '../lib/api';
 import { MODEL_PRESETS } from '../lib/models';
 import { playAlertSound } from '../lib/sound';
+import {
+  SettingsChoice,
+  SettingsRow,
+  SettingsSection,
+  SettingsSelect,
+  SettingsSlider,
+  SettingsToggle,
+} from './SettingsGroup';
 import { Sheet } from './Sheet';
 import { StorageSection } from './StorageSection';
 
@@ -52,74 +60,34 @@ const LANGUAGES: Array<[tag: string, label: string]> = [
   ['ru-RU', 'Русский'],
 ];
 
-function Toggle({
-  label,
-  hint,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  hint?: ReactNode;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="field field-inline">
-      <span>
-        {label}
-        {hint && <span className="field-hint">{hint}</span>}
-      </span>
-      <input
-        type="checkbox"
-        role="switch"
-        className="switch"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-    </label>
-  );
-}
+const LAYOUTS = [
+  ['chat', 'Chat', 'Conversation and a prompt box.'],
+  ['deck', 'Deck', 'Macro keys, scroll wheel and joystick.'],
+] as const;
 
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  format,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  format: (value: number) => string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label className="field">
-      <span className="field-row">
-        <span>{label}</span>
-        <output className="field-value">{format(value)}</output>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-    </label>
-  );
-}
+const DICTATION = [
+  ['browser', 'Phone', 'This browser’s speech service.'],
+  ['claude-code', 'Claude Code', 'Dictation on the PC, tuned for code.'],
+] as const;
 
 const times = (v: number) => `${v.toFixed(1)}×`;
 const OTHER = '__other__';
+
+/** Whether Claude Code dictation can run, as a coloured status line under the choice. */
+function DictationStatus({ voiceMic }: { voiceMic?: VoiceMicStatus }) {
+  const [ok, text] = !micCaptureSupported()
+    ? [false, 'This browser cannot capture microphone audio.']
+    : voiceMic?.available
+      ? [
+          true,
+          `Ready. Your voice plays into “${voiceMic.device}” on the PC and Claude Code’s /voice transcribes it (needs a claude.ai sign-in).`,
+        ]
+      : [
+          false,
+          `Not ready on the PC: ${voiceMic?.reason ?? 'not connected'}. Run “voicecode-agent doctor” there.`,
+        ];
+  return <p className={ok ? 'settings-status ok' : 'settings-status warn'}>{text}</p>;
+}
 
 export function SettingsSheet({
   settings,
@@ -141,74 +109,56 @@ export function SettingsSheet({
   const listed = LANGUAGES.some(([tag]) => tag === settings.voiceLang);
   // Any BCP 47 tag the browser's recognizer supports can still be typed in.
   const [customLang, setCustomLang] = useState(!listed);
+  const presetModel = MODEL_PRESETS.some(([value]) => value === settings.model);
 
   return (
     <Sheet title="Settings" onClose={onClose}>
-      <h3>Claude layout</h3>
-      <div className="segmented" role="radiogroup" aria-label="Claude layout">
-        {(
-          [
-            ['chat', 'Chat', 'Conversation and a prompt box'],
-            ['deck', 'Deck', 'Macro keys, scroll wheel and joystick'],
-          ] as const
-        ).map(([value, label, hint]) => (
-          <button
-            key={value}
-            role="radio"
-            aria-checked={settings.claudeLayout === value}
-            className={settings.claudeLayout === value ? 'segment active' : 'segment'}
-            onClick={() => update({ claudeLayout: value })}
-          >
-            <strong>{label}</strong>
-            <span className="small muted">{hint}</span>
-          </button>
-        ))}
-      </div>
-      <Toggle
-        label="Show tool activity"
-        hint="Commands, file reads and their results. Off shows only the messages."
-        checked={settings.showToolActivity}
-        onChange={(showToolActivity) => update({ showToolActivity })}
-      />
+      <SettingsSection
+        title="Claude"
+        footer="The model chip above a session switches the one on screen."
+      >
+        <SettingsChoice
+          label="Layout"
+          value={settings.claudeLayout}
+          options={LAYOUTS}
+          onChange={(claudeLayout) => update({ claudeLayout })}
+        />
+        <SettingsToggle
+          label="Show tool activity"
+          hint="Commands, file reads and their results"
+          checked={settings.showToolActivity}
+          onChange={(showToolActivity) => update({ showToolActivity })}
+        />
+        <SettingsSelect
+          label="Model for new sessions"
+          value={presetModel ? settings.model : 'custom'}
+          onChange={(model) => update({ model })}
+        >
+          {MODEL_PRESETS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+          {!presetModel && <option value="custom">{settings.model}</option>}
+        </SettingsSelect>
+      </SettingsSection>
 
-      <h3>Voice</h3>
-      <div className="segmented" role="radiogroup" aria-label="Dictation">
-        {(
-          [
-            ['browser', 'Phone', 'This browser’s speech service'],
-            ['claude-code', 'Claude Code', 'Dictation on the PC, tuned for code'],
-          ] as const
-        ).map(([value, label, hint]) => (
-          <button
-            key={value}
-            role="radio"
-            aria-checked={settings.dictation === value}
-            className={settings.dictation === value ? 'segment active' : 'segment'}
-            onClick={() => update({ dictation: value })}
-          >
-            <strong>{label}</strong>
-            <span className="small muted">{hint}</span>
-          </button>
-        ))}
-      </div>
-      {settings.dictation === 'claude-code' && (
-        <p className="small muted">
-          {!micCaptureSupported()
-            ? 'This browser cannot capture microphone audio.'
-            : voiceMic?.available
-              ? `Your voice is played into “${voiceMic.device}” on the PC; Claude Code’s /voice transcribes it (needs a claude.ai sign-in).`
-              : `Not ready on the PC: ${voiceMic?.reason ?? 'not connected'}. Run “voicecode-agent doctor” there.`}
-        </p>
-      )}
-      <label className="field">
-        <span>Dictation language</span>
-        <select
-          className="select"
+      <SettingsSection title="Voice">
+        <SettingsChoice
+          label="Dictation"
+          value={settings.dictation}
+          options={DICTATION}
+          onChange={(dictation) => update({ dictation })}
+        >
+          {settings.dictation === 'claude-code' && <DictationStatus voiceMic={voiceMic} />}
+        </SettingsChoice>
+        <SettingsSelect
+          label="Language"
           value={customLang ? OTHER : settings.voiceLang}
-          onChange={(e) => {
-            const other = e.target.value === OTHER;
+          onChange={(value) => {
+            const other = value === OTHER;
             setCustomLang(other);
-            if (!other) update({ voiceLang: e.target.value });
+            if (!other) update({ voiceLang: value });
           }}
         >
           {LANGUAGES.map(([tag, label]) => (
@@ -217,146 +167,132 @@ export function SettingsSheet({
             </option>
           ))}
           <option value={OTHER}>Other…</option>
-        </select>
-      </label>
-      {customLang && (
-        <label className="field">
-          <span className="small muted">Language tag, e.g. pt-PT or ar-SA</span>
-          <input
-            className="input"
-            value={settings.voiceLang}
-            maxLength={35}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            onChange={(e) => update({ voiceLang: e.target.value })}
+        </SettingsSelect>
+        {customLang && (
+          <label className="settings-row settings-row-stack">
+            <span className="settings-hint">Language tag, e.g. pt-PT or ar-SA</span>
+            <input
+              className="input"
+              value={settings.voiceLang}
+              maxLength={35}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(e) => update({ voiceLang: e.target.value })}
+            />
+          </label>
+        )}
+        {settings.dictation === 'browser' && (
+          <SettingsToggle
+            label="Send when I stop talking"
+            hint="Skips reviewing the dictated text first"
+            checked={settings.autoSendVoice}
+            onChange={(autoSendVoice) => update({ autoSendVoice })}
           />
-        </label>
-      )}
-      {settings.dictation === 'browser' && (
-        <Toggle
-          label="Send when I stop talking"
-          hint="Skips reviewing the dictated text first"
-          checked={settings.autoSendVoice}
-          onChange={(autoSendVoice) => update({ autoSendVoice })}
+        )}
+        <SettingsToggle
+          label="Read Claude’s replies aloud"
+          hint={speechSynthesisSupported() ? undefined : 'Not available in this browser'}
+          checked={settings.speakReplies}
+          disabled={!speechSynthesisSupported()}
+          onChange={(speakReplies) => update({ speakReplies })}
         />
-      )}
-      <Toggle
-        label="Read Claude’s replies aloud"
-        checked={settings.speakReplies}
-        disabled={!speechSynthesisSupported()}
-        onChange={(speakReplies) => update({ speakReplies })}
-      />
+      </SettingsSection>
 
-      <h3>Model</h3>
-      <label className="field">
-        <span>Model for new sessions</span>
-        <select
-          className="select"
-          value={
-            MODEL_PRESETS.some(([value]) => value === settings.model) ? settings.model : 'custom'
+      <SettingsSection title="Notifications">
+        <SettingsToggle
+          label="Approval requests"
+          hint={
+            notificationsSupported()
+              ? 'A system notification when Claude needs you and this app is in the background'
+              : 'Not available here (on iPhone, add VoiceCode to the Home Screen first)'
           }
-          onChange={(e) => update({ model: e.target.value })}
-        >
-          {MODEL_PRESETS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-          {!MODEL_PRESETS.some(([value]) => value === settings.model) && (
-            <option value="custom">{settings.model}</option>
-          )}
-        </select>
-      </label>
-      <p className="small muted">The model chip above a session switches the one on screen.</p>
+          checked={settings.notifyApprovals}
+          disabled={!notificationsSupported()}
+          onChange={async (enable) =>
+            update({ notifyApprovals: enable && (await requestNotificationPermission()) })
+          }
+        />
+        <SettingsToggle
+          label="Sound effects"
+          hint="A chime when a task finishes, an alert on errors"
+          checked={settings.soundAlerts}
+          onChange={(soundAlerts) => {
+            update({ soundAlerts });
+            if (soundAlerts) playAlertSound('done', true);
+          }}
+        />
+        {settings.soundAlerts && (
+          <SettingsRow label="Preview">
+            <span className="settings-actions">
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => playAlertSound('done', true)}
+              >
+                Chime
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => playAlertSound('error', true)}
+              >
+                Alert
+              </button>
+            </span>
+          </SettingsRow>
+        )}
+      </SettingsSection>
 
-      <h3>Alerts & Sound</h3>
-      <Toggle
-        label="Alert sound effects"
-        hint="Play a chime when a task finishes and an alert on errors"
-        checked={settings.soundAlerts}
-        onChange={(soundAlerts) => {
-          update({ soundAlerts });
-          if (soundAlerts) playAlertSound('done', true);
-        }}
-      />
-      <div className="field-row" style={{ marginTop: '0.25rem', gap: '0.5rem' }}>
-        <button
-          type="button"
-          className="btn btn-ghost btn-small"
-          disabled={!settings.soundAlerts}
-          onClick={() => playAlertSound('done', true)}
-        >
-          Preview chime
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-small"
-          disabled={!settings.soundAlerts}
-          onClick={() => playAlertSound('error', true)}
-        >
-          Preview alert
-        </button>
-      </div>
-
-      <h3>Approvals</h3>
-      <Toggle
-        label="Notify me in the background"
-        hint={
-          notificationsSupported()
-            ? 'A system notification when Claude needs approval'
-            : 'Not available here (on iPhone, add VoiceCode to the Home Screen first)'
-        }
-        checked={settings.notifyApprovals}
-        disabled={!notificationsSupported()}
-        onChange={async (enable) =>
-          update({ notifyApprovals: enable && (await requestNotificationPermission()) })
-        }
-      />
-
-      <h3>Trackpad</h3>
-      <Slider
-        label="Pointer speed"
-        min={0.5}
-        max={4}
-        step={0.1}
-        value={settings.sensitivity}
-        format={times}
-        onChange={(sensitivity) => update({ sensitivity })}
-      />
-      <Slider
-        label="Acceleration"
-        min={0}
-        max={2}
-        step={0.1}
-        value={settings.acceleration}
-        format={(v) => (v === 0 ? 'Off' : times(v))}
-        onChange={(acceleration) => update({ acceleration })}
-      />
-      <Slider
-        label="Scroll speed"
-        min={1}
-        max={8}
-        step={0.5}
-        value={settings.scrollSpeed}
-        format={times}
-        onChange={(scrollSpeed) => update({ scrollSpeed })}
-      />
-      <Toggle
-        label="Natural scrolling"
-        hint="Content follows your fingers"
-        checked={settings.naturalScroll}
-        onChange={(naturalScroll) => update({ naturalScroll })}
-      />
+      <SettingsSection title="Trackpad">
+        <SettingsSlider
+          label="Pointer speed"
+          min={0.5}
+          max={4}
+          step={0.1}
+          value={settings.sensitivity}
+          format={times}
+          onChange={(sensitivity) => update({ sensitivity })}
+        />
+        <SettingsSlider
+          label="Acceleration"
+          min={0}
+          max={2}
+          step={0.1}
+          value={settings.acceleration}
+          format={(v) => (v === 0 ? 'Off' : times(v))}
+          onChange={(acceleration) => update({ acceleration })}
+        />
+        <SettingsSlider
+          label="Scroll speed"
+          min={1}
+          max={8}
+          step={0.5}
+          value={settings.scrollSpeed}
+          format={times}
+          onChange={(scrollSpeed) => update({ scrollSpeed })}
+        />
+        <SettingsToggle
+          label="Natural scrolling"
+          hint="Content follows your fingers"
+          checked={settings.naturalScroll}
+          onChange={(naturalScroll) => update({ naturalScroll })}
+        />
+      </SettingsSection>
 
       <StorageSection storage={storage} send={send} disabled={!connected} />
 
-      <h3>This device</h3>
-      <p className="small muted">
-        {device ? `Paired as “${device.name}”` : 'Not connected'}
-        {agentVersion ? ` · agent v${agentVersion}` : ''}
-      </p>
-      <button className="btn btn-danger btn-block" onClick={unpair}>
+      <SettingsSection title="This device">
+        <SettingsRow label="Paired as">
+          <span className="settings-value">{device ? device.name : 'Not connected'}</span>
+        </SettingsRow>
+        {agentVersion && (
+          <SettingsRow label="Agent on the PC">
+            <span className="settings-value">v{agentVersion}</span>
+          </SettingsRow>
+        )}
+      </SettingsSection>
+      <button className="btn btn-danger btn-block settings-unpair" onClick={unpair}>
         Unpair this device
       </button>
     </Sheet>

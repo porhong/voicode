@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { StorageInfo } from '@voicecode/protocol';
 import type { Send } from '../hooks/useAgentSocket';
 import { CATEGORY_LABELS, formatBytes, formatLimit, LIMIT_CHOICES_MB } from '../lib/storage';
+import { SettingsRow, SettingsSection, SettingsSelect, SettingsToggle } from './SettingsGroup';
 
 interface Props {
   storage?: StorageInfo;
@@ -43,39 +44,12 @@ export function StorageSection({ storage, send, disabled }: Props) {
   if (storage && !limits.includes(storage.maxCacheMb)) limits.push(storage.maxCacheMb);
 
   return (
-    <>
-      <h3>Storage on the PC</h3>
-      {!storage ? (
-        <p className="small muted">{disabled ? 'Not connected' : 'Checking…'}</p>
-      ) : (
+    <SettingsSection
+      title="Storage on the PC"
+      footer={
         <>
-          <p className="field-row storage-total">
-            <span>Caches and old files</span>
-            <output className="field-value">{formatBytes(storage.totalBytes)}</output>
-          </p>
-          {used.length > 0 && (
-            <ul className="storage-list small muted">
-              {used.map((c) => (
-                <li key={c.category}>
-                  <span>{CATEGORY_LABELS[c.category]}</span>
-                  <span>{formatBytes(c.bytes)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <button
-            className="btn btn-block storage-clean"
-            disabled={disabled || cleaning || storage.totalBytes === 0}
-            onClick={cleanUp}
-          >
-            {cleaning
-              ? 'Cleaning up…'
-              : storage.totalBytes === 0
-                ? 'Nothing to clean up'
-                : `Clean up ${formatBytes(storage.totalBytes)}`}
-          </button>
           {last && (
-            <p className="small muted" role="status">
+            <p role="status">
               {last.trigger === 'auto' ? 'Cleaned up automatically' : 'Cleaned up'}{' '}
               {new Date(last.at).toLocaleString(undefined, {
                 dateStyle: 'medium',
@@ -85,44 +59,64 @@ export function StorageSection({ storage, send, disabled }: Props) {
               {last.failed > 0 ? ` (${last.failed} in use, skipped)` : ''}.
             </p>
           )}
-          <label className="field field-inline">
-            <span>
-              Clean up automatically
-              <span className="field-hint">
-                When these files pass the limit (checked every few hours)
-              </span>
+          <p>Never removes your settings, paired devices, certificates or the versions in use.</p>
+        </>
+      }
+    >
+      {!storage ? (
+        <SettingsRow label={disabled ? 'Not connected' : 'Checking…'} />
+      ) : (
+        <>
+          <div className="settings-row settings-row-stack">
+            <span className="settings-slider-head">
+              <span>Caches and old files</span>
+              <output className="settings-value">{formatBytes(storage.totalBytes)}</output>
             </span>
-            <input
-              type="checkbox"
-              role="switch"
-              className="switch"
-              checked={storage.auto}
-              disabled={disabled}
-              onChange={(e) => configure({ auto: e.target.checked })}
-            />
-          </label>
-          {storage.auto && (
-            <label className="field">
-              <span>Limit</span>
-              <select
-                className="select"
-                value={storage.maxCacheMb}
-                disabled={disabled}
-                onChange={(e) => configure({ maxCacheMb: Number(e.target.value) })}
-              >
-                {limits.map((mb) => (
-                  <option key={mb} value={mb}>
-                    {formatLimit(mb)}
-                  </option>
+            {used.length > 0 && (
+              <ul className="storage-list settings-hint">
+                {used.map((c) => (
+                  <li key={c.category}>
+                    <span>{CATEGORY_LABELS[c.category]}</span>
+                    <span>{formatBytes(c.bytes)}</span>
+                  </li>
                 ))}
-              </select>
-            </label>
+              </ul>
+            )}
+            <button
+              className="btn btn-block"
+              disabled={disabled || cleaning || storage.totalBytes === 0}
+              onClick={cleanUp}
+            >
+              {cleaning
+                ? 'Cleaning up…'
+                : storage.totalBytes === 0
+                  ? 'Nothing to clean up'
+                  : `Clean up ${formatBytes(storage.totalBytes)}`}
+            </button>
+          </div>
+          <SettingsToggle
+            label="Clean up automatically"
+            hint="When these files pass the limit (checked every few hours)"
+            checked={storage.auto}
+            disabled={disabled}
+            onChange={(auto) => configure({ auto })}
+          />
+          {storage.auto && (
+            <SettingsSelect
+              label="Limit"
+              value={storage.maxCacheMb}
+              disabled={disabled}
+              onChange={(mb) => configure({ maxCacheMb: Number(mb) })}
+            >
+              {limits.map((mb) => (
+                <option key={mb} value={mb}>
+                  {formatLimit(mb)}
+                </option>
+              ))}
+            </SettingsSelect>
           )}
-          <p className="small muted">
-            Never removes your settings, paired devices, certificates or the versions in use.
-          </p>
         </>
       )}
-    </>
+    </SettingsSection>
   );
 }
