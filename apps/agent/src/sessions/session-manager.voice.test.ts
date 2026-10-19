@@ -7,6 +7,7 @@ import { forwardPreToolUse } from '../cli/commands/hook.js';
 import type { PtyHandle } from '../claude/pty-session.js';
 import { addProject, ConfigSchema } from '../config/config.js';
 import { silentLogger } from '../util/logger.js';
+import type { MicGate } from '../voice/mic-router.js';
 import { encodeProjectDir } from './pc-sessions.js';
 import { SessionManager } from './session-manager.js';
 
@@ -46,6 +47,14 @@ let attached: FakePty;
 let attachedPid: number | undefined;
 let spawned: { file: string; args: string[]; env: NodeJS.ProcessEnv } | undefined;
 const summaries: SessionSummary[] = [];
+/** What the sessions told the phone's microphone, in order. */
+const micCalls: string[] = [];
+const mic: MicGate = {
+  hold: () => micCalls.push('hold'),
+  resume: () => micCalls.push('resume'),
+  discard: () => micCalls.push('discard'),
+  played: async () => void micCalls.push('played'),
+};
 const requests: PermissionRequest[] = [];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const until = async (pred: () => boolean, ms = 8_000) => {
@@ -81,6 +90,7 @@ beforeAll(async () => {
         attachedPid = pid;
         return attached;
       },
+      mic,
     },
     path.join(home, 'attachments'),
   );
@@ -130,16 +140,21 @@ describe('voice sessions', () => {
   it('holds the dictation key while the phone holds, and sends once the words have landed', async () => {
     const summary = () => manager.get(id).summary();
     pty.written = '';
+    micCalls.length = 0;
     manager.ptt(id, true, 'Phone');
     // Hold mode: Space repeats like a held key.
     await until(() => pty.written.length >= 3);
     expect(pty.written).toMatch(/^ +$/);
     expect(summary().voice?.state).toBe('starting');
+    // What is said before Claude Code records waits in the agent, then plays.
+    expect(micCalls).toEqual(['hold']);
     pty.show('> \n  listening…');
     await until(() => summary().voice?.state === 'recording');
+    expect(micCalls).toEqual(['hold', 'resume']);
 
     manager.ptt(id, false, 'Phone');
     await until(() => summary().voice?.state === 'finalizing');
+    await until(() => micCalls.includes('played'));
     // The key is let go after the last audio has drained.
     await sleep(900);
     const held = pty.written.length;
@@ -187,9 +202,11 @@ describe('voice sessions', () => {
 
   it('reports when Claude Code did not start recording, and takes the typing back', async () => {
     pty.written = '';
+    micCalls.length = 0;
     manager.ptt(id, true, 'Phone', ['C:\\img\\b.png']);
     await until(() => manager.get(id).summary().voice?.state === 'error', 8_000);
     expect(manager.get(id).summary().voice?.detail).toMatch(/did not start recording/);
+    expect(micCalls).toEqual(['hold', 'discard']);
     // The image line and every space typed are deleted again.
     const typed = '\x1b[200~Attached image: C:\\img\\b.png\n\x1b[201~';
     const spaces = (pty.written.match(/ /g) ?? []).length - 2; // two inside the image line

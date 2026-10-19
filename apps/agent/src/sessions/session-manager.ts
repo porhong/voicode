@@ -20,6 +20,7 @@ import { UNSAFE_PERMISSION_MODES, type PermissionModeName } from '@voicecode/pro
 const UNSAFE_MODE_SET = new Set<string>(UNSAFE_PERMISSION_MODES);
 import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
+import type { MicGate } from '../voice/mic-router.js';
 import { ApprovalBroker, ApprovalError, type ResolvedEvent } from '../claude/approval-broker.js';
 import { ClaudeSession, type SessionEventRecord } from '../claude/claude-session.js';
 import { UsageMeter } from '../claude/usage.js';
@@ -114,6 +115,8 @@ export class SessionManager extends EventEmitter<{
       desktop?: () => DesktopDriver;
       /** Where the hook server's address is written for Desktop's hook processes. */
       hookEndpointFile?: string;
+      /** The phone's microphone, for dictation in terminal sessions. */
+      mic?: MicGate;
     } = {},
     /** Folder of images from the phone; hosted terminal sessions may read it. */
     private readonly attachmentsDir?: string,
@@ -218,6 +221,7 @@ export class SessionManager extends EventEmitter<{
       model,
       effort,
       readDirs: this.attachmentsDir ? [this.attachmentsDir] : [],
+      mic: this.voiceDeps.mic,
       spawn: this.voiceDeps.spawn,
       claudePath: this.voiceDeps.claudePath,
       claudeDir: this.voiceDeps.claudeDir,
@@ -274,6 +278,7 @@ export class SessionManager extends EventEmitter<{
         handle,
         title: pc.name ?? pc.lastPrompt ?? `Terminal in ${pc.folder}`,
       },
+      mic: this.voiceDeps.mic,
       claudeDir: this.voiceDeps.claudeDir,
     });
     this.track(session);

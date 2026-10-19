@@ -282,6 +282,18 @@ PreToolUse hook}` in a pty (`@lydell/node-pty`, prebuilt binaries) as a `VoiceSe
   a green/amber ready line. Checked with `ui-demo.ts` screenshots at 390 and 360 px, dark
   and light.
 
+- Dictation without lost words (2026-10-19): the phone streams from the press, but Claude
+  Code records only once it shows REC (1–2 s later), so the start of each dictation was
+  lost, and the end too when audio over the tunnel arrived after the fixed 600 ms. Now
+  `MicRouter` implements `MicGate`: a press holds the audio (queued), REC resumes it at
+  real time (paced 250 ms ahead of the device), and a release waits until the phone has
+  stopped and everything played before stopping the recording; the default input is
+  restored only after that. The phone keeps streaming 300 ms after the release and
+  flushes the worklet's partial chunk. A scratch check (tap-mode fake terminal with REC
+  after 1.5 s, real MicRouter, 3 s of frames) lost 14 of 31 frames before, none after.
+  Not tried with a real phone yet. Tap mode still sends each press as its own prompt
+  (images follow as a second one); hold mode in the user's Claude Code settings avoids it.
+
 Not verified yet:
 
 - A real phone: certificate install, microphone, touch.

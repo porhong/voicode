@@ -16,6 +16,32 @@ const MAX_RESTARTS = 5;
 const STABLE_AFTER_MS = 60_000;
 const MAX_FRAME_BYTES =
   (AUDIO.sampleRate * AUDIO.channels * AUDIO.bytesPerSample * AUDIO.maxFrameMs) / 1000;
+const BYTES_PER_MS = (AUDIO.sampleRate * AUDIO.channels * AUDIO.bytesPerSample) / 1000;
+/** Held audio beyond this is dropped from the front: nobody waits that long to record. */
+const MAX_QUEUED_MS = 15_000;
+/** Queued audio goes to the driver this far ahead of real time (its own buffer is ~1 s). */
+const PLAY_AHEAD_MS = 250;
+const PUMP_MS = 20;
+/** No frame for this long, with the lease still held, counts as the phone having stopped. */
+const QUIET_MS = 500;
+
+/**
+ * What a dictation session needs from the microphone around Claude Code's recording: the
+ * phone streams from the moment it is pressed, but Claude Code only records once it has
+ * started (a second or more later), so the start of what is said would be lost. The
+ * audio is held back until then and played in at real time; on release the session
+ * waits for it to have played out before it stops the recording.
+ */
+export interface MicGate {
+  /** Queue the phone's audio instead of playing it. */
+  hold(): void;
+  /** Play what was queued (at real time, ahead of anything new) and stop queuing. */
+  resume(): void;
+  /** Drop what was queued and stop queuing. */
+  discard(): void;
+  /** Resolves once the phone has stopped streaming and everything it sent has played. */
+  played(timeoutMs: number): Promise<void>;
+}
 
 /**
  * Routes microphone audio from one browser client to the virtual-microphone driver.
@@ -24,7 +50,7 @@ const MAX_FRAME_BYTES =
  * without audio. Frames are bounded in size and rate so a client cannot flood the
  * sound device.
  */
-export class MicRouter extends EventEmitter<{ status: [] }> {
+export class MicRouter extends EventEmitter<{ status: [] }> implements MicGate {
   private driver: VirtualMicDriver | undefined;
   private driverName = 'none';
   private info: VirtualMicInfo | undefined;
@@ -34,6 +60,16 @@ export class MicRouter extends EventEmitter<{ status: [] }> {
   private restarts = 0;
   private stopped = false;
   private droppedSince = 0;
+  /** Audio waiting for the driver: while held, and while held audio is played out. */
+  private readonly queue: Buffer[] = [];
+  private queuedBytes = 0;
+  private holding = false;
+  private pumpTimer: NodeJS.Timeout | undefined;
+  /** When the audio given to the driver so far will have played. */
+  private playingUntil = 0;
+  private lastFrameAt = 0;
+  /** A lease ended while its audio was still queued or playing; see `deactivateWhenPlayed`. */
+  private deactivateTimer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly logger: Logger,
@@ -147,9 +183,14 @@ export class MicRouter extends EventEmitter<{ status: [] }> {
       ),
     };
     this.droppedSince = 0;
-    driver.activate().catch((err: unknown) => {
-      this.logger.warn({ err }, 'virtual microphone could not be activated');
-    });
+    // The previous lease's restore is still pending: the device is switched already.
+    const switched = this.deactivateTimer !== undefined;
+    clearTimeout(this.deactivateTimer);
+    this.deactivateTimer = undefined;
+    if (!switched)
+      driver.activate().catch((err: unknown) => {
+        this.logger.warn({ err }, 'virtual microphone could not be activated');
+      });
     this.logger.info({ device: client.deviceName }, 'microphone lease taken');
     this.emit('status');
     return OK;
@@ -183,6 +224,7 @@ export class MicRouter extends EventEmitter<{ status: [] }> {
       return { ok: false, code: 'bad_request', message: 'Invalid audio frame' };
     }
     lease.lastActivity = this.now;
+    this.lastFrameAt = this.now;
     // Diagnostic: VOICECODE_MIC_DUMP=<file> keeps a raw copy of what the PC received
     // (play it with `ffplay -f s16le -ar 16000 -ac 1 <file>`).
     if (process.env.VOICECODE_MIC_DUMP) {
@@ -200,8 +242,65 @@ export class MicRouter extends EventEmitter<{ status: [] }> {
       }
       return { ok: false, code: 'rate_limited', message: 'Audio is arriving too fast' };
     }
-    this.driver.write(pcm);
+    if (this.holding || this.queue.length) this.enqueue(pcm);
+    else this.play(pcm);
     return OK;
+  }
+
+  hold(): void {
+    this.holding = true;
+  }
+
+  resume(): void {
+    this.holding = false;
+    this.pump();
+  }
+
+  discard(): void {
+    this.holding = false;
+    this.queue.length = 0;
+    this.queuedBytes = 0;
+  }
+
+  async played(timeoutMs: number): Promise<void> {
+    const deadline = this.now + timeoutMs;
+    const streaming = () => this.lease !== undefined && this.now - this.lastFrameAt < QUIET_MS;
+    while (
+      this.now < deadline &&
+      (streaming() || this.queue.length || this.now < this.playingUntil)
+    ) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+
+  private enqueue(pcm: Buffer): void {
+    this.queue.push(pcm);
+    this.queuedBytes += pcm.length;
+    while (this.queuedBytes > MAX_QUEUED_MS * BYTES_PER_MS && this.queue.length > 1) {
+      this.queuedBytes -= this.queue.shift()!.length;
+    }
+    this.pump();
+  }
+
+  /** Feeds queued audio to the driver no faster than it plays. */
+  private pump(): void {
+    if (this.holding || this.pumpTimer) return;
+    while (this.queue.length && this.playingUntil - this.now < PLAY_AHEAD_MS) {
+      const pcm = this.queue.shift()!;
+      this.queuedBytes -= pcm.length;
+      this.play(pcm);
+    }
+    if (!this.queue.length) return;
+    this.pumpTimer = setTimeout(() => {
+      this.pumpTimer = undefined;
+      this.pump();
+    }, PUMP_MS);
+    this.pumpTimer.unref();
+  }
+
+  private play(pcm: Buffer): void {
+    this.driver?.write(pcm);
+    this.playingUntil = Math.max(this.now, this.playingUntil) + pcm.length / BYTES_PER_MS;
   }
 
   private endLease(reason: string): void {
@@ -209,10 +308,30 @@ export class MicRouter extends EventEmitter<{ status: [] }> {
     if (!lease) return;
     this.lease = undefined;
     this.logger.info({ device: lease.holder.deviceName, reason }, 'microphone lease ended');
+    this.deactivateWhenPlayed(reason === 'shutdown');
+    this.emit('status');
+  }
+
+  /**
+   * Puts the PC's default input back only once the lease's audio has played: Claude Code
+   * may not have started recording when the phone lets go, and would then open the
+   * wrong microphone. Audio held for a recording that never came is given up on.
+   */
+  private deactivateWhenPlayed(now = false): void {
+    clearTimeout(this.deactivateTimer);
+    this.deactivateTimer = undefined;
+    if (!now && (this.holding || this.queue.length || this.now < this.playingUntil)) {
+      this.deactivateTimer = setTimeout(() => {
+        if (this.holding && this.now - this.lastFrameAt > MAX_QUEUED_MS) this.discard();
+        this.deactivateWhenPlayed();
+      }, 250);
+      this.deactivateTimer.unref();
+      return;
+    }
+    if (this.lease) return;
     this.driver?.deactivate().catch((err: unknown) => {
       this.logger.warn({ err }, 'virtual microphone could not be deactivated');
     });
-    this.emit('status');
   }
 
   private expireIdleLease(): void {
@@ -224,6 +343,8 @@ export class MicRouter extends EventEmitter<{ status: [] }> {
   async stop(): Promise<void> {
     this.stopped = true;
     clearInterval(this.sweepTimer);
+    clearTimeout(this.pumpTimer);
+    this.discard();
     this.endLease('shutdown');
     const driver = this.driver;
     this.driver = undefined;

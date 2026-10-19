@@ -5,6 +5,13 @@ import type { Send } from './useAgentSocket';
 
 /** Hold the microphone open this long after the last use, so the next press is instant. */
 const IDLE_RELEASE_MS = 60_000;
+/**
+ * Streaming goes on this long after the release: the last word is often still being said,
+ * and still in the audio pipeline, as the finger lifts. Then the worklet's partial chunk
+ * is fetched, which takes a moment more.
+ */
+const TAIL_MS = 300;
+const FLUSH_MS = 60;
 
 export interface MicStream {
   /** This browser can capture audio and the agent has a virtual microphone. */
@@ -58,6 +65,8 @@ export function useMicStream(options: {
     | undefined
   >(undefined);
   const idleTimer = useRef<number | undefined>(undefined);
+  /** Set between a release and the end of its tail (see `TAIL_MS`). */
+  const tailTimer = useRef<number | undefined>(undefined);
   const starting = useRef<Promise<void> | undefined>(undefined);
 
   const releaseHardware = useCallback(() => {
@@ -110,7 +119,10 @@ export function useMicStream(options: {
     return audio.current;
   }, []);
 
-  const stop = useCallback(() => {
+  /** Stops streaming now: the lease goes back and the audio context sleeps. */
+  const finish = useCallback(() => {
+    window.clearTimeout(tailTimer.current);
+    tailTimer.current = undefined;
     if (!capturing.current) return;
     capturing.current = false;
     setActive(false);
@@ -120,7 +132,23 @@ export function useMicStream(options: {
     idleTimer.current = window.setTimeout(releaseHardware, IDLE_RELEASE_MS);
   }, [releaseHardware]);
 
+  const stop = useCallback(() => {
+    if (!capturing.current || tailTimer.current !== undefined) return;
+    setActive(false);
+    tailTimer.current = window.setTimeout(() => {
+      audio.current?.node.port.postMessage('flush');
+      tailTimer.current = window.setTimeout(finish, FLUSH_MS);
+    }, TAIL_MS);
+  }, [finish]);
+
   const start = useCallback(() => {
+    if (tailTimer.current !== undefined) {
+      // Pressed again within the tail: the stream simply goes on.
+      window.clearTimeout(tailTimer.current);
+      tailTimer.current = undefined;
+      setActive(true);
+      return;
+    }
     if (capturing.current || starting.current) return;
     const { mic } = optionsRef.current;
     if (!mic.status.available) {
@@ -152,6 +180,8 @@ export function useMicStream(options: {
     if (youHold) hadLease.current = true;
     else if (hadLease.current) {
       hadLease.current = false;
+      window.clearTimeout(tailTimer.current);
+      tailTimer.current = undefined;
       if (capturing.current) {
         capturing.current = false;
         setActive(false);
@@ -165,7 +195,7 @@ export function useMicStream(options: {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') {
-        stop();
+        finish();
         releaseHardware();
       }
     };
@@ -174,7 +204,7 @@ export function useMicStream(options: {
       document.removeEventListener('visibilitychange', onVisibility);
       releaseHardware();
     };
-  }, [stop, releaseHardware]);
+  }, [finish, releaseHardware]);
 
   const supported = micCaptureSupported() && options.mic.status.available;
   return {

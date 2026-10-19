@@ -19,6 +19,7 @@ import type { AgentConfig, ProjectConfig } from '../config/config.js';
 import { claudeConfigDir, isAlive, mapStatus } from '../sessions/pc-sessions.js';
 import { findTranscript, TranscriptTail } from '../sessions/transcript-tail.js';
 import type { Logger } from '../util/logger.js';
+import type { MicGate } from '../voice/mic-router.js';
 import { isStandalone } from '../util/standalone.js';
 import { packageRoot } from '../util/version.js';
 import type { ApprovalBroker } from './approval-broker.js';
@@ -38,8 +39,13 @@ const DEFAULT_COLS = 100;
 const DEFAULT_ROWS = 30;
 /** Claude Code must show `REC` within this long of the Space tap, else the tap did not take. */
 const RECORD_START_TIMEOUT_MS = 2_500;
-/** After the phone stops streaming, the last audio needs this long to reach the cable. */
+/**
+ * After the phone's audio has been handed to the cable, Claude Code still needs this long
+ * to hear the end of it (device buffers, its own streaming).
+ */
 const RELEASE_DELAY_MS = 600;
+/** Longest wait on release for the phone's audio to arrive and play out. */
+const PLAYOUT_TIMEOUT_MS = 10_000;
 const RECORD_STOP_TIMEOUT_MS = 6_000;
 /**
  * After a recording with images typed in, the prompt must stay unchanged this long
@@ -154,6 +160,8 @@ export interface VoiceSessionOptions {
   };
   /** Model chosen on the phone for a new hosted session. */
   model?: string;
+  /** The phone's microphone, held back until Claude Code records (see `MicGate`). */
+  mic?: MicGate;
   /** Folders Claude Code may read without asking (`--add-dir`), e.g. phone images. */
   readDirs?: string[];
   /** Reasoning effort for a new hosted session (`--effort`). */
@@ -541,6 +549,8 @@ export class VoiceSession extends EventEmitter<{
       this.followUpImages = hold ? [] : imagePaths;
       this.typedForRecording = '';
       this.setVoice('starting');
+      // What is said before Claude Code records would be lost; it waits in the agent.
+      this.opts.mic?.hold();
       if (hold) {
         if (imagePaths.length) {
           this.typedForRecording = `${imagePaths.map((p) => `Attached image: ${p}`).join('\n')}\n`;
@@ -568,8 +578,9 @@ export class VoiceSession extends EventEmitter<{
         RECORD_START_TIMEOUT_MS,
       );
       const screen = this.lastScreen;
-      if (this.isClosed) return;
+      if (this.isClosed) return this.opts.mic?.discard();
       if (!screen.recording) {
+        this.opts.mic?.discard();
         this.stopHolding(true);
         if (imagePaths.length) {
           this.record({
@@ -586,6 +597,7 @@ export class VoiceSession extends EventEmitter<{
             : 'Claude Code did not start recording: the prompt on the PC may not be empty, or dictation is off there (/voice tap). Open the terminal to check.',
         );
       }
+      this.opts.mic?.resume();
       this.setVoice('recording');
       if (this.pendingRelease) {
         this.pendingRelease = false;
@@ -600,7 +612,9 @@ export class VoiceSession extends EventEmitter<{
     }
     if (this.voice !== 'recording') return;
     this.setVoice('finalizing');
-    // The phone's last audio still has to reach the virtual microphone.
+    // The phone may still be sending (it keeps listening a moment after the release), and
+    // held audio plays behind real time: the recording stops only once all of it was heard.
+    await this.opts.mic?.played(PLAYOUT_TIMEOUT_MS);
     await sleep(RELEASE_DELAY_MS);
     if (this.isClosed || !this.pty) return this.stopHolding(false);
     if (hold) this.stopHolding(false);

@@ -7,6 +7,7 @@ import { MicRouter } from './mic-router.js';
 
 const phone: ClientIdentity = { connectionId: 'c1', deviceId: 'd1', deviceName: 'Phone' };
 const tablet: ClientIdentity = { connectionId: 'c2', deviceId: 'd2', deviceName: 'Tablet' };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const frame = (ms = 100) => Buffer.alloc((AUDIO.sampleRate * AUDIO.bytesPerSample * ms) / 1000, 1);
 
 function setup() {
@@ -55,6 +56,52 @@ describe('MicRouter', () => {
     tick(100);
     expect(router.write(phone, frame()).ok).toBe(true);
     expect(driver.frames).toHaveLength(burst + 1);
+  });
+
+  it('holds audio until Claude Code records, then plays it at real time before restoring', async () => {
+    const driver = new FakeMicDriver();
+    const router = new MicRouter(silentLogger(), { leaseIdleMs: 10_000 });
+    router.attach(driver, { device: 'Fake Cable' });
+    router.hold();
+    router.acquire(phone);
+    for (let i = 0; i < 5; i++) expect(router.write(phone, frame()).ok).toBe(true);
+    expect(driver.frames).toHaveLength(0);
+    // Let go before recording started: the default input stays switched for the audio.
+    router.release(phone);
+    await Promise.resolve();
+    expect(driver.calls).toEqual(['activate']);
+
+    const start = Date.now();
+    router.resume();
+    // Paced like real time, not dumped into the device's small buffer.
+    expect(driver.frames.length).toBeGreaterThan(0);
+    expect(driver.frames.length).toBeLessThan(5);
+    await router.played(5_000);
+    expect(driver.frames).toHaveLength(5);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(400);
+    await sleep(350);
+    expect(driver.calls).toEqual(['activate', 'deactivate']);
+    await router.stop();
+  });
+
+  it('drops held audio when the recording never starts', async () => {
+    const driver = new FakeMicDriver();
+    const router = new MicRouter(silentLogger(), { leaseIdleMs: 10_000 });
+    router.attach(driver, { device: 'Fake Cable' });
+    router.hold();
+    router.acquire(phone);
+    router.write(phone, frame());
+    router.release(phone);
+    router.discard();
+    await router.played(1_000);
+    await sleep(350);
+    expect(driver.frames).toHaveLength(0);
+    expect(driver.calls).toEqual(['activate', 'deactivate']);
+    // The next recording plays live again.
+    router.acquire(phone);
+    router.write(phone, frame());
+    expect(driver.frames).toHaveLength(1);
+    await router.stop();
   });
 
   it('ends the lease on release, disconnect, idleness and driver exit', async () => {
