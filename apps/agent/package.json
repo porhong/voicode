@@ -73,7 +73,7 @@
     "@voicecode/security": "*",
     "esbuild": "^0.28.2",
     "postject": "^1.0.0-alpha.6",
-    "tsup": "^8.5.1",
+    "tsup": "^9.0.0",
     "tsx": "^4.23.15",
     "ws": "^8.22.0"
   }
