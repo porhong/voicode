@@ -49,11 +49,11 @@
     "prepack": "node scripts/prepack.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.296",
-    "@fastify/helmet": "^13.1.2",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.316",
+    "@fastify/helmet": "^13.2.0",
     "@fastify/rate-limit": "^11.2.1",
-    "@fastify/static": "^10.1.6",
-    "@fastify/websocket": "^11.3.4",
+    "@fastify/static": "^10.1.8",
+    "@fastify/websocket": "^11.3.5",
     "@lydell/node-pty": "^1.2.0-beta.15",
     "@peculiar/x509": "^2.1.0",
     "@xterm/addon-serialize": "^0.14.0",
